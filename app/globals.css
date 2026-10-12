@@ -22,3 +22,66 @@
 .watch-page .advanced-player:fullscreen{max-height:none;overflow:auto}.watch-page .advanced-player:fullscreen .video-surface{height:calc(100vh - 170px)}
 @media(max-width:850px){.watch-layout{flex-direction:column;overflow:auto}.watch-page .watch-main{width:100%;flex:none;overflow:visible}.watch-stage{display:block;overflow:visible;flex:none}.watch-stage>.advanced-player{max-height:none;overflow:visible}.watch-stage>.advanced-player .video-surface,.watch-theater .watch-stage>.advanced-player .video-surface{width:100%;height:auto;min-height:0;aspect-ratio:16/9}.watch-stage iframe{height:auto;min-height:0;aspect-ratio:16/9}.watch-sidebar{width:100%;flex:1;min-height:250px;overflow:visible;border-left:0;border-top:1px solid #3b3948}.watch-page{height:100dvh;min-height:0}.watch-header{height:62px;padding:0 12px;gap:10px}.watch-title h1{font-size:13px}.watch-back span{display:none}.watch-next{font-size:10px;padding:7px}.watch-stage .playback-placeholder{min-height:40vw}.watch-page .watch-main:has(.advanced-player){max-height:none}}
 @media(max-width:700px){.sidebar nav{flex-direction:row;justify-content:space-around;gap:0}.sidebar nav button{flex-direction:column}.pagination{flex-direction:row;justify-content:center}.pagination button{min-width:34px;height:34px;font-size:12px;padding:0 8px}.pagination .page-buttons{flex-wrap:wrap;justify-content:center}.season-now{margin-left:0}}
+
+/* Catalog pagination: keep every number and ellipsis on the same baseline. */
+.pagination{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:18px;margin:38px 0;padding:22px 0;border-top:1px solid var(--border)}
+.pagination .page-count{white-space:nowrap;font-size:12px;color:var(--muted)}
+.pagination .page-buttons{display:flex;align-items:center;justify-content:center;flex-wrap:nowrap;gap:5px;min-width:0}
+.pagination .page-item{display:inline-flex;align-items:center;gap:5px;flex:none}
+.pagination .page-ellipsis{display:inline-flex;align-items:center;justify-content:center;width:24px;height:38px;padding:0;color:var(--muted)}
+.pagination button{display:inline-flex;align-items:center;justify-content:center;flex:none;min-width:38px;height:38px;padding:0 10px;border:1px solid var(--border);border-radius:10px;background:var(--paper);font-size:12px;line-height:1;box-shadow:0 2px 8px #29223a08}
+.pagination button:hover:not(:disabled){border-color:var(--purple);color:var(--purple);background:var(--tint)}
+.pagination button.selected,.pagination button.selected:hover:not(:disabled){background:var(--purple);border-color:var(--purple);color:#fff;box-shadow:0 4px 14px #8170d838}
+.pagination form{justify-self:end;display:flex;align-items:center;gap:8px;white-space:nowrap}
+.pagination form label{display:flex;align-items:center;gap:7px;color:var(--muted)}
+.pagination input{width:56px;height:38px;padding:7px;text-align:center}
+@media(max-width:1100px){.pagination{display:flex;flex-direction:column;justify-content:center;gap:14px}.pagination form{justify-self:auto}}
+@media(max-width:700px){.pagination .page-buttons{width:100%;max-width:100%;overflow-x:auto;justify-content:safe center;padding:2px 0 8px;scrollbar-width:thin}.pagination button{min-width:35px;height:35px}.pagination .page-ellipsis{height:35px;width:16px}.pagination form{font-size:11px}}
+
+/* Watch page: a centered 16:9 screen, with the native video controls unobstructed. */
+.watch-page{background:#101018}
+.watch-header{height:72px;padding:0 28px;background:linear-gradient(110deg,#211e30,#1a1924);border-color:#393547}
+.watch-back,.watch-panel-toggle{padding:9px 11px;border-radius:9px}
+.watch-back:hover,.watch-panel-toggle:hover,.watch-next:hover:not(:disabled){background:#453b61}
+.watch-title h1{font-size:17px;letter-spacing:.1px}
+.watch-title p{font-size:12px}
+.watch-next{padding:10px 14px;background:#645394;color:#fff}
+.watch-stage{padding:22px 28px;overflow:auto;background:radial-gradient(ellipse at 50% 15%,#272039 0%,#17151e 48%,#101018 88%)}
+.watch-stage>.advanced-player{width:min(100%,140vh);max-height:none;overflow:visible;flex:none;border:1px solid #484153;border-radius:13px;background:#1d1a24;box-shadow:0 24px 70px #0008;isolation:isolate}
+.watch-stage>.advanced-player .video-surface,.watch-theater .watch-stage>.advanced-player .video-surface{height:auto;min-height:0;aspect-ratio:16/9;border-radius:12px 12px 0 0;overflow:hidden;background:#050505}
+.watch-stage .video-surface video{display:block;position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
+.watch-stage iframe{width:min(100%,140vh);height:auto;min-height:0;aspect-ratio:16/9;border-radius:12px;background:#050505;box-shadow:0 24px 70px #0008}
+.player-toolbar{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:11px 15px;background:#211e29}
+.player-toolbar>div{display:flex;align-items:center;gap:8px}
+.player-indicator{display:inline-flex;align-items:center;gap:8px;color:#bbb5ce;font-size:12px;white-space:nowrap}
+.player-indicator i{width:7px;height:7px;border-radius:50%;background:#a88bf6;box-shadow:0 0 12px #ad8cff}
+.player-toolbar button{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:36px;padding:7px 12px;border:1px solid #474153;border-radius:8px;color:#e9e4f4;background:#353040;font-size:12px;white-space:nowrap}
+.player-toolbar button:hover{background:#4d405e}
+.player-toolbar .player-fullscreen{background:#7663bd;border-color:#8771d3;color:#fff}
+.player-toolbar .player-fullscreen:hover{background:#8972d1}
+.player-options{border-top:1px solid #383342;background:#211e29;border-radius:0 0 12px 12px}
+.player-options summary{display:flex;align-items:center;gap:8px;padding:11px 16px;color:#d2cce2;font-size:12px;cursor:pointer;list-style:none}
+.player-options summary::-webkit-details-marker{display:none}
+.player-options summary::after{content:'⌄';font-size:16px;margin-left:auto;line-height:1;transition:transform .2s}
+.player-options[open] summary::after{transform:rotate(180deg)}
+.player-options summary span{color:#a59db6;font-size:11px}
+.player-options .playback-actions{border-top:1px solid #383342;padding:13px 16px;gap:8px}
+.player-options .playback-actions label{display:inline-flex;align-items:center;gap:6px;color:#cec8dd}
+.player-options .footnote{padding:0 16px 14px;color:#aaa4b7;font-size:11px;line-height:1.6}
+.player-status{padding:10px 16px!important;color:#d7c7f4!important;background:#272131}
+.fullscreen-exit{display:none;position:absolute;z-index:3;top:18px;right:18px;align-items:center;gap:7px;padding:9px 12px;border-radius:8px;background:#16141acc;color:#fff;font-size:12px;backdrop-filter:blur(8px)}
+.watch-sidebar{width:350px;padding:25px 21px;background:#211e2a;border-color:#433b51}
+.watch-section-heading h2{font-size:18px}
+.watch-source-label,.watch-search summary,.watch-roads button,.watch-episodes button{font-size:12px}
+.watch-episodes{gap:8px}
+.watch-episodes button{padding:11px 7px;border:1px solid #484052;background:#302b3a}
+.watch-episodes button:hover:not(:disabled){background:#4a3e5f}
+.watch-episodes button.active{border-color:#9981df;background:#7663bd;color:#fff}
+.watch-hint{font-size:12px}
+.watch-page .advanced-player:fullscreen{width:100vw!important;height:100dvh;max-height:none;display:flex;flex-direction:column;overflow:hidden;border:0;border-radius:0;background:#000;box-shadow:none}
+.watch-page .advanced-player:fullscreen .video-surface{width:100%;height:100%!important;min-height:0;flex:1;aspect-ratio:auto!important;border-radius:0;background:#000}
+.watch-page .advanced-player:fullscreen .player-toolbar,.watch-page .advanced-player:fullscreen .player-options,.watch-page .advanced-player:fullscreen .player-status{display:none}
+.watch-page .advanced-player:fullscreen .fullscreen-exit{display:inline-flex}
+.watch-page .advanced-player:fullscreen .enhanced-controls{flex:none;justify-content:center;background:#17131e}
+@media(max-width:850px){.watch-header{height:62px;padding:0 12px}.watch-stage{padding:0;background:#101018}.watch-stage>.advanced-player{width:100%;border:0;border-radius:0;box-shadow:none}.watch-stage>.advanced-player .video-surface,.watch-theater .watch-stage>.advanced-player .video-surface{border-radius:0}.watch-sidebar{width:100%;padding:24px 19px}.watch-stage iframe{display:block;width:100%;border-radius:0;box-shadow:none}}
+@media(max-width:480px){.watch-header{gap:7px}.watch-title h1{font-size:13px}.watch-title p{font-size:10px}.watch-next{padding:8px}.player-toolbar{padding:9px 10px}.player-toolbar button{padding:7px 9px}.player-indicator{font-size:11px}.player-options summary span{display:none}}

@@ -11,7 +11,21 @@ assert.equal(core.parseRules('kazumi://'+Buffer.from(JSON.stringify(valid)).toSt
 assert.throws(()=>core.validateRule({...valid,searchURL:'https://other.example/search'}));
 assert.throws(()=>core.validateRule({...valid,searchMode:'api'}));
 for(const bad of ['http://example.com','https://127.0.0.1','https://[::1]','https://localhost','https://metadata.internal','https://user:pass@example.com','https://example.com:444'])assert.throws(()=>core.publicUrl(bad));
-let source=readFileSync('app/api/[...path]/route.ts','utf8').replace("'../../../lib/web-core'",JSON.stringify(coreUrl)).replace("import snapshot from '../../../lib/catalog-snapshot.json';",'const snapshot='+readFileSync('lib/catalog-snapshot.json','utf8')+';');
+const catalogUrl=mod(compile(readFileSync('lib/catalog.ts','utf8')));
+const catalog=await import(catalogUrl);
+assert.deepEqual(catalog.seasonRange(2026,1),{start:'2025-12-01',end:'2026-03-01'});
+assert.deepEqual(catalog.seasonRange(2026,4),{start:'2026-09-01',end:'2026-12-01'});
+assert.deepEqual(catalog.pageNumbers(8,30),[1,6,7,8,9,10,30]);
+const catalogServerUrl=mod(compile(readFileSync('lib/catalog-server.ts','utf8').replace("import snapshot from './catalog-snapshot.json';",'const snapshot='+readFileSync('lib/catalog-snapshot.json','utf8')+';').replace("'./catalog'",JSON.stringify(catalogUrl))));
+const catalogServer=await import(catalogServerUrl);
+let requested='';
+const pageResult=await catalogServer.browseCatalog(new URLSearchParams('mode=date&page=52&cat=1&year=2024'),async url=>{requested=url;return {data:[{id:123,name:'Example',date:'2024-04-01'}],total:1234};});
+assert.match(requested,/offset=1224/);assert.match(requested,/cat=1/);assert.match(requested,/year=2024/);assert.equal(pageResult.page,52);assert.equal(pageResult.total,1234);
+await assert.rejects(catalogServer.browseCatalog(new URLSearchParams('mode=popular&cat=3'),async()=>({data:[],total:0})),/不能同时使用/);
+await assert.rejects(catalogServer.browseCatalog(new URLSearchParams('mode=popular&page=43'),async()=>({data:[],total:1100})),/1000/);
+const grouped=await catalogServer.seasonCatalog(new URLSearchParams('year=2023&quarter=2'),async url=>{assert.match(url,/start=2023-03-01/);return Object.fromEntries(Array.from({length:7},(_,i)=>[String(i+1),i===0?[{subject:{id:77,name:'Test',date:'2023-04-03'}}]:[]]));});
+assert.equal(grouped.calendar[0].items[0].name,'Test');assert.equal(grouped.basis,'premiere');
+let source=readFileSync('app/api/[...path]/route.ts','utf8').replace("'../../../lib/web-core'",JSON.stringify(coreUrl)).replace("'../../../lib/catalog-server'",JSON.stringify(catalogServerUrl));
 const apiUrl=mod(compile(readFileSync('lib/rule-api.ts','utf8').replace("'./web-core'",JSON.stringify(coreUrl))));
 const subscriptionServerUrl=mod(compile(readFileSync('lib/rule-subscription-server.ts','utf8').replace("import snapshot from './rules-snapshot.json';",'const snapshot='+readFileSync('lib/rules-snapshot.json','utf8')+';')));
 source=source.replace("'../../../lib/rule-api'",JSON.stringify(apiUrl)).replace("'../../../lib/rule-subscription-server'",JSON.stringify(subscriptionServerUrl));
@@ -50,6 +64,7 @@ globalThis.fetch=async()=>new Response(null,{status:302,headers:{Location:'https
 globalThis.fetch=async()=>new Response('x'.repeat(2097153),{headers:{'Content-Type':'text/html'}});r=await route.POST(request('https://example.com/'));assert.equal(r.status,400);
 globalThis.fetch=async()=>{throw new Error('network unavailable');};r=await route.GET(new Request('https://site.example/api/catalog'));const cache=await r.json();assert.equal(cache.offline,true);assert.ok(cache.data.length);
 r=await route.GET(new Request('https://site.example/api/catalog?q=no-result'));assert.equal(r.status,502);
+r=await route.GET(new Request('https://site.example/api/catalog?page=2'));assert.equal(r.status,502);
 r=await route.GET(new Request('https://site.example/api/subject?id=oops'));assert.equal(r.status,400);
 globalThis.fetch=originalFetch;
 // Resolve validates upstream media before opening the site's own player.

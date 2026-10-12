@@ -1,7 +1,7 @@
 import {ruleManifest,ruleBatch} from '../../../lib/rule-subscription-server';
 import {apiRequest,apiSearch,apiChapters,extractMedia} from '../../../lib/rule-api';
 import {publicUrl,validateRule} from '../../../lib/web-core';
-import snapshot from '../../../lib/catalog-snapshot.json';
+import {browseCatalog,seasonCatalog} from '../../../lib/catalog-server';
 import {boundedText,proxyMedia,resolvePlayback,signedMediaUrl} from '../../../lib/playback-server';
 const UA='KazumiWeb/0.1 (+https://github.com/Predidit/Kazumi)';
 const json=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'private, max-age=60'}});
@@ -14,11 +14,7 @@ export async function GET(req:Request) {
  try {
   if(kind==='media')return proxyMedia(req);
   if(kind==='catalog') {
-   const q=(u.searchParams.get('q')||'').slice(0,120); const mode=u.searchParams.get('mode')||'popular';
-   const offset=Math.min(1000,Math.max(0,Number(u.searchParams.get('offset'))||0));
-   if(mode==='calendar') return json({calendar:await upstream('https://api.bgm.tv/calendar')});
-   try {const data=await upstream('https://api.bgm.tv/v0/search/subjects?limit=24&offset='+offset,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keyword:q,sort:mode==='rank'?'rank':'heat',filter:{type:[2],nsfw:false,...(mode==='rank'?{rank:['>0','<=99999']}:{}),...(u.searchParams.get('tag')?{tag:[u.searchParams.get('tag')]}:{})}})});return json({...data,offline:false});}
-   catch(e){if(q||offset||u.searchParams.get('tag')) throw e;return json({...snapshot,offline:true});}
+   return json(u.searchParams.get('mode')==='calendar'?await seasonCatalog(u.searchParams,upstream):await browseCatalog(u.searchParams,upstream));
   }
   if(kind==='subject'||kind==='episodes') {
    const id=u.searchParams.get('id')||''; if(!/^\d{1,10}$/.test(id)) return json({error:'无效条目 ID'},400);

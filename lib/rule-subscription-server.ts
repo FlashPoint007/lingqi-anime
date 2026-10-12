@@ -6,17 +6,18 @@ type ArchiveEntry={file:string;rule:any};
 let archiveCache:{at:number;entries:ArchiveEntry[]}|undefined;
 let pendingArchive:Promise<ArchiveEntry[]>|undefined;
 export function parseRuleArchive(bytes:Uint8Array):ArchiveEntry[]{
- const decoder=new TextDecoder();const entries:ArchiveEntry[]=[];
+ const decoder=new TextDecoder();const entries:ArchiveEntry[]=[];let active:Set<string>|undefined;
  for(let offset=0;offset+512<=bytes.length;){
   const header=bytes.subarray(offset,offset+512);const name=decoder.decode(header.subarray(0,100)).split('\0')[0];if(!name)break;
   const rawSize=decoder.decode(header.subarray(124,136)).replace(/\0/g,'').trim();if(!/^[0-7]+$/.test(rawSize))throw new Error('规则仓库归档格式无效');
   const size=parseInt(rawSize,8);if(size>1048576||offset+512+size>bytes.length)throw new Error('规则仓库归档文件过大或不完整');
-  if(/^KazumiRules-[^/]+\/[^/]+\.json$/.test(name)&&!name.endsWith('/index.json')){
+  if(name.endsWith('/index.json')){const index=JSON.parse(decoder.decode(bytes.subarray(offset+512,offset+512+size)));if(!Array.isArray(index)||index.some(e=>typeof e.name!=='string'))throw new Error('有效规则索引无效');active=new Set(index.map(e=>e.name));}
+  else if(/^KazumiRules-[^/]+\/[^/]+\.json$/.test(name)){
    const rule=JSON.parse(decoder.decode(bytes.subarray(offset+512,offset+512+size)));if(typeof rule.name!=='string'||typeof rule.baseURL!=='string')throw new Error('规则文件格式无效');entries.push({file:name.split('/').pop()!,rule});
   }
   offset+=512+Math.ceil(size/512)*512;
  }
- if(!entries.length||entries.length>500)throw new Error('规则仓库内容无效');return entries.sort((a,b)=>a.file.localeCompare(b.file));
+ if(!entries.length||entries.length>500||!active?.size)throw new Error('规则仓库内容或有效索引无效');return entries.filter(e=>active!.has(e.rule.name)&&!e.rule.deprecated&&e.rule.baseURL.startsWith('https://')).sort((a,b)=>a.file.localeCompare(b.file));
 }
 async function archiveRules():Promise<ArchiveEntry[]>{
  if(archiveCache&&Date.now()-archiveCache.at<3600000)return archiveCache.entries;if(pendingArchive)return pendingArchive;
@@ -29,8 +30,8 @@ async function archiveRules():Promise<ArchiveEntry[]>{
 }
 export async function ruleManifest(){
  try{const entries=await archiveRules();return {files:entries.map(e=>({file:e.file})),complete:true};}catch{}
- try{const entries=await read('https://api.github.com/repos/Predidit/KazumiRules/contents');return {files:entries.filter((e:any)=>e.type==='file'&&e.name.endsWith('.json')&&e.name!=='index.json').map((e:any)=>({file:e.name,sha:e.sha})),complete:true};}
- catch{const index=await read(ROOT+'index.json').catch(()=>[]);const names=new Set([...snapshot.entries.map(e=>e.file),...index.map((r:any)=>r.name+'.json')]);return {files:[...names].map(file=>({file})),complete:false};}
+ try{const index=await read(ROOT+'index.json');if(!Array.isArray(index)||!index.length)throw new Error('索引无效');return {files:index.map((r:any)=>({file:r.name+'.json'})),complete:true};}
+ catch{return {files:snapshot.entries.filter(e=>!(e.rule as any).deprecated&&e.rule.baseURL.startsWith('https://')).map(e=>({file:e.file})),complete:false};}
 }
 export async function ruleBatch(names:string[]){
  if(names.length>10||names.some(n=>!/^[-\p{L}\p{N} _.()]+\.json$/u.test(n)||n==='index.json'))throw new Error('规则批次无效');

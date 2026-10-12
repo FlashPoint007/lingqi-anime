@@ -32,13 +32,14 @@ export function parseRules(text:string):Rule[] {
 }
 export function xpath(context:Node,expression:string):Node[] {
   const doc=context.nodeType===9?context as Document:context.ownerDocument!;
-  const expr=context.nodeType!==9&&expression.startsWith('//')?'.'+expression:expression;
+  // Kazumi accepts // as the chapter document, and /self::* relative to a road.
+  const expr=expression==='//' ? '.' : context.nodeType!==9&&expression.startsWith('/')?'.'+expression:expression;
   const result=doc.evaluate(expr,context,null,7,null); return Array.from({length:result.snapshotLength},(_,i)=>result.snapshotItem(i)!);
 }
 export function link(node:Node,base:string):string|null {
   const href=node.nodeType===2?node.nodeValue:(node as Element).getAttribute?.('href');
   if(!href) return null;
-  try {const u=new URL(href,base); return u.protocol==='https:'?u.href:null;} catch{return null;}
+  try {const u=new URL(href,base);if(u.protocol==='http:'&&u.hostname===new URL(base).hostname)u.protocol='https:';return u.protocol==='https:'?u.href:null;} catch{return null;}
 }
 export function parseSearch(html:string,r:Rule):{name:string;url:string}[] {
   const doc=new DOMParser().parseFromString(html,'text/html');

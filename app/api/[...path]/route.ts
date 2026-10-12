@@ -2,6 +2,7 @@ import {ruleManifest,ruleBatch} from '../../../lib/rule-subscription-server';
 import {apiRequest,apiSearch,apiChapters,extractMedia} from '../../../lib/rule-api';
 import {publicUrl,validateRule} from '../../../lib/web-core';
 import snapshot from '../../../lib/catalog-snapshot.json';
+import {boundedText,proxyMedia,resolvePlayback,signedMediaUrl} from '../../../lib/playback-server';
 const UA='KazumiWeb/0.1 (+https://github.com/Predidit/Kazumi)';
 const json=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'private, max-age=60'}});
 async function upstream(url:string,init:RequestInit={}) {
@@ -11,6 +12,7 @@ async function upstream(url:string,init:RequestInit={}) {
 export async function GET(req:Request) {
  const u=new URL(req.url); const kind=u.pathname.split('/').pop();
  try {
+  if(kind==='media')return proxyMedia(req);
   if(kind==='catalog') {
    const q=(u.searchParams.get('q')||'').slice(0,120); const mode=u.searchParams.get('mode')||'popular';
    const offset=Math.min(1000,Math.max(0,Number(u.searchParams.get('offset'))||0));
@@ -38,9 +40,20 @@ export async function POST(req:Request) {
  try {
   const raw=await req.text(); if(raw.length>65536) return json({error:'请求过大'},413);
   const body=JSON.parse(raw);const rule=validateRule(body.rule);
+  if(body.operation==='resolve'){
+   const page=publicUrl(String(body.url));if(page.origin!==publicUrl(rule.baseURL).origin)throw new Error('播放页面必须与规则同源');
+   let declared:string|undefined;
+   if(rule.searchMode==='api'&&body.source){
+    const spec=apiRequest(rule,'chapters',{source:String(body.source).slice(0,200),keyword:''});const response=await fetch(spec.url,{...spec.init,redirect:'error',signal:AbortSignal.timeout(12000)});if(!response.ok)throw new Error('源站 API 响应 '+response.status);
+    const data=JSON.parse(await boundedText(response));const roads=apiChapters(data,spec.config,String(body.source));declared=roads.flatMap(road=>road.episodes).find(ep=>ep.url===page.href)?.mediaUrl;
+   }
+   const resolved=await resolvePlayback(rule,page.href,declared);
+   if(!resolved.media)return json({mode:resolved.embed?'embed':'unavailable',embed:resolved.embed,embedKind:resolved.embedKind,sourceUrl:page.href,message:resolved.reason||'当前线路暂不能在本站解析，请切换线路或视频源'});
+   return json({mode:'video',url:await signedMediaUrl(resolved.media,resolved.referer),mediaUrl:resolved.media,sourceUrl:page.href,verified:resolved.verified,mediaType:/\.m3u8(?:[?#]|$)/i.test(resolved.media)?'hls':'video'});
+  }
   if(rule.searchMode==='api'&&(body.operation==='search'||body.operation==='chapters')){
    const operation=body.operation as 'search'|'chapters';const vars={keyword:String(body.keyword||'').slice(0,120),source:String(body.source||'').slice(0,200)};const request=apiRequest(rule,operation,vars);
-   const response=await fetch(request.url,{...request.init,redirect:'error',signal:AbortSignal.timeout(12000)});if(!response.ok)throw new Error('源站 API 响应 '+response.status);const text=await response.text();if(text.length>2097152)throw new Error('API 响应过大');const data=JSON.parse(text);return json(operation==='search'?{results:apiSearch(data,request.config)}:{roads:apiChapters(data,request.config,vars.source)});
+   const response=await fetch(request.url,{...request.init,redirect:'error',signal:AbortSignal.timeout(12000)});if(!response.ok)throw new Error('源站 API 响应 '+response.status);const data=JSON.parse(await boundedText(response));return json(operation==='search'?{results:apiSearch(data,request.config)}:{roads:apiChapters(data,request.config,vars.source)});
   }
   let target=publicUrl(body.url); const base=publicUrl(rule.baseURL);
   if(target.origin!==base.origin) return json({error:'地址必须与规则站点同源'},400);
@@ -61,3 +74,4 @@ export async function POST(req:Request) {
   return json({html,url:target.href,media:extractMedia(html,target.href)});
  }catch(e){return json({error:e instanceof Error?e.message:'源站访问失败'},400);}
 }
+export const HEAD=GET;

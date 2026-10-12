@@ -1,0 +1,83 @@
+import {extractMedia,isMedia,mediaUrl,playerLinks} from './rule-api';
+import type {Rule} from './web-core';
+
+const UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
+export async function boundedText(response:Response,max=2*1024*1024){
+ if(!response.body)return '';const reader=response.body.getReader();const chunks:Uint8Array[]=[];let size=0;
+ while(true){const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>max){await reader.cancel();throw new Error('源站响应过大');}chunks.push(value);}
+ const bytes=new Uint8Array(size);let offset=0;for(const c of chunks){bytes.set(c,offset);offset+=c.length;}
+ const charset=response.headers.get('content-type')?.match(/charset=([^;\s]+)/i)?.[1]||'utf-8';try{return new TextDecoder(charset).decode(bytes);}catch{return new TextDecoder().decode(bytes);}
+}
+async function fetchPublic(url:string,init:RequestInit={},stream=false){
+ let target=mediaUrl(url);for(let i=0;i<4;i++){
+  // Streaming video must not be cut off by the connection/header timeout.
+  const controller=stream?new AbortController():undefined;const timer=controller?setTimeout(()=>controller.abort(),12000):undefined;
+  let res:Response;try{res=await fetch(target.href,{...init,redirect:'manual',signal:controller?.signal||init.signal||AbortSignal.timeout(12000)});}finally{if(timer)clearTimeout(timer);}
+  if(res.status>=300&&res.status<400){const location=res.headers.get('location');if(!location)throw new Error('源站重定向无地址');target=mediaUrl(location,target.href);continue;}return {res,url:target.href};
+ }throw new Error('源站重定向过多');
+}
+async function reachableMedia(url:string,referer:string){
+ try{const {res}=await fetchPublic(url,{signal:AbortSignal.timeout(5000),headers:{'User-Agent':UA,Referer:referer,...(/\.m3u8(?:[?#]|$)/i.test(url)?{}:{Range:'bytes=0-4095'}),Accept:'*/*'}});if(!res.ok){await res.body?.cancel();return false;}
+  if(/\.m3u8(?:[?#]|$)/i.test(url)){const text=await boundedText(res,1024*1024);return text.trimStart().startsWith('#EXTM3U');}
+  const type=res.headers.get('content-type')||'';await res.body?.cancel();return !/text\/html|json|javascript|xml/i.test(type);
+ }catch{return false;}
+}
+export async function resolvePlayback(rule:Rule,page:string,declared?:string){
+ const source=mediaUrl(page);if(source.origin!==new URL(rule.baseURL).origin)throw new Error('播放页面必须属于所选源站');
+ const pending=[page],seen=new Set<string>();let embed='',embedKind:'player'|'page'='page',pageLoaded=false,directCandidate='';const errors:string[]=[];const deadline=Date.now()+20000;
+ // A passed API URL is accepted only by the route after finding it in upstream data.
+ if(declared&&isMedia(declared)){directCandidate=mediaUrl(declared).href;if(await reachableMedia(declared,page))return {media:directCandidate,referer:page,embed:'',verified:true};}
+ for(let depth=0;depth<4&&pending.length;depth++){
+  if(Date.now()>deadline)break;
+  const next=pending.shift()!;if(seen.has(next))continue;seen.add(next);
+  try{
+   if(isMedia(next)){directCandidate||=mediaUrl(next).href;if(await reachableMedia(next,page))return {media:mediaUrl(next).href,referer:page,embed,verified:true};continue;}
+   const {res,url}=await fetchPublic(next,{headers:{'User-Agent':String(rule.userAgent||UA),Accept:'text/html,application/json','Referer':String(rule.referer||page)}});
+   if(!res.ok)throw new Error('源站响应 '+res.status);const html=await boundedText(res);
+   if(/(?:cf-chl-|Verify you are human|captcha)/i.test(html)&&html.length<10000)throw new Error('源站要求验证，当前线路暂不可用');
+   if(next===page)pageLoaded=true;
+   for(const media of extractMedia(html,url).slice(0,3)){directCandidate||=media;if(await reachableMedia(media,url))return {media,referer:url,embed,verified:true};}
+   const links=playerLinks(html,url).filter(link=>!isMedia(link));
+   // Only follow declared player links, never arbitrary links or page scripts.
+   for(const link of links){if(/(?:comment|ads?|analytics|google)/i.test(new URL(link).pathname))continue;if(!embed){embed=link;embedKind='player';}if(pending.length<3)pending.push(link);}
+  }catch(e){errors.push((e as Error).message);}
+ }
+ if(!embed&&pageLoaded)embed=page;
+ return {media:directCandidate,verified:false,referer:page,embed,embedKind,reason:errors[0]||'此线路没有可访问的直链，将在本站嵌入源站播放器'};
+}
+
+type Ticket={url:string;referer:string;expires:number};
+function secret(){const value=process.env.LINGQI_MEDIA_SECRET;if(!value)throw new Error('站内媒体服务未配置');return value;}
+function base64url(bytes:Uint8Array){return btoa(String.fromCharCode(...bytes)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}
+function unbase64(value:string){if(!/^[A-Za-z0-9_-]+$/.test(value))throw new Error('无效媒体授权');return Uint8Array.from(atob(value.replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0));}
+let signingKey:Promise<CryptoKey>|undefined;
+async function key(){return signingKey??=crypto.subtle.importKey('raw',new TextEncoder().encode(secret()),{name:'HMAC',hash:'SHA-256'},false,['sign','verify']);}
+export async function signedMediaUrl(url:string,referer:string,expires=Date.now()+8*3600000){
+ const ticket:Ticket={url:mediaUrl(url).href,referer:mediaUrl(referer).href,expires};const payload=base64url(new TextEncoder().encode(JSON.stringify(ticket)));
+ const signature=base64url(new Uint8Array(await crypto.subtle.sign('HMAC',await key(),new TextEncoder().encode(payload))));
+ return '/api/media?ticket='+payload+'.'+signature;
+}
+async function readTicket(raw:string):Promise<Ticket>{
+ if(raw.length>14000)throw new Error('媒体授权过长');const parts=raw.split('.');if(parts.length!==2)throw new Error('无效媒体授权');
+ if(!await crypto.subtle.verify('HMAC',await key(),unbase64(parts[1]),new TextEncoder().encode(parts[0])))throw new Error('媒体授权不匹配');
+ const data=JSON.parse(new TextDecoder().decode(unbase64(parts[0]))) as Ticket;
+ if(!Number.isFinite(data.expires)||data.expires<Date.now()||data.expires>Date.now()+8*3600000+60000)throw new Error('媒体授权已过期，请重新点击剧集');mediaUrl(data.url);mediaUrl(data.referer);return data;
+}
+export async function proxyMedia(req:Request){
+ let ticket:Ticket;try{ticket=await readTicket(new URL(req.url).searchParams.get('ticket')||'');}catch(e){return Response.json({error:(e as Error).message},{status:403});}
+ const headers:Record<string,string>={'User-Agent':UA,Referer:ticket.referer,Accept:'*/*'};const range=req.headers.get('range');if(range){if(!/^bytes=\d+-\d*$/.test(range))return new Response('Invalid range',{status:416});headers.Range=range;}
+ try{
+  const {res,url}=await fetchPublic(ticket.url,{headers,method:req.method==='HEAD'?'HEAD':'GET'},true);if(!res.ok)return new Response('当前视频线路响应 '+res.status,{status:502});
+  const type=res.headers.get('content-type')||'';const playlist=isMedia(url)&&/\.m3u8(?:[?#]|$)/i.test(url)||/mpegurl/i.test(type);
+  const output=new Headers({'Cache-Control':'private, max-age=30','X-Content-Type-Options':'nosniff','Content-Security-Policy':"sandbox; default-src 'none'"});
+  if(playlist&&req.method!=='HEAD'){
+   const body=await boundedText(res,1024*1024);if(!body.trimStart().startsWith('#EXTM3U'))throw new Error('源站没有返回 HLS 播放列表');
+   const replace=async(input:string)=>new URL(await signedMediaUrl(new URL(input,url).href,ticket.referer,ticket.expires),req.url).href;
+   const lines=await Promise.all(body.split(/\r?\n/).map(async line=>{if(line&&!line.startsWith('#'))return replace(line.trim());const matches=[...line.matchAll(/URI="([^"]+)"/g)];for(const m of matches)line=line.replace(m[0],'URI="'+await replace(m[1])+'"');return line;}));
+   output.set('Content-Type','application/vnd.apple.mpegurl');return new Response(lines.join('\n'),{headers:output});
+  }
+  if(/text\/html|json|javascript|xml/i.test(type))throw new Error('源站返回了网页，无法作为视频播放');
+  for(const h of ['content-type','content-length','content-range','accept-ranges']){const value=res.headers.get(h);if(value)output.set(h,value);}if(!output.has('Content-Type'))output.set('Content-Type','application/octet-stream');
+  return new Response(req.method==='HEAD'?null:res.body,{status:res.status,headers:output});
+ }catch(e){return Response.json({error:(e as Error).message},{status:502});}
+}

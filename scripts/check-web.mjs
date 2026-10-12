@@ -15,22 +15,28 @@ let source=readFileSync('app/api/[...path]/route.ts','utf8').replace("'../../../
 const apiUrl=mod(compile(readFileSync('lib/rule-api.ts','utf8').replace("'./web-core'",JSON.stringify(coreUrl))));
 const subscriptionServerUrl=mod(compile(readFileSync('lib/rule-subscription-server.ts','utf8').replace("import snapshot from './rules-snapshot.json';",'const snapshot='+readFileSync('lib/rules-snapshot.json','utf8')+';')));
 source=source.replace("'../../../lib/rule-api'",JSON.stringify(apiUrl)).replace("'../../../lib/rule-subscription-server'",JSON.stringify(subscriptionServerUrl));
+const playbackUrl=mod(compile(readFileSync('lib/playback-server.ts','utf8').replace("'./rule-api'",JSON.stringify(apiUrl)).replace("'./web-core'",JSON.stringify(coreUrl))));
+source=source.replace("'../../../lib/playback-server'",JSON.stringify(playbackUrl));
+const playback=await import(playbackUrl);
 const route=await import(mod(compile(source)));
+process.env.LINGQI_MEDIA_SECRET='test-only-key-not-used-in-production';
 const subServer=await import(subscriptionServerUrl);
 const {gunzipSync}=await import('node:zlib');
 // Live integration fixture supplied optionally; ordinary checks remain portable.
-if(process.env.RULE_ARCHIVE_FIXTURE){const archive=gunzipSync(readFileSync(process.env.RULE_ARCHIVE_FIXTURE));const entries=subServer.parseRuleArchive(archive);assert.equal(entries.length,86);assert.ok(entries.some(e=>e.file==='xfdmnext.json'));assert.throws(()=>subServer.parseRuleArchive(archive.subarray(0,600)));console.log('PASS: complete real upstream archive and truncated archive rejection');}
+if(process.env.RULE_ARCHIVE_FIXTURE){const archive=gunzipSync(readFileSync(process.env.RULE_ARCHIVE_FIXTURE));const entries=subServer.parseRuleArchive(archive);assert.equal(entries.length,16);assert.ok(entries.some(e=>e.file==='xfdmnext.json'));assert.throws(()=>subServer.parseRuleArchive(archive.subarray(0,600)));console.log('PASS: complete real upstream archive and truncated archive rejection');}
 
 const ruleApi=await import(apiUrl);
 assert.deepEqual(ruleApi.selectJson({data:{items:[{n:1},{n:2}]}},'$.data.items[*].n'),[1,2]);
-assert.deepEqual(ruleApi.extractMedia('<video src="/clip.mp4"></video><script>var player_test={"url":"https://media.example/stream.m3u8","encrypt":0}</script>','https://example.com'),['https://example.com/clip.mp4','https://media.example/stream.m3u8']);
+assert.deepEqual(ruleApi.extractMedia('<video src="/clip.mp4"></video><script>var player_test={"url":"https://media.example/stream.m3u8","encrypt":0}</script>','https://example.com').sort(),['https://example.com/clip.mp4','https://media.example/stream.m3u8']);
 const subSource=readFileSync('lib/subscriptions.ts','utf8').replace("import snapshot from './rules-snapshot.json';",'const snapshot='+readFileSync('lib/rules-snapshot.json','utf8')+';');
-const subscription=await import(mod(compile(subSource)));
-assert.equal(subscription.initialRules.length,86);
+const subscription=await import(mod(compile(subSource.replace("'./web-core'",JSON.stringify(coreUrl)))));
+assert.equal(subscription.initialRules.length,16);
 const a=subscription.initialRules.find(r=>r.enabled);
-const merged=subscription.mergeSubscribed([{...a,enabled:false},{...valid,name:'Custom'}],[{file:a.subscriptionFile,rule:{...a,version:'999'}}]);
+const merged=subscription.mergeSubscribed([{...a,enabled:false,userDisabled:true},{...valid,name:'Custom'}],[{file:a.subscriptionFile,rule:{...a,version:'999'}}]);
 assert.equal(merged[0].version,'999');assert.equal(merged[0].enabled,false);assert.equal(merged[1].name,'Custom');
-assert.ok(subscription.initialRules.filter(r=>r.deprecated).every(r=>!r.enabled));
+assert.ok(subscription.initialRules.every(r=>!r.deprecated&&r.enabled));
+assert.deepEqual(subscription.mergeSubscribed([{...a,deprecated:true},{...valid,name:'Custom'}],[],[]).map(r=>r.name),['Custom']);
+assert.equal(subscription.mergeSubscribed([{...a,enabled:false}],[{file:a.subscriptionFile,rule:a}])[0].enabled,true);
 const apiRule=JSON.parse(readFileSync('lib/rules-snapshot.json','utf8')).entries.find(e=>e.rule.name==='xfdmnext').rule;
 assert.equal(core.validateRule(apiRule).searchMode,'api');
 const requestSpec=ruleApi.apiRequest(apiRule,'search',{keyword:'a"b',source:'1'});assert.equal(JSON.parse(requestSpec.init.body).search_term,'a"b');
@@ -46,4 +52,25 @@ globalThis.fetch=async()=>{throw new Error('network unavailable');};r=await rout
 r=await route.GET(new Request('https://site.example/api/catalog?q=no-result'));assert.equal(r.status,502);
 r=await route.GET(new Request('https://site.example/api/subject?id=oops'));assert.equal(r.status,400);
 globalThis.fetch=originalFetch;
-console.log('PASS: 86 rules, subscription merge, API JSONPath/request, media extraction, URL/redirect/size limits, offline catalog');
+// Resolve validates upstream media before opening the site's own player.
+globalThis.fetch=async url=>String(url).startsWith('https://example.com/')?new Response('<script>var player_main={"url":"https://media.example/clip.mp4","encrypt":0}</script>',{headers:{'Content-Type':'text/html'}}):new Response('video bytes',{status:206,headers:{'Content-Type':'video/mp4'}});
+r=await route.POST(new Request('https://site.example/api/source',{method:'POST',headers:{origin:'https://site.example','Content-Type':'application/json'},body:JSON.stringify({rule:valid,url:'https://example.com/play/1',operation:'resolve'})}));assert.equal(r.status,200);const resolved=await r.json();assert.equal(resolved.mode,'video');assert.match(resolved.url,/^\/api\/media\?ticket=/);assert.equal(resolved.mediaType,'video');
+globalThis.fetch=async()=>new Response('<html><script src="/app.js"></script></html>',{headers:{'Content-Type':'text/html'}});
+const embedded=await playback.resolvePlayback(valid,'https://example.com/play/1');assert.equal(embedded.media,'');assert.equal(embedded.embed,'https://example.com/play/1');assert.equal(embedded.embedKind,'page');
+globalThis.fetch=async()=>new Response('challenge',{status:403});const blocked=await playback.resolvePlayback(valid,'https://example.com/play/1');assert.equal(blocked.media,'');assert.equal(blocked.embed,'');
+globalThis.fetch=originalFetch;
+// Signed proxy authorizes only server-declared media, rewrites HLS variants, keys and segments.
+const proxy=await playback.signedMediaUrl('https://media.example/master.m3u8','https://example.com/play/1');
+globalThis.fetch=async url=>new Response('#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="key.bin"\n#EXT-X-STREAM-INF:BANDWIDTH=5000\nvariant/playlist.m3u8\n',{headers:{'Content-Type':'application/vnd.apple.mpegurl'}});
+r=await route.GET(new Request('https://site.example'+proxy));if(r.status!==200)console.error('Proxy failure:',await r.clone().text());assert.equal(r.status,200);const playlist=await r.text();assert.ok(!playlist.includes('key.bin'));assert.match(playlist,/https:\/\/site\.example\/api\/media\?ticket=/);assert.equal((playlist.match(/ticket=/g)||[]).length,2);
+let called=false;globalThis.fetch=async url=>{called=true;return String(url).endsWith('playlist.m3u8')?new Response('#EXTM3U\n#EXTINF:6,\nseg.ts\n',{headers:{'Content-Type':'application/vnd.apple.mpegurl'}}):new Response('segment',{headers:{'Content-Type':'video/mp2t'}});};
+const variant=playlist.split('\n').find(line=>line.startsWith('https://'));r=await route.GET(new Request(variant));assert.equal(r.status,200);const childPlaylist=await r.text();const segment=childPlaylist.split('\n').find(line=>line.startsWith('https://'));r=await route.GET(new Request(segment));assert.equal(r.status,200);assert.equal(await r.text(),'segment');
+called=false;const corrupt=proxy.slice(0,-5)+'xxxxx';r=await route.GET(new Request('https://site.example'+corrupt));assert.equal(r.status,403);assert.equal(called,false);
+const old=await playback.signedMediaUrl('https://media.example/clip.mp4','https://example.com',Date.now()-1000);r=await route.GET(new Request('https://site.example'+old));assert.equal(r.status,403);
+const movie=await playback.signedMediaUrl('https://media.example/clip.mp4','https://example.com');let forwardedRange='';
+globalThis.fetch=async (url,init)=>{forwardedRange=init.headers.Range;return new Response('bytes',{status:206,headers:{'Content-Type':'video/mp4','Content-Range':'bytes 0-4/100','Accept-Ranges':'bytes'}});};
+r=await route.GET(new Request('https://site.example'+movie,{headers:{Range:'bytes=0-4'}}));assert.equal(r.status,206);assert.equal(forwardedRange,'bytes=0-4');assert.equal(r.headers.get('content-range'),'bytes 0-4/100');
+assert.ok(ruleApi.extractMedia('<script>var player_x={\"vod_data\":{\"name\":\"Nested\"},\"url\":\"https://media.example/clip.mp4\"}; evil()</script>','https://example.com').includes('https://media.example/clip.mp4'));
+assert.deepEqual(ruleApi.extractMedia("const player={ url: 'https://media.example/live.m3u8' }",'https://example.com'),['https://media.example/live.m3u8']);
+globalThis.fetch=originalFetch;
+console.log('PASS: active-rule pruning, source/API parsing, nested player declarations, signed HLS rewrite, range forwarding, tamper/expiry rejection, proxy bounds, offline catalog');

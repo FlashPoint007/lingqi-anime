@@ -16,6 +16,11 @@ const apiUrl=mod(compile(readFileSync('lib/rule-api.ts','utf8').replace("'./web-
 const subscriptionServerUrl=mod(compile(readFileSync('lib/rule-subscription-server.ts','utf8').replace("import snapshot from './rules-snapshot.json';",'const snapshot='+readFileSync('lib/rules-snapshot.json','utf8')+';')));
 source=source.replace("'../../../lib/rule-api'",JSON.stringify(apiUrl)).replace("'../../../lib/rule-subscription-server'",JSON.stringify(subscriptionServerUrl));
 const route=await import(mod(compile(source)));
+const subServer=await import(subscriptionServerUrl);
+const {gunzipSync}=await import('node:zlib');
+// Live integration fixture supplied optionally; ordinary checks remain portable.
+if(process.env.RULE_ARCHIVE_FIXTURE){const archive=gunzipSync(readFileSync(process.env.RULE_ARCHIVE_FIXTURE));const entries=subServer.parseRuleArchive(archive);assert.equal(entries.length,86);assert.ok(entries.some(e=>e.file==='xfdmnext.json'));assert.throws(()=>subServer.parseRuleArchive(archive.subarray(0,600)));console.log('PASS: complete real upstream archive and truncated archive rejection');}
+
 const ruleApi=await import(apiUrl);
 assert.deepEqual(ruleApi.selectJson({data:{items:[{n:1},{n:2}]}},'$.data.items[*].n'),[1,2]);
 assert.deepEqual(ruleApi.extractMedia('<video src="/clip.mp4"></video><script>var player_test={"url":"https://media.example/stream.m3u8","encrypt":0}</script>','https://example.com'),['https://example.com/clip.mp4','https://media.example/stream.m3u8']);

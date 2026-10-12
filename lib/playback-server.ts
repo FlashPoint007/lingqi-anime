@@ -16,11 +16,36 @@ async function fetchPublic(url:string,init:RequestInit={},stream=false){
   if(res.status>=300&&res.status<400){const location=res.headers.get('location');if(!location)throw new Error('源站重定向无地址');target=mediaUrl(location,target.href);continue;}return {res,url:target.href};
  }throw new Error('源站重定向过多');
 }
+function mediaReferer(referer:string):Record<string,string>{return new URL(referer).hostname==='next.xifanacg.com'?{}:{Referer:referer};}
 async function reachableMedia(url:string,referer:string){
- try{const {res}=await fetchPublic(url,{signal:AbortSignal.timeout(5000),headers:{'User-Agent':UA,Referer:referer,...(/\.m3u8(?:[?#]|$)/i.test(url)?{}:{Range:'bytes=0-4095'}),Accept:'*/*'}});if(!res.ok){await res.body?.cancel();return false;}
+ try{const {res}=await fetchPublic(url,{signal:AbortSignal.timeout(5000),headers:{'User-Agent':UA,...mediaReferer(referer),...(/\.m3u8(?:[?#]|$)/i.test(url)?{}:{Range:'bytes=0-4095'}),Accept:'*/*'}});if(!res.ok){await res.body?.cancel();return false;}
   if(/\.m3u8(?:[?#]|$)/i.test(url)){const text=await boundedText(res,1024*1024);return text.trimStart().startsWith('#EXTM3U');}
   const type=res.headers.get('content-type')||'';await res.body?.cancel();return !/text\/html|json|javascript|xml/i.test(type);
  }catch{return false;}
+}
+// Xifan Next publishes episode-scoped media through its anonymous playback API.
+// The key is the upstream public application key, also present in KazumiRules.
+const XIFAN_PUBLIC_KEY='sb_publishable_OBIVAWACIX6lPXrO98_z24_HcsmalkA';
+async function xifanMedia(page:string){
+ const u=new URL(page),ids=u.pathname.match(/^\/anime\/(\d+)\/play\/(\d+)\/?$/);
+ if(u.hostname!=='next.xifanacg.com'||!ids)return null;
+ const animeId=Number(ids[1]),episodeId=Number(ids[2]);
+ const request=async(path:string,body:unknown)=>{
+  const {res}=await fetchPublic('https://api.xifanacg.com/'+path,{method:'POST',headers:{'Content-Type':'application/json',apikey:XIFAN_PUBLIC_KEY,Accept:'application/json'},body:JSON.stringify(body)});
+  const text=await boundedText(res);let data:any;try{data=JSON.parse(text);}catch{throw new Error('稀饭播放接口未返回 JSON');}
+  if(!res.ok||data.ok===false)throw new Error('稀饭播放接口：'+(data.message||data.error_code||res.status));return data;
+ };
+ const detail=await request('rest/v1/rpc/get_anime_detail',{p_id:String(animeId)});
+ const sources=Array.isArray(detail.sources)?detail.sources:[];
+ const code=u.searchParams.get('source');
+ const source=sources.find((s:any)=>(!code||s.code===code)&&Array.isArray(s.episodes)&&s.episodes.some((e:any)=>e.id===episodeId));
+ if(!source||!Number.isSafeInteger(source.id))throw new Error('稀饭当前线路没有所选剧集');
+ const data=await request('functions/v1/issue-web-playback',{action:'fallback',episode_id:episodeId,source_id:source.id});
+ if(data.episode_id!==episodeId||data.anime_id!==animeId)throw new Error('稀饭返回的视频与所选剧集不一致');
+ const url=typeof data.url==='string'?mediaUrl(data.url).href:'';
+ if(!url||!isMedia(url))throw new Error('稀饭没有返回可播放的视频地址');
+ if(data.source_id!==undefined&&data.source_id!==source.id&&!data.candidates?.some((c:any)=>c.source_id===source.id&&c.url===data.url))throw new Error('稀饭返回的视频与所选线路不一致');
+ return url;
 }
 export async function resolvePlayback(rule:Rule,page:string,declared?:string){
  const source=mediaUrl(page);if(source.origin!==new URL(rule.baseURL).origin)throw new Error('播放页面必须属于所选源站');
@@ -32,6 +57,7 @@ export async function resolvePlayback(rule:Rule,page:string,declared?:string){
   const next=pending.shift()!;if(seen.has(next))continue;seen.add(next);
   try{
    if(isMedia(next)){directCandidate||=mediaUrl(next).href;if(await reachableMedia(next,page))return {media:mediaUrl(next).href,referer:page,verified:true};continue;}
+   const dynamic=await xifanMedia(next);if(dynamic){directCandidate=dynamic;candidateReferer=next;if(await reachableMedia(dynamic,next))return {media:dynamic,referer:next,verified:true};continue;}
    const {res,url}=await fetchPublic(next,{headers:{'User-Agent':String(rule.userAgent||UA),Accept:'text/html,application/json','Referer':String(rule.referer||page)}});
    if(!res.ok)throw new Error('源站响应 '+res.status);const html=await boundedText(res);
    if(/(?:cf-chl-|Verify you are human|<title>\s*Human Verification|captcha)/i.test(html)&&html.length<50000)throw new Error('源站要求验证，当前线路暂不可用');
@@ -63,7 +89,7 @@ async function readTicket(raw:string):Promise<Ticket>{
 }
 export async function proxyMedia(req:Request){
  let ticket:Ticket;try{ticket=await readTicket(new URL(req.url).searchParams.get('ticket')||'');}catch(e){return Response.json({error:(e as Error).message},{status:403});}
- const headers:Record<string,string>={'User-Agent':UA,Referer:ticket.referer,Accept:'*/*'};const range=req.headers.get('range');if(range){if(!/^bytes=\d+-\d*$/.test(range))return new Response('Invalid range',{status:416});headers.Range=range;}
+ const headers:Record<string,string>={'User-Agent':UA,...mediaReferer(ticket.referer),Accept:'*/*'};const range=req.headers.get('range');if(range){if(!/^bytes=\d+-\d*$/.test(range))return new Response('Invalid range',{status:416});headers.Range=range;}
  try{
   const {res,url}=await fetchPublic(ticket.url,{headers,method:req.method==='HEAD'?'HEAD':'GET'},true);if(!res.ok)return new Response('当前视频线路响应 '+res.status,{status:502});
   const type=res.headers.get('content-type')||'';const playlist=isMedia(url)&&/\.m3u8(?:[?#]|$)/i.test(url)||/mpegurl/i.test(type);

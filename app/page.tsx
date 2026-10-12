@@ -66,19 +66,19 @@ export default function Home(){
   let message='当前线路未解析到视频地址';
   for(const attempt of attempts){
    if(id!==playbackId.current)return;
-   try{const d=await api('/api/source',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rule:r,url:attempt.episode.url,operation:'resolve',source:attempt.episode.source}),signal:AbortSignal.timeout(22000)});if(id!==playbackId.current)return;
+   try{const d=await api('/api/source',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rule:r,url:attempt.episode.url,operation:'resolve',source:attempt.episode.source}),signal:AbortSignal.timeout(35000)});if(id!==playbackId.current)return;
     if(d.mode!=='video'){message=d.message||message;continue;}
     setActiveRoad(attempt.road);setPlayMode('video');setPlayer({subject:s,episode:attempt.episode.name,url:d.url,sourceUrl:attempt.episode.url,position,mediaUrl:d.mediaUrl,mediaType:d.mediaType});remember(s,attempt.episode,position);return;
    }catch(error){message=(error as Error).message;}
   }
-  if(id===playbackId.current){setPlayMode('unavailable');setPlayError(message+'；请在选集面板切换视频源。');}
+  if(id===playbackId.current){setPlayMode('unavailable');setPlayError(message+'。也可点击自动寻找其他源。');}
  }
  function startSource(s:Subject,e:Episode){const r=rules[ruleIdx];if(r)void resolveSource(s,{...e,source:chapterSource},r);}
  async function playEpisode(s:Subject,number:number){
   const id=++playbackId.current;setPlayError('');setPlayMode('resolving');setPlayer({subject:s,episode:'第 '+number+' 集',url:'',sourceUrl:'',position:0});
-  const candidates=rules.map((rule,index)=>({rule,index})).filter(e=>e.rule.enabled!==false&&!ruleCompatibility(e.rule)).slice(0,6);const deadline=Date.now()+25000;
-  const sourceRequest=(body:unknown)=>api('/api/source',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(Math.max(1000,Math.min(9000,deadline-Date.now())))});
-  let directFallback:{data:any;episode:Episode}|undefined;const failures:string[]=[];
+  const candidates=rules.map((rule,index)=>({rule,index})).filter(e=>e.rule.enabled!==false&&!ruleCompatibility(e.rule));const deadline=Date.now()+90000;
+  const sourceRequest=(body:unknown)=>api('/api/source',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(Math.max(1000,Math.min((body as any).operation==='resolve'?35000:12000,deadline-Date.now())))});
+  let directFallback:{data:any;episode:Episode;index:number;results:any[];lines:Road[];road:number;source:string}|undefined;const failures:string[]=[];
   for(const {rule,index} of candidates){
    if(Date.now()>deadline)break;
    if(id!==playbackId.current)return;
@@ -86,7 +86,7 @@ export default function Home(){
     const term=title(s);const url=rule.searchMode==='api'?rule.baseURL:rule.searchURL.replaceAll('@keyword',encodeURIComponent(term));
     const searchData=await sourceRequest({rule,url,search:true,operation:'search',keyword:term});if(id!==playbackId.current)return;
     const results=searchData.results||parseSearch(searchData.html,rule);if(!results.length)continue;
-    const normal=(value:string)=>value.toLowerCase().replace(/[\s\p{P}]/gu,'');const found=results.find((r:any)=>normal(r.name)===normal(term))||results[0];
+    const normal=(value:string)=>value.toLowerCase().replace(/[\s\p{P}]/gu,'');const names=[title(s),s.name].filter(Boolean).map(normal);const found=results.find((r:any)=>names.includes(normal(r.name)));if(!found){failures.push(rule.name+'：没有同名条目，请手动确认资源版本');continue;}
     const chapterData=await sourceRequest({rule,url:found.url,operation:'chapters',source:found.url});if(id!==playbackId.current)return;
     const lines:Road[]=chapterData.roads||parseChapters(chapterData.html,rule);
     for(let road=0;road<Math.min(lines.length,3);road++){
@@ -96,12 +96,12 @@ export default function Home(){
      if(data.mode==='video'&&data.verified){
       setRuleIdx(index);setSourceResults(results);setRoads(lines);setActiveRoad(road);setChapterSource(found.url);setPlayer({subject:s,episode:episode.name,url:data.url,sourceUrl:episode.url,position:0,mediaUrl:data.mediaUrl,mediaType:data.mediaType});setPlayMode('video');setPlayError('');lastProgress.current=0;remember(s,{...episode,source:found.url},0);return;
      }
-     if(data.mode==='video'&&!directFallback)directFallback={data,episode:{...episode,source:found.url}};
+     if(data.mode==='video'&&!directFallback)directFallback={data,episode:{...episode,source:found.url},index,results,lines,road,source:found.url};
     }
    }catch(error){failures.push((error as Error).message);}
   }
   if(id!==playbackId.current)return;
-  if(directFallback){const {data,episode}=directFallback;setPlayer({subject:s,episode:episode.name,url:data.url,sourceUrl:episode.url,position:0,mediaUrl:data.mediaUrl,mediaType:data.mediaType});setPlayMode('video');setPlayError('此线路暂未通过本站连接检查；播放器会尝试当前浏览器直连，仍失败时请更换源。');remember(s,episode,0);}
+  if(directFallback){const {data,episode,index,results,lines,road,source}=directFallback;setRuleIdx(index);setSourceResults(results);setRoads(lines);setActiveRoad(road);setChapterSource(source);setPlayer({subject:s,episode:episode.name,url:data.url,sourceUrl:episode.url,position:0,mediaUrl:data.mediaUrl,mediaType:data.mediaType});setPlayMode('video');setPlayError('此线路暂未通过本站连接检查；播放器会尝试当前浏览器直连，仍失败时请更换源。');remember(s,episode,0);}
   else {setPlayMode('unavailable');setPlayError('尚未找到本集的可播放线路。请在选集面板手动搜索或更换视频源。'+(failures[0]?' '+failures[0]:''));}
  }
  function start(s:Subject,e:Episode,position=0){let u:URL;try{u=new URL(e.url);if(u.protocol!=='https:')throw new Error();}catch{setPlayError('请输入有效的 HTTPS 地址');return;}

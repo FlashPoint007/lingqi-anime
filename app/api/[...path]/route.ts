@@ -40,7 +40,7 @@ export async function POST(req:Request) {
    const page=publicUrl(String(body.url));if(page.origin!==publicUrl(rule.baseURL).origin)throw new Error('播放页面必须与规则同源');
    let declared:string|undefined;
    if(rule.searchMode==='api'&&body.source){
-    const spec=apiRequest(rule,'chapters',{source:String(body.source).slice(0,200),keyword:''});const response=await fetch(spec.url,{...spec.init,redirect:'error',signal:AbortSignal.timeout(12000)});if(!response.ok)throw new Error('源站 API 响应 '+response.status);
+    const spec=apiRequest(rule,'chapters',{source:String(body.source).slice(0,200),keyword:''});const response=await fetch(spec.url,{...spec.init,redirect:'manual',signal:AbortSignal.timeout(12000)});if(!response.ok)throw new Error('源站 API 响应 '+response.status);
     const data=JSON.parse(await boundedText(response));const roads=apiChapters(data,spec.config,String(body.source));declared=roads.flatMap(road=>road.episodes).find(ep=>ep.url===page.href)?.mediaUrl;
    }
    const resolved=await resolvePlayback(rule,page.href,declared);
@@ -49,7 +49,7 @@ export async function POST(req:Request) {
   }
   if(rule.searchMode==='api'&&(body.operation==='search'||body.operation==='chapters')){
    const operation=body.operation as 'search'|'chapters';const vars={keyword:String(body.keyword||'').slice(0,120),source:String(body.source||'').slice(0,200)};const request=apiRequest(rule,operation,vars);
-   const response=await fetch(request.url,{...request.init,redirect:'error',signal:AbortSignal.timeout(12000)});if(!response.ok)throw new Error('源站 API 响应 '+response.status);const data=JSON.parse(await boundedText(response));return json(operation==='search'?{results:apiSearch(data,request.config)}:{roads:apiChapters(data,request.config,vars.source)});
+   const response=await fetch(request.url,{...request.init,redirect:'manual',signal:AbortSignal.timeout(12000)});if(!response.ok)throw new Error('源站 API 响应 '+response.status);const data=JSON.parse(await boundedText(response));return json(operation==='search'?{results:apiSearch(data,request.config)}:{roads:apiChapters(data,request.config,vars.source)});
   }
   let target=publicUrl(body.url); const base=publicUrl(rule.baseURL);
   if(target.origin!==base.origin) return json({error:'地址必须与规则站点同源'},400);

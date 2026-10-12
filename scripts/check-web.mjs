@@ -67,6 +67,12 @@ r=await route.GET(new Request('https://site.example/api/catalog?q=no-result'));a
 r=await route.GET(new Request('https://site.example/api/catalog?page=2'));assert.equal(r.status,502);
 r=await route.GET(new Request('https://site.example/api/subject?id=oops'));assert.equal(r.status,400);
 globalThis.fetch=originalFetch;
+// Workers reject redirect:"error" before fetching; API routes use manual and reject redirects.
+globalThis.fetch=async(url,init)=>{assert.equal(init.redirect,'manual');return Response.json([]);};
+let apiResponse=await route.POST(new Request('https://site.example/api/source',{method:'POST',headers:{origin:'https://site.example'},body:JSON.stringify({rule:apiRule,url:apiRule.baseURL,operation:'search',keyword:'金牌得主'})}));assert.equal(apiResponse.status,200);
+globalThis.fetch=async(url,init)=>{assert.equal(init.redirect,'manual');return new Response(null,{status:302,headers:{Location:'https://other.example/'}});};
+apiResponse=await route.POST(new Request('https://site.example/api/source',{method:'POST',headers:{origin:'https://site.example'},body:JSON.stringify({rule:apiRule,url:apiRule.baseURL,operation:'search',keyword:'Test'})}));assert.equal(apiResponse.status,400);
+globalThis.fetch=originalFetch;
 // Resolve validates upstream media before opening the site's own player.
 globalThis.fetch=async url=>String(url).startsWith('https://example.com/')?new Response('<script>var player_main={"url":"https://media.example/clip.mp4","encrypt":0}</script>',{headers:{'Content-Type':'text/html'}}):new Response('video bytes',{status:206,headers:{'Content-Type':'video/mp4'}});
 r=await route.POST(new Request('https://site.example/api/source',{method:'POST',headers:{origin:'https://site.example','Content-Type':'application/json'},body:JSON.stringify({rule:valid,url:'https://example.com/play/1',operation:'resolve'})}));assert.equal(r.status,200);const resolved=await r.json();assert.equal(resolved.mode,'video');assert.match(resolved.url,/^\/api\/media\?ticket=/);assert.equal(resolved.mediaType,'video');
@@ -77,6 +83,20 @@ r=await route.POST(new Request('https://site.example/api/source',{method:'POST',
 // Nested source players are inspected server-side; only the resolved media is returned.
 globalThis.fetch=async url=>String(url)==='https://example.com/play/1'?new Response('<iframe src="https://player.example/watch?id=1"></iframe>',{headers:{'Content-Type':'text/html'}}):String(url).startsWith('https://player.example/')?new Response('<video src="https://media.example/clip.mp4"></video>',{headers:{'Content-Type':'text/html'}}):new Response('bytes',{status:206,headers:{'Content-Type':'video/mp4'}});
 const nested=await playback.resolvePlayback(valid,'https://example.com/play/1');assert.equal(nested.media,'https://media.example/clip.mp4');assert.equal(nested.referer,'https://player.example/watch?id=1');assert.ok(nested.verified);assert.ok(!('embed' in nested));
+// Xifan links are resolved through its public episode-signing API, not page embedding.
+const xfPage='https://next.xifanacg.com/anime/2918/play/42586?source=AL';let issuedBody;
+globalThis.fetch=async(url,init)=>{
+ if(String(url).endsWith('/get_anime_detail'))return Response.json({sources:[{id:4,code:'xfxf1',episodes:[{id:42586}]},{id:1,code:'AL',episodes:[{id:42586}]}]});
+ if(String(url).endsWith('/issue-web-playback')){issuedBody=JSON.parse(init.body);return Response.json({ok:true,anime_id:2918,episode_id:42586,url:'https://media.example/clip.mp4'});}
+ assert.equal(init.headers.Referer,undefined);return new Response('bytes',{status:206,headers:{'Content-Type':'video/mp4'}});
+};
+const xf=await playback.resolvePlayback({...valid,baseURL:'https://next.xifanacg.com'},xfPage);assert.equal(xf.media,'https://media.example/clip.mp4');assert.ok(xf.verified);assert.deepEqual(issuedBody,{action:'fallback',episode_id:42586,source_id:1});
+// A Moonci player declaration can hand off to this adapter without fetching Next's HTML.
+globalThis.fetch=async(url,init)=>String(url).startsWith('https://example.com/')?new Response('<script>var player_main={"url":"'+xfPage+'","encrypt":0}</script>'):String(url).endsWith('/get_anime_detail')?Response.json({sources:[{id:1,code:'AL',episodes:[{id:42586}]}]}):String(url).endsWith('/issue-web-playback')?Response.json({ok:true,anime_id:2918,episode_id:42586,url:'https://media.example/clip.mp4'}):new Response('bytes',{status:206,headers:{'Content-Type':'video/mp4'}});
+assert.equal((await playback.resolvePlayback(valid,'https://example.com/play/1')).media,'https://media.example/clip.mp4');
+globalThis.fetch=async url=>String(url).endsWith('/get_anime_detail')?Response.json({sources:[{id:1,code:'AL',episodes:[{id:42586}]}]}):Response.json({ok:true,anime_id:2918,episode_id:42587,url:'https://media.example/clip.mp4'});
+const wrong=await playback.resolvePlayback({...valid,baseURL:'https://next.xifanacg.com'},xfPage);assert.equal(wrong.media,'');assert.match(wrong.reason,/所选剧集不一致/);
+const xfChapters=ruleApi.apiChapters({sources:[{name:'Alternate',code:'AL',episodes:[{id:42586,title:'Episode 1'}]}]},apiRule.chapterApiConfig,'2918');assert.equal(new URL(xfChapters[0].episodes[0].url).searchParams.get('source'),'AL');
 globalThis.fetch=originalFetch;
 // Signed proxy authorizes only server-declared media, rewrites HLS variants, keys and segments.
 const proxy=await playback.signedMediaUrl('https://media.example/master.m3u8','https://example.com/play/1');
@@ -91,5 +111,6 @@ globalThis.fetch=async (url,init)=>{forwardedRange=init.headers.Range;return new
 r=await route.GET(new Request('https://site.example'+movie,{headers:{Range:'bytes=0-4'}}));assert.equal(r.status,206);assert.equal(forwardedRange,'bytes=0-4');assert.equal(r.headers.get('content-range'),'bytes 0-4/100');
 assert.ok(ruleApi.extractMedia('<script>var player_x={\"vod_data\":{\"name\":\"Nested\"},\"url\":\"https://media.example/clip.mp4\"}; evil()</script>','https://example.com').includes('https://media.example/clip.mp4'));
 assert.deepEqual(ruleApi.extractMedia("const player={ url: 'https://media.example/live.m3u8' }",'https://example.com'),['https://media.example/live.m3u8']);
+const xfTicket=await playback.signedMediaUrl('https://media.example/clip.mp4',xfPage);globalThis.fetch=async(url,init)=>{assert.equal(init.headers.Referer,undefined);return new Response('bytes',{headers:{'Content-Type':'video/mp4'}});};assert.equal((await route.GET(new Request('https://site.example'+xfTicket))).status,200);
 globalThis.fetch=originalFetch;
 console.log('PASS: active-rule pruning, source/API parsing, nested player declarations, signed HLS rewrite, range forwarding, tamper/expiry rejection, proxy bounds, offline catalog');

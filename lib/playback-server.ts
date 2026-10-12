@@ -24,26 +24,24 @@ async function reachableMedia(url:string,referer:string){
 }
 export async function resolvePlayback(rule:Rule,page:string,declared?:string){
  const source=mediaUrl(page);if(source.origin!==new URL(rule.baseURL).origin)throw new Error('播放页面必须属于所选源站');
- const pending=[page],seen=new Set<string>();let embed='',embedKind:'player'|'page'='page',pageLoaded=false,directCandidate='';const errors:string[]=[];const deadline=Date.now()+20000;
+ const pending=[page],seen=new Set<string>();let directCandidate='',candidateReferer=page;const errors:string[]=[];const deadline=Date.now()+20000;
  // A passed API URL is accepted only by the route after finding it in upstream data.
- if(declared&&isMedia(declared)){directCandidate=mediaUrl(declared).href;if(await reachableMedia(declared,page))return {media:directCandidate,referer:page,embed:'',verified:true};}
+ if(declared&&isMedia(declared)){directCandidate=mediaUrl(declared).href;if(await reachableMedia(declared,page))return {media:directCandidate,referer:page,verified:true};}
  for(let depth=0;depth<4&&pending.length;depth++){
   if(Date.now()>deadline)break;
   const next=pending.shift()!;if(seen.has(next))continue;seen.add(next);
   try{
-   if(isMedia(next)){directCandidate||=mediaUrl(next).href;if(await reachableMedia(next,page))return {media:mediaUrl(next).href,referer:page,embed,verified:true};continue;}
+   if(isMedia(next)){directCandidate||=mediaUrl(next).href;if(await reachableMedia(next,page))return {media:mediaUrl(next).href,referer:page,verified:true};continue;}
    const {res,url}=await fetchPublic(next,{headers:{'User-Agent':String(rule.userAgent||UA),Accept:'text/html,application/json','Referer':String(rule.referer||page)}});
    if(!res.ok)throw new Error('源站响应 '+res.status);const html=await boundedText(res);
-   if(/(?:cf-chl-|Verify you are human|captcha)/i.test(html)&&html.length<10000)throw new Error('源站要求验证，当前线路暂不可用');
-   if(next===page)pageLoaded=true;
-   for(const media of extractMedia(html,url).slice(0,3)){directCandidate||=media;if(await reachableMedia(media,url))return {media,referer:url,embed,verified:true};}
+   if(/(?:cf-chl-|Verify you are human|<title>\s*Human Verification|captcha)/i.test(html)&&html.length<50000)throw new Error('源站要求验证，当前线路暂不可用');
+   for(const media of extractMedia(html,url).slice(0,3)){if(!directCandidate){directCandidate=media;candidateReferer=url;}if(await reachableMedia(media,url))return {media,referer:url,verified:true};}
    const links=playerLinks(html,url).filter(link=>!isMedia(link));
    // Only follow declared player links, never arbitrary links or page scripts.
-   for(const link of links){if(/(?:comment|ads?|analytics|google)/i.test(new URL(link).pathname))continue;if(!embed){embed=link;embedKind='player';}if(pending.length<3)pending.push(link);}
+   for(const link of links){if(/(?:comment|ads?|analytics|google)/i.test(new URL(link).pathname))continue;if(pending.length<3)pending.push(link);}
   }catch(e){errors.push((e as Error).message);}
  }
- if(!embed&&pageLoaded)embed=page;
- return {media:directCandidate,verified:false,referer:page,embed,embedKind,reason:errors[0]||'此线路没有可访问的直链，将在本站嵌入源站播放器'};
+ return {media:directCandidate,verified:false,referer:candidateReferer,reason:errors[0]||'此线路未解析到可播放的视频地址，请切换线路或视频源'};
 }
 
 type Ticket={url:string;referer:string;expires:number};

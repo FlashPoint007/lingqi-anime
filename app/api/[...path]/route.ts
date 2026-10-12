@@ -44,7 +44,7 @@ export async function POST(req:Request) {
     const data=JSON.parse(await boundedText(response));const roads=apiChapters(data,spec.config,String(body.source));declared=roads.flatMap(road=>road.episodes).find(ep=>ep.url===page.href)?.mediaUrl;
    }
    const resolved=await resolvePlayback(rule,page.href,declared);
-   if(!resolved.media)return json({mode:resolved.embed?'embed':'unavailable',embed:resolved.embed,embedKind:resolved.embedKind,sourceUrl:page.href,message:resolved.reason||'当前线路暂不能在本站解析，请切换线路或视频源'});
+   if(!resolved.media)return json({mode:'unavailable',sourceUrl:page.href,message:resolved.reason||'当前线路暂不能在本站解析，请切换线路或视频源'});
    return json({mode:'video',url:await signedMediaUrl(resolved.media,resolved.referer),mediaUrl:resolved.media,sourceUrl:page.href,verified:resolved.verified,mediaType:/\.m3u8(?:[?#]|$)/i.test(resolved.media)?'hls':'video'});
   }
   if(rule.searchMode==='api'&&(body.operation==='search'||body.operation==='chapters')){

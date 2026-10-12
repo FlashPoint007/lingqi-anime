@@ -52,7 +52,7 @@ export default function Home(){
  function toggle(s:Subject){setCollection(old=>old.some(x=>x.id===s.id)?old.filter(x=>x.id!==s.id):[s,...old]);}
  function navigate(id:string){setView(id);setError('');}
  function closePlayer(){playbackId.current++;setPlayer(null);if(location.hash.startsWith('#watch/')){if(window.history.state?.lingqiWatch)window.history.back();else window.history.replaceState(null,'',location.pathname+location.search);}}
- function search(e:React.FormEvent){e.preventDefault();setOffset(0);setActiveQuery(query.trim());setTag('');setCategory('');setView('discover');}
+ function search(e:React.FormEvent){e.preventDefault();setOffset(0);setActiveQuery(query.trim());setTag('');setCategory('');setCatalogYear('');setView('discover');}
  function importRule(text=ruleText){try{const incoming=parseRules(text);setRules(old=>{const map=new Map(old.map(r=>[r.name,r]));incoming.forEach(r=>map.set(r.name,r));return [...map.values()];});setRuleText('');setRuleError('');setToast('已导入 '+incoming.length+' 条规则');}catch(e){setRuleError((e as Error).message);}}
  async function loadShop(){setShopBusy(true);setRuleError('');try{setShop((await api('/api/rules')).files.map((e:any)=>e.file));}catch(e){setRuleError((e as Error).message);}finally{setShopBusy(false);}}
  async function install(name:string){setShopBusy(true);try{importRule(JSON.stringify((await api('/api/rules?name='+encodeURIComponent(name))).rule));}catch(e){setRuleError((e as Error).message);}finally{setShopBusy(false);}}

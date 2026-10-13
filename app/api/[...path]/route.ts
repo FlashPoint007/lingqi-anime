@@ -39,13 +39,13 @@ export async function POST(req:Request) {
   if(body.operation==='resolve'){
    const page=publicUrl(String(body.url));if(page.origin!==publicUrl(rule.baseURL).origin)throw new Error('播放页面必须与规则同源');
    let declared:string|undefined;
-   if(rule.searchMode==='api'&&body.source){
+   if(rule.searchMode==='api'&&body.source&&page.hostname!=='next.xifanacg.com'){
     const spec=apiRequest(rule,'chapters',{source:String(body.source).slice(0,200),keyword:''});const response=await fetch(spec.url,{...spec.init,redirect:'manual',signal:AbortSignal.timeout(12000)});if(!response.ok)throw new Error('源站 API 响应 '+response.status);
     const data=JSON.parse(await boundedText(response));const roads=apiChapters(data,spec.config,String(body.source));declared=roads.flatMap(road=>road.episodes).find(ep=>ep.url===page.href)?.mediaUrl;
    }
    const resolved=await resolvePlayback(rule,page.href,declared);
    if(!resolved.media)return json({mode:'unavailable',sourceUrl:page.href,message:resolved.reason||'当前线路暂不能在本站解析，请切换线路或视频源'});
-   return json({mode:'video',url:await signedMediaUrl(resolved.media,resolved.referer),mediaUrl:resolved.media,sourceUrl:page.href,verified:resolved.verified,mediaType:/\.m3u8(?:[?#]|$)/i.test(resolved.media)?'hls':'video'});
+   return json({mode:'video',url:await signedMediaUrl(resolved.media,resolved.referer),mediaUrl:resolved.media,sourceUrl:page.href,verified:resolved.verified,preferDirect:new URL(resolved.referer).hostname==='next.xifanacg.com'&&!/\.m3u8(?:[?#]|$)/i.test(resolved.media),mediaType:/\.m3u8(?:[?#]|$)/i.test(resolved.media)?'hls':'video'});
   }
   if(rule.searchMode==='api'&&(body.operation==='search'||body.operation==='chapters')){
    const operation=body.operation as 'search'|'chapters';const vars={keyword:String(body.keyword||'').slice(0,120),source:String(body.source||'').slice(0,200)};const request=apiRequest(rule,operation,vars);

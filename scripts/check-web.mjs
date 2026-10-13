@@ -32,6 +32,8 @@ source=source.replace("'../../../lib/rule-api'",JSON.stringify(apiUrl)).replace(
 const playbackUrl=mod(compile(readFileSync('lib/playback-server.ts','utf8').replace("'./rule-api'",JSON.stringify(apiUrl)).replace("'./web-core'",JSON.stringify(coreUrl))));
 source=source.replace("'../../../lib/playback-server'",JSON.stringify(playbackUrl));
 const playback=await import(playbackUrl);
+const client=await import(mod(compile(readFileSync('lib/playback-client.ts','utf8'))));
+const gap=[{name:'First',url:'https://example.com/1',number:1},{name:'Third',url:'https://example.com/3',number:3}];assert.equal(client.episodeAtNumber(gap,2),undefined);assert.equal(client.episodeAtNumber(gap,3).url,'https://example.com/3');assert.equal(client.episodeNumber({name:'第01话',url:''},7),1);assert.equal(client.episodeNumber({name:'Chapter 99',url:'',number:2},0),2);assert.deepEqual(client.playbackUrls({url:'/api/media?ticket=test',mediaUrl:'https://media.example/clip.mp4',preferDirect:true}),{url:'https://media.example/clip.mp4',fallbackUrl:'/api/media?ticket=test'});assert.equal(client.playbackUrls({url:'/api/media?ticket=test',mediaUrl:'https://media.example/stream.m3u8'}).url,'/api/media?ticket=test');
 const route=await import(mod(compile(source)));
 process.env.LINGQI_MEDIA_SECRET='test-only-key-not-used-in-production';
 const subServer=await import(subscriptionServerUrl);
@@ -91,6 +93,8 @@ globalThis.fetch=async(url,init)=>{
  assert.equal(init.headers.Referer,undefined);return new Response('bytes',{status:206,headers:{'Content-Type':'video/mp4'}});
 };
 const xf=await playback.resolvePlayback({...valid,baseURL:'https://next.xifanacg.com'},xfPage);assert.equal(xf.media,'https://media.example/clip.mp4');assert.ok(xf.verified);assert.deepEqual(issuedBody,{action:'fallback',episode_id:42586,source_id:1});
+let detailRequests=0;globalThis.fetch=async(url,init)=>{if(String(url).endsWith('/get_anime_detail')){detailRequests++;return Response.json({sources:[{id:1,code:'AL',episodes:[{id:42586}]}]});}if(String(url).endsWith('/issue-web-playback'))return Response.json({ok:true,anime_id:2918,episode_id:42586,url:'https://media.example/clip.mp4'});assert.equal(init.headers.Referer,undefined);return new Response('bytes',{status:206,headers:{'Content-Type':'video/mp4'}});};
+const preferred=await route.POST(new Request('https://site.example/api/source',{method:'POST',headers:{origin:'https://site.example'},body:JSON.stringify({rule:apiRule,url:xfPage,source:'2918',operation:'resolve'})}));const preferredData=await preferred.json();assert.equal(preferredData.preferDirect,true);assert.equal(preferredData.mode,'video');assert.equal(detailRequests,1);
 // A Moonci player declaration can hand off to this adapter without fetching Next's HTML.
 globalThis.fetch=async(url,init)=>String(url).startsWith('https://example.com/')?new Response('<script>var player_main={"url":"'+xfPage+'","encrypt":0}</script>'):String(url).endsWith('/get_anime_detail')?Response.json({sources:[{id:1,code:'AL',episodes:[{id:42586}]}]}):String(url).endsWith('/issue-web-playback')?Response.json({ok:true,anime_id:2918,episode_id:42586,url:'https://media.example/clip.mp4'}):new Response('bytes',{status:206,headers:{'Content-Type':'video/mp4'}});
 assert.equal((await playback.resolvePlayback(valid,'https://example.com/play/1')).media,'https://media.example/clip.mp4');

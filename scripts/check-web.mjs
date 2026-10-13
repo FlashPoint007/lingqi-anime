@@ -11,6 +11,26 @@ assert.equal(core.parseRules('kazumi://'+Buffer.from(JSON.stringify(valid)).toSt
 assert.throws(()=>core.validateRule({...valid,searchURL:'https://other.example/search'}));
 assert.throws(()=>core.validateRule({...valid,searchMode:'api'}));
 for(const bad of ['http://example.com','https://127.0.0.1','https://[::1]','https://localhost','https://metadata.internal','https://user:pass@example.com','https://example.com:444'])assert.throws(()=>core.publicUrl(bad));
+// Page-relative episode links must retain their directory; fragments are not episodes.
+assert.equal(core.link({nodeType:2,nodeValue:'01.html'},'https://example.com/vodplay/series.html'),'https://example.com/vodplay/01.html');
+assert.equal(core.link({nodeType:2,nodeValue:'#sort'},'https://example.com/series'),null);
+assert.match(core.sourcePageError('<title>404 Not Found</title>'),/404/);
+assert.match(core.sourcePageError('<title>Site Unavailable</title>'),/不可访问/);
+assert.equal(core.sourcePageError('<title>Anime catalog</title>'), '');
+const availability=await import(mod(compile(readFileSync('lib/source-availability.ts','utf8').replace("'./web-core'",JSON.stringify(coreUrl)))));
+assert.ok(availability.matchesTitle('战斗之魂［Re］绝界之空',['战斗之魂[Re] 绝界之空']));
+assert.equal(availability.matchesTitle('Example 第二季',['Example']),false);
+const signal=new AbortController().signal;
+let operations=[];
+const available=await availability.checkSource(valid,['Example'],signal,async body=>{operations.push(body.operation);return body.operation==='search'?{results:[{name:'Example',url:'https://example.com/catalog/1'}]}:{roads:[{name:'Line',episodes:[{name:'1',url:'https://example.com/play/1'}]}]};});
+assert.equal(available.state,'found');assert.deepEqual(operations,['search','chapters']);
+assert.equal((await availability.checkSource(valid,['Example'],signal,async()=>({results:[]}))).state,'not-found');
+assert.equal((await availability.checkSource(valid,['Example'],signal,async()=>{throw Error('源站响应 404');})).state,'error');
+assert.equal((await availability.checkSource(valid,['Example'],signal,async()=>({results:[{name:'Example 第二季',url:'https://example.com/2'}]}))).state,'possible');
+const duplicated=await availability.checkSource(valid,['Example'],signal,async body=>body.operation==='search'?{results:[{name:'Example',url:'https://example.com/deleted'},{name:'Example',url:'https://example.com/current'}]}:body.url.endsWith('deleted')?Promise.reject(Error('404')):{roads:[{name:'Line',episodes:[{name:'1',url:'https://example.com/play/1'}]}]});assert.equal(duplicated.source,'https://example.com/current');
+let currentChecks=0,maxChecks=0,totalChecks=0;
+await availability.checkSources(Array.from({length:16},(_,i)=>i),signal,async()=>{currentChecks++;maxChecks=Math.max(maxChecks,currentChecks);await new Promise(resolve=>setTimeout(resolve,1));totalChecks++;currentChecks--;});assert.equal(maxChecks,3);assert.equal(totalChecks,16);
+const stopped=new AbortController();let stoppedChecks=0;await availability.checkSources([1,2,3,4,5],stopped.signal,async()=>{stoppedChecks++;stopped.abort();});assert.equal(stoppedChecks,1);
 const catalogUrl=mod(compile(readFileSync('lib/catalog.ts','utf8')));
 const catalog=await import(catalogUrl);
 assert.deepEqual(catalog.seasonRange(2026,1),{start:'2025-12-01',end:'2026-03-01'});
@@ -81,6 +101,7 @@ r=await route.POST(new Request('https://site.example/api/source',{method:'POST',
 globalThis.fetch=async()=>new Response('<html><script src="/app.js"></script></html>',{headers:{'Content-Type':'text/html'}});
 const unavailable=await playback.resolvePlayback(valid,'https://example.com/play/1');assert.equal(unavailable.media,'');assert.ok(!('embed' in unavailable));
 globalThis.fetch=async()=>new Response('challenge',{status:403});const blocked=await playback.resolvePlayback(valid,'https://example.com/play/1');assert.equal(blocked.media,'');assert.ok(!('embed' in blocked));
+globalThis.fetch=async()=>new Response('not found',{status:404});const missing=await playback.resolvePlayback(valid,'https://example.com/play/1');assert.equal(missing.media,'');assert.match(missing.reason,/播放页不存在（404）/);
 r=await route.POST(new Request('https://site.example/api/source',{method:'POST',headers:{origin:'https://site.example','Content-Type':'application/json'},body:JSON.stringify({rule:valid,url:'https://example.com/play/1',operation:'resolve'})}));const cannotPlay=await r.json();assert.equal(cannotPlay.mode,'unavailable');assert.ok(!('embed' in cannotPlay));
 // Nested source players are inspected server-side; only the resolved media is returned.
 globalThis.fetch=async url=>String(url)==='https://example.com/play/1'?new Response('<iframe src="https://player.example/watch?id=1"></iframe>',{headers:{'Content-Type':'text/html'}}):String(url).startsWith('https://player.example/')?new Response('<video src="https://media.example/clip.mp4"></video>',{headers:{'Content-Type':'text/html'}}):new Response('bytes',{status:206,headers:{'Content-Type':'video/mp4'}});

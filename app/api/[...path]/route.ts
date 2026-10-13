@@ -1,6 +1,6 @@
 import {ruleManifest,ruleBatch} from '../../../lib/rule-subscription-server';
 import {apiRequest,apiSearch,apiChapters,extractMedia} from '../../../lib/rule-api';
-import {publicUrl,validateRule} from '../../../lib/web-core';
+import {publicUrl,validateRule,sourcePageError} from '../../../lib/web-core';
 import {browseCatalog,seasonCatalog} from '../../../lib/catalog-server';
 import {boundedText,proxyMedia,resolvePlayback,signedMediaUrl} from '../../../lib/playback-server';
 const UA='KazumiWeb/0.1 (+https://github.com/Predidit/Kazumi)';
@@ -67,6 +67,7 @@ export async function POST(req:Request) {
   while(true){const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>2*1024*1024){await reader.cancel();throw new Error('源站页面超过 2 MB');}chunks.push(value);}
   const bytes=new Uint8Array(size);let at=0;for(const c of chunks){bytes.set(c,at);at+=c.length;}
   const charset=type.match(/charset=([^;\s]+)/i)?.[1]||'utf-8';let html:string;try{html=new TextDecoder(charset).decode(bytes);}catch{html=new TextDecoder().decode(bytes);}
+  const pageError=sourcePageError(html);if(pageError)throw new Error(pageError);
   return json({html,url:target.href,media:extractMedia(html,target.href)});
  }catch(e){return json({error:e instanceof Error?e.message:'源站访问失败'},400);}
 }

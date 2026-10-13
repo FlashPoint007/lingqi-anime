@@ -1,5 +1,5 @@
 import {extractMedia,isMedia,mediaUrl,playerLinks} from './rule-api';
-import type {Rule} from './web-core';
+import {sourcePageError,type Rule} from './web-core';
 
 const UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
 export async function boundedText(response:Response,max=2*1024*1024){
@@ -59,8 +59,8 @@ export async function resolvePlayback(rule:Rule,page:string,declared?:string){
    if(isMedia(next)){directCandidate||=mediaUrl(next).href;if(await reachableMedia(next,page))return {media:mediaUrl(next).href,referer:page,verified:true};continue;}
    const dynamic=await xifanMedia(next);if(dynamic){directCandidate=dynamic;candidateReferer=next;if(await reachableMedia(dynamic,next))return {media:dynamic,referer:next,verified:true};continue;}
    const {res,url}=await fetchPublic(next,{headers:{'User-Agent':String(rule.userAgent||UA),Accept:'text/html,application/json','Referer':String(rule.referer||page)}});
-   if(!res.ok)throw new Error('源站响应 '+res.status);const html=await boundedText(res);
-   if(/(?:cf-chl-|Verify you are human|<title>\s*Human Verification|captcha)/i.test(html)&&html.length<50000)throw new Error('源站要求验证，当前线路暂不可用');
+   if(!res.ok)throw new Error(res.status===404?'源站播放页不存在（404），该条目或线路可能已失效':'源站响应 '+res.status);const html=await boundedText(res);
+   const pageError=sourcePageError(html);if(pageError)throw new Error(pageError);
    for(const media of extractMedia(html,url).slice(0,3)){if(!directCandidate){directCandidate=media;candidateReferer=url;}if(await reachableMedia(media,url))return {media,referer:url,verified:true};}
    const links=playerLinks(html,url).filter(link=>!isMedia(link));
    // Only follow declared player links, never arbitrary links or page scripts.

@@ -30,6 +30,14 @@ export function parseRules(text:string):Rule[] {
   if(list.length>100) throw new Error('一次最多导入 100 条规则');
   return list.map(validateRule);
 }
+export function sourcePageError(html:string):string {
+ if(html.length>50000)return '';
+ const heading=html.match(/<(?:title|h1)[^>]*>([^<]*)</i)?.[1]?.trim()||'';
+ if(/(?:404|not found|页面不存在|页面未找到)/i.test(heading))return '源站返回了不存在的页面（404）';
+ if(/(?:site unavailable|service unavailable|access denied|forbidden)/i.test(heading))return '源站当前不可访问，请稍后重试或更换视频源';
+ if(/(?:cf-chl-|Verify you are human|<title>\s*Human Verification|captcha)/i.test(html))return '源站要求验证，当前无法检测资源';
+ return '';
+}
 export function xpath(context:Node,expression:string):Node[] {
   const doc=context.nodeType===9?context as Document:context.ownerDocument!;
   // Kazumi accepts // as the chapter document, and /self::* relative to a road.
@@ -38,14 +46,14 @@ export function xpath(context:Node,expression:string):Node[] {
 }
 export function link(node:Node,base:string):string|null {
   const href=node.nodeType===2?node.nodeValue:(node as Element).getAttribute?.('href');
-  if(!href) return null;
+  if(!href?.trim()||href.trim().startsWith('#')) return null;
   try {const u=new URL(href,base);if(u.protocol==='http:'&&u.hostname===new URL(base).hostname)u.protocol='https:';return u.protocol==='https:'?u.href:null;} catch{return null;}
 }
-export function parseSearch(html:string,r:Rule):{name:string;url:string}[] {
+export function parseSearch(html:string,r:Rule,pageUrl=r.baseURL):{name:string;url:string}[] {
   const doc=new DOMParser().parseFromString(html,'text/html');
-  return xpath(doc,r.searchList).flatMap(n=>{const title=xpath(n,r.searchName)[0]?.textContent?.trim(); const target=xpath(n,r.searchResult)[0]; const url=target&&link(target,r.baseURL);return title&&url?[{name:title,url}]:[];});
+  return xpath(doc,r.searchList).flatMap(n=>{const title=xpath(n,r.searchName)[0]?.textContent?.trim(); const target=xpath(n,r.searchResult)[0]; const url=target&&link(target,pageUrl);return title&&url?[{name:title,url}]:[];});
 }
-export function parseChapters(html:string,r:Rule):{name:string;episodes:{name:string;url:string}[]}[] {
+export function parseChapters(html:string,r:Rule,pageUrl=r.baseURL):{name:string;episodes:{name:string;url:string}[]}[] {
   const doc=new DOMParser().parseFromString(html,'text/html');
-  return xpath(doc,r.chapterRoads).map((n,i)=>({name:'线路 '+(i+1),episodes:xpath(n,r.chapterResult).flatMap((e,j)=>{const url=link(e,r.baseURL);return url?[{name:e.textContent?.trim()||'第 '+(j+1)+' 集',url}]:[];})})).filter(r=>r.episodes.length);
+  return xpath(doc,r.chapterRoads).map((n,i)=>({name:'线路 '+(i+1),episodes:xpath(n,r.chapterResult).flatMap((e,j)=>{const url=link(e,pageUrl);return url?[{name:e.textContent?.trim()||'第 '+(j+1)+' 集',url}]:[];})})).filter(r=>r.episodes.length);
 }

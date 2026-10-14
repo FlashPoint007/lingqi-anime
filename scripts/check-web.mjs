@@ -70,6 +70,7 @@ assert.equal(client.resumeEpisodePosition({subjectId:7,number:1},{subjectId:7,nu
 assert.equal(client.isCurrentPlayback({sourceUrl:'old-episode',url:'old-media'},{sourceUrl:'new-episode',url:'new-media'}),false);
 assert.equal(client.isCurrentPlayback({sourceUrl:'same-episode',url:'expired-media'},{sourceUrl:'same-episode',url:'renewed-media'}),false);
 assert.equal(client.isCurrentPlayback({sourceUrl:'same-episode',url:'same-media'},{sourceUrl:'same-episode',url:'same-media'}),true);
+const sameDomainRules=[{...valid,name:'moonci'},{...valid,name:'aafun'}];assert.equal(client.ruleForPlayback(sameDomainRules,'https://example.com/play/1','aafun').name,'aafun');assert.equal(client.ruleForPlayback([{...sameDomainRules[1],enabled:false},sameDomainRules[0]],'https://example.com/play/1','aafun').name,'moonci');assert.equal(client.ruleForPlayback(sameDomainRules,'https://other.example/play/1','aafun'),undefined);
 const route=await import(mod(compile(source)));
 process.env.LINGQI_MEDIA_SECRET='test-only-key-not-used-in-production';
 const subServer=await import(subscriptionServerUrl);

@@ -1,6 +1,10 @@
 export type Episode={name:string;url:string;source?:string;number?:number};
 export type Road={name:string;episodes:Episode[]};
 export function isCurrentPlayback(expected:{sourceUrl:string;url:string},active:{sourceUrl:string;url:string}){return expected.sourceUrl===active.sourceUrl&&expected.url===active.url;}
+export function ruleForPlayback<T extends {name:string;baseURL:string;enabled?:boolean}>(rules:T[],url:string,preferredName?:string){
+ const origin=new URL(url).origin;const matching=rules.filter(rule=>{try{return rule.enabled!==false&&new URL(rule.baseURL).origin===origin;}catch{return false;}});
+ return matching.find(rule=>rule.name===preferredName)||matching[0];
+}
 
 export function episodeNumber(episode:Episode,index:number){
  if(Number.isFinite(episode.number))return episode.number!;

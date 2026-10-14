@@ -31,6 +31,13 @@ const duplicated=await availability.checkSource(valid,['Example'],signal,async b
 let currentChecks=0,maxChecks=0,totalChecks=0;
 await availability.checkSources(Array.from({length:16},(_,i)=>i),signal,async()=>{currentChecks++;maxChecks=Math.max(maxChecks,currentChecks);await new Promise(resolve=>setTimeout(resolve,1));totalChecks++;currentChecks--;});assert.equal(maxChecks,3);assert.equal(totalChecks,16);
 const stopped=new AbortController();let stoppedChecks=0;await availability.checkSources([1,2,3,4,5],stopped.signal,async()=>{stoppedChecks++;stopped.abort();});assert.equal(stoppedChecks,1);
+// Refresh evicts only the selected anime; revisiting it can reuse the new result.
+const availabilityCache=new Map();
+availability.storeAvailability(availabilityCache,'anime-a|source',{...available,checkedAt:1000});availability.storeAvailability(availabilityCache,'anime-b|source',{...available,checkedAt:1000});
+availability.invalidateAvailability(availabilityCache,'anime-a');assert.equal(availability.cachedAvailability(availabilityCache,'anime-a|source',2000),undefined);assert.equal(availability.cachedAvailability(availabilityCache,'anime-b|source',2000).state,'found');
+availability.storeAvailability(availabilityCache,'anime-a|source',{...available,checkedAt:2000});assert.equal(availability.cachedAvailability(availabilityCache,'anime-a|source',3000).state,'found');
+availability.storeAvailability(availabilityCache,'anime-a|error',{...available,state:'error',checkedAt:2000});assert.equal(availability.cachedAvailability(availabilityCache,'anime-a|error',62000),undefined);assert.equal(availability.cachedAvailability(availabilityCache,'anime-a|source',62000).state,'found');
+for(let i=0;i<170;i++)availability.storeAvailability(availabilityCache,'bounded-'+i,{...available,checkedAt:3000});assert.equal(availabilityCache.size,160);
 const catalogUrl=mod(compile(readFileSync('lib/catalog.ts','utf8')));
 const catalog=await import(catalogUrl);
 assert.deepEqual(catalog.seasonRange(2026,1),{start:'2025-12-01',end:'2026-03-01'});
@@ -54,6 +61,15 @@ source=source.replace("'../../../lib/playback-server'",JSON.stringify(playbackUr
 const playback=await import(playbackUrl);
 const client=await import(mod(compile(readFileSync('lib/playback-client.ts','utf8'))));
 const gap=[{name:'First',url:'https://example.com/1',number:1},{name:'Third',url:'https://example.com/3',number:3}];assert.equal(client.episodeAtNumber(gap,2),undefined);assert.equal(client.episodeAtNumber(gap,3).url,'https://example.com/3');assert.equal(client.episodeNumber({name:'第01话',url:''},7),1);assert.equal(client.episodeNumber({name:'Chapter 99',url:'',number:2},0),2);assert.deepEqual(client.playbackUrls({url:'/api/media?ticket=test',mediaUrl:'https://media.example/clip.mp4',preferDirect:true}),{url:'https://media.example/clip.mp4',fallbackUrl:'/api/media?ticket=test'});assert.equal(client.playbackUrls({url:'/api/media?ticket=test',mediaUrl:'https://media.example/stream.m3u8'}).url,'/api/media?ticket=test');
+assert.equal(client.episodeNumber({name:'在99天之后',url:''},2),3);assert.equal(client.episodeNumber({name:'2人的旅途',url:''},0),1);assert.equal(client.episodeNumber({name:'EP 12: A new beginning',url:''},0),12);assert.equal(client.episodeNumber({name:'第１２．５話 特别篇',url:''},0),12.5);assert.equal(client.episodeNumber({name:'01',url:''},6),1);
+assert.equal(client.resumeEpisodePosition({subjectId:7,number:1},{subjectId:7,number:1},123.45),123.45);
+assert.equal(client.resumeEpisodePosition({subjectId:7,number:1},{subjectId:7,number:2},123.45),0);
+assert.equal(client.resumeEpisodePosition({subjectId:7,number:1},{subjectId:8,number:1},123.45),0);
+assert.equal(client.resumeEpisodePosition({subjectId:7,sourceUrl:'https://example.com/1'},{subjectId:7,sourceUrl:'https://example.com/1'},55),55);
+assert.equal(client.resumeEpisodePosition({subjectId:7,number:1},{subjectId:7,number:1},NaN),0);
+assert.equal(client.isCurrentPlayback({sourceUrl:'old-episode',url:'old-media'},{sourceUrl:'new-episode',url:'new-media'}),false);
+assert.equal(client.isCurrentPlayback({sourceUrl:'same-episode',url:'expired-media'},{sourceUrl:'same-episode',url:'renewed-media'}),false);
+assert.equal(client.isCurrentPlayback({sourceUrl:'same-episode',url:'same-media'},{sourceUrl:'same-episode',url:'same-media'}),true);
 const route=await import(mod(compile(source)));
 process.env.LINGQI_MEDIA_SECRET='test-only-key-not-used-in-production';
 const subServer=await import(subscriptionServerUrl);

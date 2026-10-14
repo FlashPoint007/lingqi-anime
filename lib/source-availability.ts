@@ -5,6 +5,14 @@ export type SourceResult={name:string;url:string};
 export type AvailabilityState='queued'|'checking'|'found'|'possible'|'not-found'|'error'|'playing'|'episode-error';
 export type SourceAvailability={state:AvailabilityState;message:string;results:SourceResult[];source?:string;roads?:Road[];checkedAt?:number};
 export const availabilityLabels:Record<AvailabilityState,string>={queued:'待检测',checking:'检测中',found:'有分集',possible:'待确认', 'not-found':'未匹配',error:'检测失败',playing:'已播放', 'episode-error':'本集失败'};
+export function cachedAvailability(cache:Map<string,SourceAvailability>,key:string,now=Date.now()){
+ const value=cache.get(key),age=now-(value?.checkedAt??0);const ttl=value?.state==='error'||value?.state==='episode-error'?60000:600000;
+ return value?.checkedAt&&age>=0&&age<ttl?value:undefined;
+}
+export function storeAvailability(cache:Map<string,SourceAvailability>,key:string,value:SourceAvailability){
+ cache.delete(key);cache.set(key,value);while(cache.size>160)cache.delete(cache.keys().next().value!);
+}
+export function invalidateAvailability(cache:Map<string,SourceAvailability>,scope:string){for(const key of cache.keys())if(key.startsWith(scope+'|'))cache.delete(key);}
 export const normalizeTitle=(name:string)=>name.normalize('NFKC').toLowerCase().replace(/[\s\p{P}\p{S}]/gu,'');
 export function matchesTitle(name:string,names:string[]){const n=normalizeTitle(name);return !!n&&names.some(value=>normalizeTitle(value)===n);}
 export async function sourceRequest(body:unknown,signal:AbortSignal){

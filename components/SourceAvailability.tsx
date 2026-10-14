@@ -1,7 +1,7 @@
 'use client';
 import {useEffect,useRef,useState} from 'react';
 import {RefreshCw} from 'lucide-react';
-import {availabilityLabels,checkSource,checkSources,type SourceAvailability} from '../lib/source-availability';
+import {availabilityLabels,checkSource,checkSources,cachedAvailability,storeAvailability,invalidateAvailability,type SourceAvailability} from '../lib/source-availability';
 import {ruleCompatibility} from '../lib/subscriptions';
 import type {Rule} from '../lib/web-core';
 import type {Subject} from '../lib/catalog';
@@ -15,18 +15,18 @@ export function useSourceAvailability(subject:Subject|null,rules:Rule[]){
  const key=(rule:Rule)=>scope+'|'+rule.name;
  useEffect(()=>{
   const controller=new AbortController();setChecksScope(scope);if(!subject||subject.id===0){setChecks({});return;}
-  const candidates=rules.filter(r=>r.enabled!==false&&!ruleCompatibility(r));
-  const initial=Object.fromEntries(candidates.map(rule=>{const saved=cache.get(key(rule));return [rule.name,!revision&&saved?.checkedAt&&Date.now()-saved.checkedAt<600000?saved:empty];}));setChecks(initial);
+  const enabled=rules.filter(r=>r.enabled!==false),candidates=enabled.filter(r=>!ruleCompatibility(r));
+  const initial=Object.fromEntries(enabled.map(rule=>{const unsupported=ruleCompatibility(rule);return [rule.name,unsupported?{...empty,state:'error' as const,message:unsupported}:cachedAvailability(cache,key(rule))||empty];}));setChecks(initial);
   void checkSources(candidates,controller.signal,async rule=>{
    if(initial[rule.name].state!=='queued')return;
-   const started=Date.now();const update=(value:SourceAvailability)=>{if(!controller.signal.aborted)setChecks(old=>{if((old[rule.name]?.checkedAt||0)>started)return old;if(value.checkedAt){cache.set(key(rule),value);if(cache.size>160)cache.delete(cache.keys().next().value!);}return {...old,[rule.name]:value};});};
+   const started=Date.now();const update=(value:SourceAvailability)=>{if(!controller.signal.aborted)setChecks(old=>{if(controller.signal.aborted||current.current!==scope||(old[rule.name]?.checkedAt||0)>started)return old;if(value.checkedAt)storeAvailability(cache,key(rule),value);return {...old,[rule.name]:value};});};
    update({...empty,state:'checking'});
    try{const result=await checkSource(rule,names,controller.signal);if(controller.signal.aborted)return;update(result);}
    catch(e){if(!controller.signal.aborted)update({...empty,state:'error',message:(e as Error).message});}
   });return()=>controller.abort();
  },[scope,revision]);
- const report=(rule:Rule,value:Partial<SourceAvailability>)=>{if(current.current!==scope)return;setChecks(old=>{const next={...(old[rule.name]||empty),...value,checkedAt:Date.now()};cache.set(key(rule),next);return {...old,[rule.name]:next};});};
- return {checks:checksScope===scope?checks:{},refresh:()=>setRevision(n=>n+1),report};
+ const report=(rule:Rule,value:Partial<SourceAvailability>)=>{if(current.current!==scope)return;setChecks(old=>{if(current.current!==scope)return old;const next={...(old[rule.name]||empty),...value,checkedAt:Date.now()};storeAvailability(cache,key(rule),next);return {...old,[rule.name]:next};});};
+ return {checks:checksScope===scope?checks:{},refresh:()=>{invalidateAvailability(cache,scope);setRevision(n=>n+1);},report};
 }
 type Props={rules:Rule[];checks:Record<string,SourceAvailability>;selected:number;busy?:boolean;onRefresh:()=>void;onSelect:(index:number,check:SourceAvailability)=>void};
 export default function SourceAvailabilityList(p:Props){

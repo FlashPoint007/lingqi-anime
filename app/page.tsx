@@ -10,7 +10,7 @@ import {initialRules,mergeSubscribed,ruleCompatibility,RULE_REPOSITORY,Subscript
 import snapshot from '../lib/catalog-snapshot.json';
 import {Rule,parseRules,parseSearch,parseChapters} from '../lib/web-core';
 import {episodeNumber,episodeAtNumber,resumeEpisodePosition,isCurrentPlayback,ruleForPlayback,type Episode,type Road} from '../lib/playback-client';
-import {cleanCollection,cleanRules,mergeHistory,readStorage,writeStorage,type WatchRecord as RecordItem} from '../lib/personal-data';
+import {cleanCollection,cleanRules,mergeHistory,syncHistory,readStorage,writeStorage,type WatchRecord as RecordItem} from '../lib/personal-data';
 const menus=[{id:'discover',label:'发现',en:'DISCOVER',icon:Compass},{id:'calendar',label:'放送时间表',en:'ON AIR',icon:CalendarDays},{id:'collection',label:'我的追番',en:'MY LIBRARY',icon:Heart},{id:'history',label:'观看记录',en:'RECENT',icon:History},{id:'rules',label:'规则管理',en:'SOURCES',icon:Layers},{id:'settings',label:'偏好设置',en:'SETTINGS',icon:Settings}];
 const days=['一','二','三','四','五','六','日'];
 const title=(s:Subject)=>s.name_cn||s.name;
@@ -21,7 +21,7 @@ function saveFile(data:unknown,name:string){const url=URL.createObjectURL(new Bl
 function stored<T>(key:string,fallback:T):T{try{return JSON.parse(readStorage(key)||'null')??fallback;}catch{return fallback;}}
 export default function Home(){
  const lastProgress=useRef(0);const subscriptionBusy=useRef(false);const playbackId=useRef(0);const playbackRequest=useRef<AbortController|null>(null),sourceRequestRef=useRef<AbortController|null>(null),sourceOperation=useRef(0),playerProgress=useRef(0),historyRef=useRef<RecordItem[]>([]),roadsRef=useRef<Road[]>([]),activePlayerUrl=useRef(''),activeMediaUrl=useRef(''),flushProgress=useRef<()=>void>(()=>{});
- const routeHandler=useRef<()=>void>(()=>{}),navigationHash=useRef<string|undefined>(undefined);
+ const storageFailures=useRef(new Set<string>());const routeHandler=useRef<()=>void>(()=>{}),navigationHash=useRef<string|undefined>(undefined);
  const [chapterSource,setChapterSource]=useState(''),[storageError,setStorageError]=useState('');
  const [syncBusy,setSyncBusy]=useState(false),[syncStatus,setSyncStatus]=useState('默认订阅 KazumiRules'),[syncTime,setSyncTime]=useState(0);
  const [view,setView]=useState('discover');const [items,setItems]=useState<Subject[]>(snapshot.data as Subject[]);const [loading,setLoading]=useState(false);const [error,setError]=useState('');const [cached,setCached]=useState(true);const [query,setQuery]=useState('');const [activeQuery,setActiveQuery]=useState('');const [sort,setSort]=useState('date');const [tag,setTag]=useState('');const [category,setCategory]=useState('');const [catalogYear,setCatalogYear]=useState('');const [offset,setOffset]=useState(0);const [total,setTotal]=useState(0);const [searchLimited,setSearchLimited]=useState(false);const [reload,setReload]=useState(0);
@@ -32,7 +32,26 @@ export default function Home(){
  const [player,setPlayer]=useState<{subject:Subject;episode:string;url:string;sourceUrl:string;position:number;mediaUrl?:string;mediaType?:'hls'|'video';preferDirect?:boolean;number?:number;ruleName?:string}|null>(null);const [playError,setPlayError]=useState('');const [direct,setDirect]=useState('');const [playMode,setPlayMode]=useState<'video'|'resolving'|'unavailable'>('video');const [resolveStatus,setResolveStatus]=useState('');historyRef.current=history;roadsRef.current=roads;activePlayerUrl.current=player?.sourceUrl||'';activeMediaUrl.current=player?.url||'';flushProgress.current=()=>saveProgress(playerProgress.current,true);
  const availability=useSourceAvailability(player?.subject||selected,rules);
  useEffect(()=>{setCollection(cleanCollection(stored('kw-collection',[])));setHistory(mergeHistory(stored('kw-history',[]),[]));setRules(mergeSubscribed(cleanRules(stored('kw-rules',[])),initialRules.map(r=>({file:String(r.subscriptionFile),rule:r})),initialRules.map(r=>String(r.subscriptionFile))));setDark(stored<boolean>('kw-dark',false)===true);setDay((new Date().getDay()+6)%7);setReady(true);},[]);
- useEffect(()=>{if(ready){const saved=[writeStorage('kw-collection',JSON.stringify(collection)),writeStorage('kw-history',JSON.stringify(history)),writeStorage('kw-rules',JSON.stringify(rules)),writeStorage('kw-dark',JSON.stringify(dark))].every(Boolean);setStorageError(saved?'':'浏览器存储不可用或空间不足，本次更改可能无法保留，请导出备份。');document.documentElement.dataset.theme=dark?'dark':'light';}},[collection,history,rules,dark,ready]);
+ function persist(key:string,value:unknown){
+  if(writeStorage(key,JSON.stringify(value)))storageFailures.current.delete(key);else storageFailures.current.add(key);
+  setStorageError(storageFailures.current.size?'浏览器存储不可用或空间不足，本次更改可能无法保留，请导出备份。':'');
+ }
+ useEffect(()=>{if(ready)persist('kw-collection',collection);},[collection,ready]);
+ useEffect(()=>{if(ready)persist('kw-history',history);},[history,ready]);
+ useEffect(()=>{if(ready)persist('kw-rules',rules);},[rules,ready]);
+ useEffect(()=>{if(ready){persist('kw-dark',dark);document.documentElement.dataset.theme=dark?'dark':'light';}},[dark,ready]);
+ useEffect(()=>{
+  if(!ready)return;
+  const receive=(event:StorageEvent)=>{
+   if(!event.key?.startsWith('kw-')||event.newValue===null)return;
+   let value:unknown;try{value=JSON.parse(event.newValue);}catch{return;}
+   if(event.key==='kw-history')setHistory(current=>{const next=syncHistory(current,value);historyRef.current=next;return next;});
+   else if(event.key==='kw-collection')setCollection(cleanCollection(value));
+   else if(event.key==='kw-rules')setRules(cleanRules(value));
+   else if(event.key==='kw-dark')setDark(value===true);
+  };
+  window.addEventListener('storage',receive);return()=>window.removeEventListener('storage',receive);
+ },[ready]);
  async function syncRules(force=false){
   if(subscriptionBusy.current)return;const last=stored<number>('kw-rules-last-sync',0);if(!force&&Date.now()-last<24*3600000){setSyncTime(last);return;}
   subscriptionBusy.current=true;setSyncBusy(true);setSyncStatus('正在检查仓库更新…');let fresh=0,failed=0;

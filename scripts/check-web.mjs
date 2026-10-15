@@ -81,6 +81,11 @@ assert.deepEqual(personal.cleanCollection({bad:true}),[]);assert.deepEqual(perso
 assert.equal(personal.cleanCollection([{id:1,name:'Example',name_cn:{bad:true},rating:{score:'oops'}}])[0].name_cn,undefined);
 assert.equal(personal.cleanHistory([{...record,position:-2}])[0].position,0);
 assert.deepEqual(personal.cleanHistory([{...record,url:['https://example.com/1']}]),[]);
+const otherRecord={...record,subject:{id:2,name:'Other'}};
+assert.deepEqual(personal.syncHistory([record],[record,otherRecord]).map(r=>r.subject.id).sort(),[1,2]);
+assert.equal(personal.syncHistory([{...record,time:300,position:64}],[record])[0].position,64);
+assert.deepEqual(personal.syncHistory([record,otherRecord],[otherRecord]).map(r=>r.subject.id),[2]);
+assert.deepEqual(personal.syncHistory([record],[]),[]);
 const savedStorage=Object.getOwnPropertyDescriptor(globalThis,'localStorage');Object.defineProperty(globalThis,'localStorage',{configurable:true,get(){throw new Error('storage disabled');}});
 assert.equal(personal.readStorage('x'),null);assert.equal(personal.writeStorage('x','value'),false);
 if(savedStorage)Object.defineProperty(globalThis,'localStorage',savedStorage);else delete globalThis.localStorage;

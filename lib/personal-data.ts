@@ -29,5 +29,10 @@ export function mergeHistory(current:unknown,incoming:unknown):WatchRecord[]{
  const records=new Map<number,WatchRecord>();for(const item of [...cleanHistory(current),...cleanHistory(incoming)]){const old=records.get(item.subject.id);if(!old||item.time>old.time)records.set(item.subject.id,item);}
  return [...records.values()].sort((a,b)=>b.time-a.time).slice(0,100);
 }
+// A storage event is a remote snapshot: respect removals, retain newer local progress.
+export function syncHistory(current:unknown,incoming:unknown):WatchRecord[]{
+ const remote=cleanHistory(incoming),ids=new Set(remote.map(record=>record.subject.id));
+ return mergeHistory(cleanHistory(current).filter(record=>ids.has(record.subject.id)),remote);
+}
 export function readStorage(key:string){try{return localStorage.getItem(key);}catch{return null;}}
 export function writeStorage(key:string,value:string){try{localStorage.setItem(key,value);return true;}catch{return false;}}

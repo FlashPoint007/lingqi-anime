@@ -114,15 +114,15 @@ export default function Home(){
   catch(e){if(operation===sourceOperation.current&&!controller.signal.aborted)setSourceError((e as Error).message);}finally{if(operation===sourceOperation.current)setSourceBusy(false);}
  }
  async function sourceChapters(url:string,override?:Rule,focusUrl=''){
-  const r=override||rules[ruleIdx];if(!r)return;stopSource();const operation=sourceOperation.current,controller=new AbortController();sourceRequestRef.current=controller;setSourceBusy(true);setSourceError('');setChapterSource(url);
-  try{const d=await api('/api/source',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rule:r,url,operation:'chapters',source:url}),signal:AbortSignal.any([controller.signal,AbortSignal.timeout(15000)])});if(operation!==sourceOperation.current)return;const rr:Road[]=d.roads||parseChapters(d.html,r,d.url||url);setRoads(rr);setActiveRoad(Math.max(0,rr.findIndex(line=>line.episodes.some(ep=>ep.url===focusUrl))));if(!rr.length)setSourceError('没有解析到分集，请更换视频源。');const subject=player?.subject||selected;const result=sourceResults.find(x=>x.url===url);if(subject&&result&&matchesTitle(result.name,[title(subject),subject.name]))availability.report(r,{state:rr.length?'found':'error',message:rr.length?'已找到 '+rr.length+' 条分集线路':'同名条目未解析到分集',source:url,roads:rr,results:sourceResults});}
+  const r=override||rules[ruleIdx];if(!r)return;stopSource();const operation=sourceOperation.current,controller=new AbortController();sourceRequestRef.current=controller;setSourceBusy(true);setSourceError('');setChapterSource('');setRoads([]);setActiveRoad(0);
+  try{const d=await api('/api/source',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rule:r,url,operation:'chapters',source:url}),signal:AbortSignal.any([controller.signal,AbortSignal.timeout(15000)])});if(operation!==sourceOperation.current)return;const rr:Road[]=d.roads||parseChapters(d.html,r,d.url||url);setChapterSource(url);setRoads(rr);setActiveRoad(Math.max(0,rr.findIndex(line=>line.episodes.some(ep=>ep.url===focusUrl))));if(!rr.length)setSourceError('没有解析到分集，请更换视频源。');const subject=player?.subject||selected;const result=sourceResults.find(x=>x.url===url);if(subject&&result&&matchesTitle(result.name,[title(subject),subject.name]))availability.report(r,{state:rr.length?'found':'error',message:rr.length?'已找到 '+rr.length+' 条分集线路':'同名条目未解析到分集',source:url,roads:rr,results:sourceResults});}
   catch(e){if(operation===sourceOperation.current&&!controller.signal.aborted)setSourceError((e as Error).message);}finally{if(operation===sourceOperation.current)setSourceBusy(false);}
  }
  function remember(s:Subject,e:Episode,position:number,ruleName?:string){const next=[{subject:s,episode:e.name,url:e.url,source:e.source,number:e.number,ruleName,time:Date.now(),position},...historyRef.current.filter(x=>x.subject.id!==s.id)].slice(0,100);historyRef.current=next;setHistory(next);}
  async function resolveSource(s:Subject,e:Episode,r:Rule,position=0,contextRoads=roads){
   const {id,controller}=beginPlayback();playerProgress.current=position;lastProgress.current=0;setPlayError('');setPlayMode('resolving');setPlayer({subject:s,episode:e.name,url:'',sourceUrl:e.url,position,number:e.number,ruleName:r.name});
   const selectedRoad=Math.max(0,contextRoads.findIndex(line=>line.episodes.some(ep=>ep.url===e.url)));const current=contextRoads[selectedRoad]?.episodes,index=current?.findIndex(ep=>ep.url===e.url)??-1;const number=e.number??(index>=0?episodeNumber(e,index):undefined);
-  const attempts=[{episode:{...e,number},road:selectedRoad},...contextRoads.flatMap((line,road)=>{if(road===selectedRoad||index<0)return [];const episode=number!==undefined?episodeAtNumber(line.episodes,number):line.episodes.find(ep=>ep.name===e.name);return episode?[{episode:{...episode,source:e.source},road}]:[];})].slice(0,3);
+  const attempts=[{episode:{...e,number},road:selectedRoad},...contextRoads.flatMap((line,road)=>{if(road===selectedRoad||index<0)return [];const episode=number!==undefined?episodeAtNumber(line.episodes,number):line.episodes.find(ep=>ep.name===e.name);return episode?[{episode:{...episode,number,source:e.source},road}]:[];})].slice(0,3);
   let message='当前线路未解析到视频地址';
   for(const attempt of attempts){
    if(id!==playbackId.current)return;
@@ -156,11 +156,12 @@ export default function Home(){
     for(let road=0;road<Math.min(lines.length,3);road++){
      if(Date.now()>deadline)break;
      const line=lines[road];const candidate=episodeAtNumber(line.episodes,number);const episode=candidate?{...candidate,number}:undefined;if(!episode)continue;
-     setResolveStatus(rule.name+' · 正在解析第 '+number+' 集');const data=await sourceRequest({rule,url:episode.url,operation:'resolve',source:found.url});if(id!==playbackId.current)return;
+     try{setResolveStatus(rule.name+' · 正在解析第 '+number+' 集');const data=await sourceRequest({rule,url:episode.url,operation:'resolve',source:found.url});if(id!==playbackId.current)return;
      if(data.mode==='video'&&(data.verified||data.preferDirect)){
       setRuleIdx(index);setSourceResults(results);setRoads(lines);setActiveRoad(road);setChapterSource(found.url);setPlayer({subject:s,episode:episode.name,url:data.url,sourceUrl:episode.url,position,number,ruleName:rule.name,preferDirect:data.preferDirect,mediaUrl:data.mediaUrl,mediaType:data.mediaType});setPlayMode('video');setPlayError('');lastProgress.current=0;remember(s,{...episode,source:found.url},position,rule.name);return;
      }
      if(data.mode==='video'&&!directFallback)directFallback={data,episode:{...episode,source:found.url},index,results,lines,road,source:found.url};
+     }catch(error){if(id!==playbackId.current||controller.signal.aborted)return;failures.push(rule.name+' · '+line.name+'：'+(error as Error).message);}
     }
    }catch(error){failures.push((error as Error).message);}
   }

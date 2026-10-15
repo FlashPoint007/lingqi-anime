@@ -15,6 +15,7 @@ export function storeAvailability(cache:Map<string,SourceAvailability>,key:strin
 export function invalidateAvailability(cache:Map<string,SourceAvailability>,scope:string){for(const key of cache.keys())if(key.startsWith(scope+'|'))cache.delete(key);}
 export const normalizeTitle=(name:string)=>name.normalize('NFKC').toLowerCase().replace(/[\s\p{P}\p{S}]/gu,'');
 export function matchesTitle(name:string,names:string[]){const n=normalizeTitle(name);return !!n&&names.some(value=>normalizeTitle(value)===n);}
+const sourceErrorMessage=(error:unknown)=>(error as Error).name==='TimeoutError'?'源站响应超时，请稍后重新检测或更换视频源':(error as Error).message;
 export async function sourceRequest(body:unknown,signal:AbortSignal){
  const res=await fetch('/api/source',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal});
  let data:any;try{data=await res.json();}catch{throw new Error('本站源查询接口未返回有效数据（'+res.status+'）');}
@@ -38,9 +39,9 @@ export async function checkSource(rule:Rule,names:string[],signal:AbortSignal,re
     try{const detail=await call({rule,url:match.url,operation:'chapters',source:match.url});const roads:Road[]=detail.roads||parseChapters(detail.html,rule,detail.url||match.url);
      if(roads.some(r=>r.episodes.length))return {state:'found',message:roads.length+' 条线路 · 最多 '+Math.max(...roads.map(r=>r.episodes.length))+' 集',results,source:match.url,roads,checkedAt:Date.now()};
      lastError='同名条目未解析到分集';
-    }catch(e){lastError=(e as Error).message;}
+    }catch(e){lastError=sourceErrorMessage(e);}
    }
-  }catch(e){lastError=(e as Error).message;}
+  }catch(e){lastError=sourceErrorMessage(e);}
  }
  if(signal.aborted)throw signal.reason;
  const state=lastError?'error':results.length?'possible':successfulSearch?'not-found':'error';

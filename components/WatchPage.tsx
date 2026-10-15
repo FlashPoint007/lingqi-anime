@@ -7,7 +7,7 @@ import {availabilityLabels,type SourceAvailability} from '../lib/source-availabi
 import type {Subject} from '../lib/catalog';
 import type {Rule} from '../lib/web-core';
 import {episodeNumber,episodeNeighbors,visibleEpisodes,playbackUrls,type Episode,type EpisodeTarget,type Road} from '../lib/playback-client';
-type Playback={subject:Subject;episode:string;url:string;sourceUrl:string;position:number;mediaUrl?:string;mediaType?:'hls'|'video';preferDirect?:boolean;number?:number;ruleName?:string};
+type Playback={subject:Subject;episode:string;url:string;sourceUrl:string;source?:string;position:number;mediaUrl?:string;mediaType?:'hls'|'video';preferDirect?:boolean;number?:number;ruleName?:string};
 type Props={player:Playback;mode:string;error:string;status:string;rules:Rule[];ruleIdx:number;query:string;busy:boolean;sourceError:string;results:{name:string;url:string}[];roads:Road[];road:number;episodes:{id:number;sort:number;name:string;name_cn?:string}[];checks:Record<string,SourceAvailability>;onCheckRefresh:()=>void;onCheckSelect:(index:number,check:SourceAvailability)=>void;onBack:()=>void;onRetry:()=>void;onCancel:()=>void;onReady:()=>void;onError:(s:string)=>void;onTime:(n:number,flush?:boolean)=>void;onRule:(n:number)=>void;onQuery:(s:string)=>void;onSearch:()=>void;onResult:(url:string)=>void;onRoad:(n:number)=>void;onPlay:(e:Episode)=>void;onAuto:(n:number)=>void};
 export default function WatchPage(p:Props){
  const [panel,setPanel]=useState(true),[autoNext,setAutoNext]=useState(false),[episodeQuery,setEpisodeQuery]=useState(''),[descending,setDescending]=useState(false);

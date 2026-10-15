@@ -25,7 +25,7 @@ export default function Player({url,fallbackUrl,mediaType,castUrl,onTime,positio
  useEffect(()=>{
   const v=video.current!;let h:Hls|undefined,cancelled=false;attempt.current++;failureHandled.current=false;clearBuffer();confirmed.current=false;restoring.current=currentPosition.current>0;setLoading(true);setHasFrame(false);setNeedsPlay(false);
   const seek=()=>{restoring.current=currentPosition.current>0&&Number.isFinite(v.duration)&&currentPosition.current<v.duration;if(restoring.current)v.currentTime=currentPosition.current;v.playbackRate=speedRef.current;};
-  const ready=()=>{setLoading(false);setHasFrame(true);play();};
+  const ready=()=>{clearTimeout(timer);setLoading(false);setHasFrame(true);play();};
   v.addEventListener('loadedmetadata',seek,{once:true});v.addEventListener('loadeddata',ready,{once:true});
   const timer=setTimeout(()=>{if(!cancelled&&v.readyState<2)fail('视频连接等待过久，请重试或更换视频源');},12000);
   if((mediaType==='hls'||/\.m3u8(?:[?#]|$)/i.test(activeUrl))&&!v.canPlayType('application/vnd.apple.mpegurl')){

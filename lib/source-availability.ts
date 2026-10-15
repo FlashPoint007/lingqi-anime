@@ -1,5 +1,6 @@
 import {parseChapters,parseSearch,type Rule} from './web-core';
 import type {Road} from './playback-client';
+import {anySignal,timeoutSignal,requestJson} from './request-client';
 
 export type SourceResult={name:string;url:string};
 export type AvailabilityState='queued'|'checking'|'found'|'possible'|'not-found'|'error'|'playing'|'episode-error';
@@ -17,15 +18,13 @@ export const normalizeTitle=(name:string)=>name.normalize('NFKC').toLowerCase().
 export function matchesTitle(name:string,names:string[]){const n=normalizeTitle(name);return !!n&&names.some(value=>normalizeTitle(value)===n);}
 const sourceErrorMessage=(error:unknown)=>(error as Error).name==='TimeoutError'?'源站响应超时，请稍后重新检测或更换视频源':(error as Error).message;
 export async function sourceRequest(body:unknown,signal:AbortSignal){
- const res=await fetch('/api/source',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal});
- let data:any;try{data=await res.json();}catch{throw new Error('本站源查询接口未返回有效数据（'+res.status+'）');}
- if(!res.ok)throw new Error(data.error||'源查询失败（'+res.status+'）');return data;
+ return requestJson('/api/source',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal});
 }
 // Search and chapter checks deliberately do not resolve media or download video.
 export async function checkSource(rule:Rule,names:string[],signal:AbortSignal,request=sourceRequest):Promise<SourceAvailability>{
  const terms=[...new Set(names.map(n=>n.trim()).filter(Boolean))].slice(0,2),results:SourceResult[]=[];
- const deadline=AbortSignal.timeout(24000),combined=AbortSignal.any([signal,deadline]);
- const call=(body:unknown)=>request(body,AbortSignal.any([combined,AbortSignal.timeout(10000)]));
+ const deadline=timeoutSignal(24000),combined=anySignal([signal,deadline]);
+ const call=(body:unknown)=>request(body,anySignal([combined,timeoutSignal(10000)]));
  let lastError='',successfulSearch=false;const inspected=new Set<string>();
  for(const keyword of terms){
   if(signal.aborted)throw signal.reason;

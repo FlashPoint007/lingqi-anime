@@ -6,7 +6,7 @@ const compile=s=>ts.transpileModule(s,{compilerOptions:{module:ts.ModuleKind.ESN
 const coreUrl=mod(compile(readFileSync('lib/web-core.ts','utf8')));
 const core=await import(coreUrl);
 const valid={name:'Test',baseURL:'https://example.com/',searchURL:'https://example.com/search?q=@keyword',searchList:'//li',searchName:'//a',searchResult:'//a',chapterRoads:'//ul',chapterResult:'//a'};
-assert.equal(core.parseRules(JSON.stringify(valid))[0].name,'Test');
+assert.equal(core.parseRules(JSON.stringify(valid))[0].name,'Test');assert.equal(core.validateRule({...valid,version:{bad:true}}).version,undefined);
 assert.equal(core.parseRules('kazumi://'+Buffer.from(JSON.stringify(valid)).toString('base64'))[0].name,'Test');
 assert.throws(()=>core.validateRule({...valid,searchURL:'https://other.example/search'}));
 assert.throws(()=>core.validateRule({...valid,searchMode:'api'}));
@@ -17,7 +17,8 @@ assert.equal(core.link({nodeType:2,nodeValue:'#sort'},'https://example.com/serie
 assert.match(core.sourcePageError('<title>404 Not Found</title>'),/404/);
 assert.match(core.sourcePageError('<title>Site Unavailable</title>'),/不可访问/);
 assert.equal(core.sourcePageError('<title>Anime catalog</title>'), '');
-const availability=await import(mod(compile(readFileSync('lib/source-availability.ts','utf8').replace("'./web-core'",JSON.stringify(coreUrl)))));
+const requestClientUrl=mod(compile(readFileSync('lib/request-client.ts','utf8')));
+const availability=await import(mod(compile(readFileSync('lib/source-availability.ts','utf8').replace("'./web-core'",JSON.stringify(coreUrl)).replace("'./request-client'",JSON.stringify(requestClientUrl)))));
 assert.ok(availability.matchesTitle('战斗之魂［Re］绝界之空',['战斗之魂[Re] 绝界之空']));
 assert.equal(availability.matchesTitle('Example 第二季',['Example']),false);
 const signal=new AbortController().signal;
@@ -51,9 +52,15 @@ const pageResult=await catalogServer.browseCatalog(new URLSearchParams('mode=dat
 assert.match(requested,/offset=1224/);assert.match(requested,/cat=1/);assert.match(requested,/year=2024/);assert.equal(pageResult.page,52);assert.equal(pageResult.total,1234);
 await assert.rejects(catalogServer.browseCatalog(new URLSearchParams('mode=popular&cat=3'),async()=>({data:[],total:0})),/不能同时使用/);
 await assert.rejects(catalogServer.browseCatalog(new URLSearchParams('mode=popular&page=43'),async()=>({data:[],total:1100})),/1000/);
+assert.deepEqual(catalog.normalizeSubjects([null,{id:7,name:'Safe',rating:{score:'bad'},summary:{}},{}]).map(s=>[s.id,s.rating,s.summary]),[[7,undefined,'']]);
+assert.throws(()=>catalog.normalizeCalendar({error:'unavailable'}),/格式/);assert.throws(()=>catalog.normalizeEpisodes({data:[null]}),/有效/);
+assert.deepEqual(catalog.normalizeEpisodes({data:[{id:8,sort:2,name:{bad:true}},null],total:20}).data,[{id:8,sort:2,name:'',name_cn:''}]);
+await assert.rejects(catalogServer.browseCatalog(new URLSearchParams('q=Example'),async()=>({data:[null],total:1})),/有效/);
+const malformedCalendar=await catalogServer.seasonCatalog(new URLSearchParams(),async url=>url==='https://api.bgm.tv/calendar'?{error:'bad data'}:Object.fromEntries(Array.from({length:7},(_,i)=>[String(i+1),[]])));assert.equal(malformedCalendar.basis,'premiere');assert.equal(malformedCalendar.calendar.length,7);
 const grouped=await catalogServer.seasonCatalog(new URLSearchParams('year=2023&quarter=2'),async url=>{assert.match(url,/start=2023-03-01/);return Object.fromEntries(Array.from({length:7},(_,i)=>[String(i+1),i===0?[{subject:{id:77,name:'Test',date:'2023-04-03'}}]:[]]));});
 assert.equal(grouped.calendar[0].items[0].name,'Test');assert.equal(grouped.basis,'premiere');
 let source=readFileSync('app/api/[...path]/route.ts','utf8').replace("'../../../lib/web-core'",JSON.stringify(coreUrl)).replace("'../../../lib/catalog-server'",JSON.stringify(catalogServerUrl));
+source=source.replace("'../../../lib/catalog'",JSON.stringify(catalogUrl));
 const apiUrl=mod(compile(readFileSync('lib/rule-api.ts','utf8').replace("'./web-core'",JSON.stringify(coreUrl))));
 const subscriptionServerUrl=mod(compile(readFileSync('lib/rule-subscription-server.ts','utf8').replace("import snapshot from './rules-snapshot.json';",'const snapshot='+readFileSync('lib/rules-snapshot.json','utf8')+';')));
 source=source.replace("'../../../lib/rule-api'",JSON.stringify(apiUrl)).replace("'../../../lib/rule-subscription-server'",JSON.stringify(subscriptionServerUrl));
@@ -119,7 +126,7 @@ assert.equal(subscription.initialRules.length,16);
 const a=subscription.initialRules.find(r=>r.enabled);
 const merged=subscription.mergeSubscribed([{...a,enabled:false,userDisabled:true},{...valid,name:'Custom'}],[{file:a.subscriptionFile,rule:{...a,version:'999'}}]);
 assert.equal(merged[0].version,'999');assert.equal(merged[0].enabled,false);assert.equal(merged[1].name,'Custom');
-assert.ok(subscription.initialRules.every(r=>!r.deprecated&&r.enabled));
+assert.ok(subscription.initialRules.every(r=>!r.deprecated&&r.enabled));assert.doesNotThrow(()=>subscription.mergeSubscribed([], [{file:'bad.json',rule:{name:'broken'}}]));
 assert.deepEqual(subscription.mergeSubscribed([{...a,deprecated:true},{...valid,name:'Custom'}],[],[]).map(r=>r.name),['Custom']);
 assert.equal(subscription.mergeSubscribed([{...a,enabled:false}],[{file:a.subscriptionFile,rule:a}])[0].enabled,true);
 const apiRule=JSON.parse(readFileSync('lib/rules-snapshot.json','utf8')).entries.find(e=>e.rule.name==='xfdmnext').rule;
@@ -137,6 +144,9 @@ globalThis.fetch=async()=>{throw new Error('network unavailable');};r=await rout
 r=await route.GET(new Request('https://site.example/api/catalog?q=no-result'));assert.equal(r.status,502);
 r=await route.GET(new Request('https://site.example/api/catalog?page=2'));assert.equal(r.status,502);
 r=await route.GET(new Request('https://site.example/api/subject?id=oops'));assert.equal(r.status,400);
+globalThis.fetch=async()=>Response.json({error:'bad data'});r=await route.GET(new Request('https://site.example/api/subject?id=1'));assert.equal(r.status,502);assert.equal(r.headers.get('cache-control'),'no-store');
+globalThis.fetch=async()=>Response.json({data:[null]});r=await route.GET(new Request('https://site.example/api/episodes?id=1'));assert.equal(r.status,502);
+globalThis.fetch=async()=>Response.json({id:1,name:'Safe',rating:{score:{bad:true}}});r=await route.GET(new Request('https://site.example/api/subject?id=1'));assert.equal(r.status,200);assert.equal((await r.json()).rating,undefined);
 globalThis.fetch=originalFetch;
 // Workers reject redirect:"error" before fetching; API routes use manual and reject redirects.
 globalThis.fetch=async(url,init)=>{assert.equal(init.redirect,'manual');return Response.json([]);};

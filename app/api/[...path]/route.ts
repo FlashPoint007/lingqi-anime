@@ -2,9 +2,10 @@ import {ruleManifest,ruleBatch} from '../../../lib/rule-subscription-server';
 import {apiRequest,apiSearch,apiChapters,extractMedia} from '../../../lib/rule-api';
 import {publicUrl,validateRule,sourcePageError} from '../../../lib/web-core';
 import {browseCatalog,seasonCatalog} from '../../../lib/catalog-server';
+import {normalizeSubject,normalizeEpisodes} from '../../../lib/catalog';
 import {boundedText,proxyMedia,resolvePlayback,signedMediaUrl} from '../../../lib/playback-server';
 const UA='KazumiWeb/0.1 (+https://github.com/Predidit/Kazumi)';
-const json=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'private, max-age=60'}});
+const json=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':status>=400?'no-store':'private, max-age=60'}});
 async function upstream(url:string,init:RequestInit={}) {
  const res=await fetch(url,{...init,headers:{'User-Agent':UA,'Accept':'application/json',...init.headers},signal:AbortSignal.timeout(12000)});
  if(!res.ok) throw new Error('上游请求失败（'+res.status+'）'); return res.json() as Promise<any>;
@@ -18,8 +19,10 @@ export async function GET(req:Request) {
   }
   if(kind==='subject'||kind==='episodes') {
    const id=u.searchParams.get('id')||''; if(!/^\d{1,10}$/.test(id)) return json({error:'无效条目 ID'},400);
-   const offset=Math.min(10000,Math.max(0,Number(u.searchParams.get('offset'))||0));
-   return json(await upstream(kind==='subject'?'https://api.bgm.tv/v0/subjects/'+id:'https://api.bgm.tv/v0/episodes?subject_id='+id+'&type=0&limit=100&offset='+offset));
+   const offset=Math.floor(Math.min(10000,Math.max(0,Number(u.searchParams.get('offset'))||0)));
+   const data=await upstream(kind==='subject'?'https://api.bgm.tv/v0/subjects/'+id:'https://api.bgm.tv/v0/episodes?subject_id='+id+'&type=0&limit=100&offset='+offset);
+   if(kind==='episodes')return json(normalizeEpisodes(data));
+   const subject=normalizeSubject(data);if(!subject||subject.id!==Number(id))throw new Error('番剧详情格式不正确，请重试');return json(subject);
   }
   if(kind==='rules') {
    const batch=u.searchParams.get('batch');

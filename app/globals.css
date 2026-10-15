@@ -116,3 +116,6 @@
 .watch-sidebar .source-check-filters button{color:#bbb1cd;border-color:#514762}.watch-sidebar .source-check-filters button[aria-pressed=true]{color:#eee4ff;background:#4a3b63;border-color:#a68ae7}
 .episode-tools{display:flex;align-items:center;gap:7px;margin:12px 0}.episode-tools input{min-width:0;flex:1;border:1px solid #50455e;background:#292332;color:#eee;border-radius:7px;padding:8px;font-size:11px}.episode-tools button{color:#d4c6ed;border:1px solid #50455e;border-radius:6px;padding:8px;font-size:11px}.episode-tools>span{font-size:10px;white-space:nowrap;color:#a99bb9}.watch-hint button{color:#c8adef;text-decoration:underline}.watch-sidebar>.watch-source-error{padding:10px;border:1px solid #765161;border-radius:8px;margin-bottom:10px}
 @media(max-width:600px){.detail-top .button-row{flex-wrap:wrap}.active-filters{align-items:flex-start}.episode-tools{flex-wrap:wrap}.episode-tools input{min-width:120px}}
+
+.searchbar>.search-submit{font-size:11px;white-space:nowrap;color:var(--purple);font-weight:600;padding:5px 8px;background:var(--tint)}
+.catalog-loading{display:flex;align-items:center;justify-content:center;gap:12px;min-height:220px;color:var(--muted);font-size:13px}

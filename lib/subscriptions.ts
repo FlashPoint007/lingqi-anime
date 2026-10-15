@@ -3,6 +3,7 @@ import {validateRule,type Rule} from './web-core';
 export const RULE_REPOSITORY='Predidit/KazumiRules';
 export type SubscriptionEntry={file:string;rule:Rule;sha?:string};
 export function ruleCompatibility(r:Rule):string {
+ if(!r||typeof r.baseURL!=='string')return '规则格式无效';
  if(!r.baseURL.startsWith('https://'))return 'HTTP 源站：浏览器适配不可用';
  if(r.deprecated)return '上游已弃用';
  try{validateRule(r);}catch{return '规则格式无效';}

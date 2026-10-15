@@ -17,7 +17,7 @@ export function validateRule(input:unknown):Rule {
   if(r.name.length>100) throw new Error('规则名称过长');
   const base=publicUrl(r.baseURL); const search=r.searchMode==='api'?base:publicUrl(r.searchURL.replaceAll('@keyword','test'));
   if(base.origin!==search.origin) throw new Error('搜索地址必须与规则 baseURL 同源');
-  return {...r,enabled:r.enabled!==false};
+  return {...r,version:typeof r.version==='string'||typeof r.version==='number'?String(r.version):undefined,enabled:r.enabled!==false};
 }
 export function parseRules(text:string):Rule[] {
   if(text.length>1024*1024) throw new Error('规则文件不能超过 1 MB');

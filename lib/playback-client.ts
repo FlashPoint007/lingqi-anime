@@ -20,6 +20,24 @@ export function resumeEpisodePosition(current:EpisodeIdentity|undefined,target:E
 export function episodeAtNumber(episodes:Episode[],number:number){
  return episodes.find((e,i)=>episodeNumber(e,i)===number);
 }
+export function visibleEpisodes(episodes:Episode[],query='',descending=false){
+ const term=query.normalize('NFKC').trim().toLowerCase(),numeric=/^\d+(?:\.\d+)?$/.test(term);
+ return episodes.map((episode,index)=>({episode,number:episodeNumber(episode,index),index}))
+  .filter(item=>!term||(numeric?item.number===Number(term):item.episode.name.normalize('NFKC').toLowerCase().includes(term)))
+  .sort((a,b)=>(descending?b.number-a.number:a.number-b.number)||a.index-b.index);
+}
+export type EpisodeTarget={number:number;episode?:Episode};
+export function episodeNeighbors(episodes:Episode[],sourceUrl:string,current?:number,known:number[]=[],total?:number):{previous?:EpisodeTarget;next?:EpisodeTarget}{
+ const index=episodes.findIndex(episode=>episode.url===sourceUrl),number=Number.isFinite(current)?current:index>=0?episodeNumber(episodes[index],index):undefined;
+ if(number===undefined)return {};
+ const numbers=new Set([...episodes.map(episodeNumber),...known].filter(n=>Number.isFinite(n)&&n>=0));
+ if(Number.isInteger(number)&&number>=1&&Number.isInteger(total)){
+  if(number>1&&number<=total!)numbers.add(number-1);if(number<total!)numbers.add(number+1);
+ }
+ const sorted=[...numbers].sort((a,b)=>a-b),before=sorted.filter(n=>n<number).at(-1),after=sorted.find(n=>n>number);
+ const target=(n:number|undefined)=>n===undefined?undefined:{number:n,episode:episodeAtNumber(episodes,n)};
+ return {previous:target(before),next:target(after)};
+}
 export function playbackUrls(player:{url:string;mediaUrl?:string;preferDirect?:boolean}){
  const direct=Boolean(player.preferDirect&&player.mediaUrl);
  return {url:direct?player.mediaUrl!:player.url,fallbackUrl:direct?player.url:player.mediaUrl};

@@ -70,6 +70,19 @@ assert.equal(client.resumeEpisodePosition({subjectId:7,number:1},{subjectId:7,nu
 assert.equal(client.isCurrentPlayback({sourceUrl:'old-episode',url:'old-media'},{sourceUrl:'new-episode',url:'new-media'}),false);
 assert.equal(client.isCurrentPlayback({sourceUrl:'same-episode',url:'expired-media'},{sourceUrl:'same-episode',url:'renewed-media'}),false);
 assert.equal(client.isCurrentPlayback({sourceUrl:'same-episode',url:'same-media'},{sourceUrl:'same-episode',url:'same-media'}),true);
+// Episode navigation follows episode numbers even when the source returns newest first.
+const reversed=[3,2,1].map(number=>({name:'第'+number+'集',url:'https://example.com/'+number}));
+assert.equal(client.episodeNeighbors(reversed,'https://example.com/2').next.number,3);
+assert.equal(client.episodeNeighbors(reversed,'https://example.com/2').previous.number,1);
+assert.deepEqual(client.visibleEpisodes(reversed).map(item=>item.number),[1,2,3]);
+assert.deepEqual(client.visibleEpisodes(reversed,'',true).map(item=>item.number),[3,2,1]);
+assert.deepEqual(client.visibleEpisodes(reversed,'２').map(item=>item.number),[2]);
+assert.equal(client.visibleEpisodes(reversed,'not present').length,0);
+const missingNext=client.episodeNeighbors(gap,'https://example.com/1',1,[1,2,3]);assert.equal(missingNext.next.number,2);assert.equal(missingNext.next.episode,undefined);
+assert.equal(client.episodeNeighbors(gap,'https://example.com/3',3,[],4).next.number,4);
+assert.equal(client.episodeNeighbors(gap,'https://example.com/3',3,[],3).next,undefined);
+assert.equal(client.episodeNeighbors([], '',undefined).next,undefined);
+assert.equal(client.episodeNeighbors([{name:'第12.5话',url:'special'}],'special',12.5,[12,12.5,13]).next.number,13);
 const sameDomainRules=[{...valid,name:'moonci'},{...valid,name:'aafun'}];assert.equal(client.ruleForPlayback(sameDomainRules,'https://example.com/play/1','aafun').name,'aafun');assert.equal(client.ruleForPlayback([{...sameDomainRules[1],enabled:false},sameDomainRules[0]],'https://example.com/play/1','aafun').name,'moonci');assert.equal(client.ruleForPlayback(sameDomainRules,'https://other.example/play/1','aafun'),undefined);
 const personal=await import(mod(compile(readFileSync('lib/personal-data.ts','utf8').replace("'./web-core'",JSON.stringify(coreUrl)))));
 const record={subject:{id:1,name:'Example'},episode:'First',url:'https://example.com/1',time:200,position:48};

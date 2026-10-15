@@ -33,3 +33,26 @@ let watch=renderWatch(props);findButton(watch,'下一集').props.onClick();asser
 watch=renderWatch({...props,player:{...props.player,sourceUrl:'https://example.com/1',number:1},roads:[{name:'Incomplete',episodes:[reversed[2],reversed[0]]}]});findButton(watch,'下一集').props.onClick();assert.equal(actions.pop(),2);find(watch,'TestPlayer').props.onEnded();assert.equal(actions.pop(),2);
 const sidebar=find(watch,'aside');assert.ok([sidebar.props.children].flat(Infinity).some(node=>node?.type==='p'&&node.props.role==='alert'));
 console.log('PASS: reversed episode controls, cross-source next episode and autoplay, visible source errors');
+// Deterministic media failures: run the actual player with controllable promises and timers.
+(async()=>{
+ const source=ts.transpileModule(fs.readFileSync(root+'components/Player.tsx','utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX}}).outputText;
+ const setup=({reject,fallback=false,hls=false}={})=>{
+  const effects=[],timers=new Map(),errors=[],states=[];let id=0;
+  const context={exports:{},require:name=>name==='react'?{useState:value=>{const index=states.length;states.push(value);return [value,n=>states[index]=n];},useRef:value=>({current:value}),useEffect:fn=>effects.push(fn)}:name==='react/jsx-runtime'?{jsx,jsxs:jsx}:name==='hls.js'?{default:{isSupported:()=>false}}:name==='lucide-react'?new Proxy({},{get:()=>()=>null}):{},setTimeout:(fn,delay)=>{timers.set(++id,{fn,delay});return id;},clearTimeout:id=>timers.delete(id),localStorage:{getItem:()=>null}};
+  vm.createContext(context);vm.runInContext(source,context);
+  const tree=context.exports.default({url:'https://example.com/clip.'+(hls?'m3u8':'mp4'),fallbackUrl:fallback?'https://example.com/backup.mp4':undefined,position:0,onTime:()=>{},onError:message=>errors.push(message)}),node=find(tree,'video'),events={};
+  const v={paused:false,ended:false,readyState:2,duration:120,currentTime:30,play:()=>reject?reject():Promise.resolve(),pause:()=>{v.paused=true;},load:()=>{},removeAttribute:()=>{},addEventListener:(name,fn)=>events[name]=fn,removeEventListener:name=>delete events[name],canPlayType:()=>''};
+  node.props.ref.current=v;const cleanup=effects[0]();
+  const fire=delay=>{for(const [id,timer] of [...timers])if(timer.delay===delay){timers.delete(id);timer.fn();}};
+  return {node,v,events,errors,states,timers,cleanup,fire};
+ };
+ const rejected=setup({reject:()=>Promise.reject(Object.assign(new Error(),{name:'NotSupportedError'}))});rejected.events.loadeddata();await Promise.resolve();assert.equal(rejected.errors.length,1,'play rejection must expose retry');rejected.node.props.onError();assert.equal(rejected.errors.length,1,'one failure per attempt');
+ const fallback=setup({fallback:true,reject:()=>Promise.reject(Object.assign(new Error(),{name:'NotSupportedError'}))});fallback.events.loadeddata();await Promise.resolve();assert.equal(fallback.states[0],'https://example.com/backup.mp4');assert.equal(fallback.errors.length,0);
+ let rejectOld;const stale=setup({reject:()=>new Promise((_,reject)=>rejectOld=reject)});stale.events.loadeddata();stale.cleanup();rejectOld(Object.assign(new Error(),{name:'NotSupportedError'}));await Promise.resolve();assert.equal(stale.errors.length,0,'old playback promise must be ignored after cleanup');
+ const stalled=setup();stalled.node.props.onWaiting();stalled.fire(20000);assert.equal(stalled.errors.length,1,'a later buffer stall must expose retry');
+ const resumed=setup();resumed.node.props.onWaiting();resumed.node.props.onPlaying();resumed.fire(20000);assert.equal(resumed.errors.length,0);
+ const paused=setup();paused.node.props.onWaiting();paused.v.paused=true;paused.node.props.onPause();paused.fire(20000);assert.equal(paused.errors.length,0,'pausing during buffering must cancel timeout');
+ const progressing=setup();progressing.node.props.onWaiting();progressing.v.readyState=3;progressing.node.props.onTimeUpdate({currentTarget:progressing.v});progressing.fire(20000);assert.equal(progressing.errors.length,0);
+ const unsupported=setup({hls:true,fallback:true});await Promise.resolve();await Promise.resolve();assert.equal(unsupported.states[0],'https://example.com/backup.mp4','unsupported HLS must try the available fallback');assert.equal(unsupported.errors.length,0);
+ console.log('PASS: play rejection recovery, fallback, stale promises, buffer timeout, pause/resume/progress cancellation, unsupported HLS fallback');
+})().catch(error=>{console.error(error);process.exitCode=1;});

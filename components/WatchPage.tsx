@@ -8,7 +8,7 @@ import type {Subject} from '../lib/catalog';
 import type {Rule} from '../lib/web-core';
 import {episodeNumber,playbackUrls,type Episode,type Road} from '../lib/playback-client';
 type Playback={subject:Subject;episode:string;url:string;sourceUrl:string;position:number;mediaUrl?:string;mediaType?:'hls'|'video';preferDirect?:boolean;number?:number;ruleName?:string};
-type Props={player:Playback;mode:string;error:string;status:string;rules:Rule[];ruleIdx:number;query:string;busy:boolean;sourceError:string;results:{name:string;url:string}[];roads:Road[];road:number;episodes:{id:number;sort:number;name:string;name_cn?:string}[];checks:Record<string,SourceAvailability>;onCheckRefresh:()=>void;onCheckSelect:(index:number,check:SourceAvailability)=>void;onBack:()=>void;onCancel:()=>void;onReady:()=>void;onError:(s:string)=>void;onTime:(n:number,flush?:boolean)=>void;onRule:(n:number)=>void;onQuery:(s:string)=>void;onSearch:()=>void;onResult:(url:string)=>void;onRoad:(n:number)=>void;onPlay:(e:Episode)=>void;onAuto:(n:number)=>void};
+type Props={player:Playback;mode:string;error:string;status:string;rules:Rule[];ruleIdx:number;query:string;busy:boolean;sourceError:string;results:{name:string;url:string}[];roads:Road[];road:number;episodes:{id:number;sort:number;name:string;name_cn?:string}[];checks:Record<string,SourceAvailability>;onCheckRefresh:()=>void;onCheckSelect:(index:number,check:SourceAvailability)=>void;onBack:()=>void;onRetry:()=>void;onCancel:()=>void;onReady:()=>void;onError:(s:string)=>void;onTime:(n:number,flush?:boolean)=>void;onRule:(n:number)=>void;onQuery:(s:string)=>void;onSearch:()=>void;onResult:(url:string)=>void;onRoad:(n:number)=>void;onPlay:(e:Episode)=>void;onAuto:(n:number)=>void};
 export default function WatchPage(p:Props){
  const [panel,setPanel]=useState(true),[autoNext,setAutoNext]=useState(false);
  useEffect(()=>{try{setAutoNext(localStorage.getItem('kw-auto-next')==='true');}catch{}},[]);
@@ -26,7 +26,7 @@ export default function WatchPage(p:Props){
   <div className="watch-layout"><main className="watch-main" aria-label="站内播放器"><div className="watch-stage">
    {p.mode==='video'?<Player key={p.player.url} {...urls} mediaType={p.player.mediaType} castUrl={p.player.mediaUrl} position={p.player.position} onTime={p.onTime} onReady={p.onReady} onError={p.onError} onEnded={()=>{if(autoNext&&next)p.onPlay(next);}}/>:<div className="playback-placeholder">
     {p.mode==='resolving'?<><RefreshCw className="spin" size={32}/><h2>正在准备播放器</h2><p role="status">{p.status||'正在寻找可播放的线路…'}</p><button className="secondary" onClick={p.onCancel}><X size={15}/>停止等待</button></>:<><Play size={36}/><h2>此线路暂不可播放</h2><p>可以重新尝试，或选择其他视频源。</p><div className="playback-recovery">
-     {p.player.sourceUrl&&(!p.player.ruleName||p.rules[p.ruleIdx]?.name===p.player.ruleName)&&<button className="secondary" onClick={()=>p.onPlay({name:p.player.episode,url:p.player.sourceUrl,number:p.player.number})}><RefreshCw size={15}/>重新解析</button>}
+     {p.player.sourceUrl&&(!p.player.ruleName||p.rules[p.ruleIdx]?.name===p.player.ruleName)&&<button className="secondary" onClick={p.onRetry}><RefreshCw size={15}/>重新解析</button>}
      <button className="secondary" onClick={()=>p.onAuto(p.player.number??(index>=0?episodeNumber(line!.episodes[index],index):1))}><RefreshCw size={15}/>自动寻找其他源</button>
      <button className="secondary" onClick={()=>setPanel(true)}>选择其他视频源</button></div></>}
    </div>}

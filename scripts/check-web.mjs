@@ -61,6 +61,7 @@ const malformedCalendar=await catalogServer.seasonCatalog(new URLSearchParams(),
 const grouped=await catalogServer.seasonCatalog(new URLSearchParams('year=2023&quarter=2'),async url=>{assert.match(url,/start=2023-03-01/);return Object.fromEntries(Array.from({length:7},(_,i)=>[String(i+1),i===0?[{subject:{id:77,name:'Test',date:'2023-04-03'}}]:[]]));});
 assert.equal(grouped.calendar[0].items[0].name,'Test');assert.equal(grouped.basis,'premiere');
 let source=readFileSync('app/api/[...path]/route.ts','utf8').replace("'../../../lib/web-core'",JSON.stringify(coreUrl)).replace("'../../../lib/catalog-server'",JSON.stringify(catalogServerUrl));
+source=source.replace("import {libraryResponse} from '../../../lib/library-server';","const libraryResponse=async()=>Response.json({authenticated:false,entries:[]});");
 const guardUrl=mod(compile(readFileSync('lib/request-guard.ts','utf8')));
 const cacheUrl=mod(compile(readFileSync('lib/server-cache.ts','utf8').replace("import {env} from 'cloudflare:workers';",'const env={};')));
 source=source.replace("'../../../lib/request-guard'",JSON.stringify(guardUrl)).replace("'../../../lib/server-cache'",JSON.stringify(cacheUrl));

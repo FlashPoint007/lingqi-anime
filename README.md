@@ -5,7 +5,7 @@ A browser adaptation of [Predidit/Kazumi](https://github.com/Predidit/Kazumi), b
 ## Features
 
 - Bangumi search, filters, calendar, episode metadata and clearly marked offline fallback.
-- Browser-local watchlists, resume history, themes and JSON backup.
+- Account-owned D1 watchlists and resume history with cross-device sync, automatic migration of browser records, offline retry and JSON backup. Anonymous viewing remains available; themes and custom source rules stay browser-local.
 - Default subscription to [Predidit/KazumiRules](https://github.com/Predidit/KazumiRules): only rules named in the upstream active `index.json` are bundled and enabled (16 at this revision). Deprecated, removed and malformed managed rules are pruned after a complete successful synchronization. Custom rules and explicit user switches survive updates; temporary upstream failures retain cached data. The server caches the complete repository archive for one hour and the browser checks for updates every 24 hours during visits.
 - XPath and API search/episodes; clicking a metadata episode finds a matching line and opens the local player. Declared video/config/iframe URLs are parsed without executing remote scripts. Playable direct media uses a signed same-origin streaming proxy with recursive HLS playlist/key/segment rewriting and HTTP range support. Only the site-owned HTML5/HLS player renders playback. When no media URL can be resolved, alternate episode lines are tried and the page offers retry/source selection; source pages are never embedded. Sources that require browser script execution or human verification may remain unavailable.
 - HTML5 MP4/WebM/HLS; actual Anime4K CNN 2× super resolution via WebGPU, balanced/high quality; Google Cast, AirPlay/Remote Playback; speed, fullscreen, picture in picture and local WebVTT subtitles.
@@ -14,7 +14,7 @@ A browser adaptation of [Predidit/Kazumi](https://github.com/Predidit/Kazumi), b
 
 Super resolution needs WebGPU, CORS permission, decoded video and input up to 1080p. It processes local canvas frames and does not modify Cast, AirPlay or picture-in-picture output. Changing this mode may reload the source while preserving position. Receivers must access the media URL themselves. Cast requires a compatible browser/device and Google SDK; AirPlay/Remote Playback availability depends on the browser. Direct DLNA, native mpv shader parity, custom media headers, captcha automation, DRM, offline media downloads, danmaku, Syncplay and automatic cross-device sync are not implemented. An imported rule does not guarantee that its source works from a Worker or browser.
 
-Rule updates run during visits, not as a background cron when nobody opens the site. Personal data stays in the current browser. The source proxy limits response size and redirects and accepts public HTTPS domain destinations. API requests use only the rule's configured destination and a limited header set. Remote scripts are never evaluated in the app context. Set the secret runtime environment variable `LINGQI_MEDIA_SECRET` to a random value of at least 32 bytes for signed media tickets; keep it out of source control. Tickets expire after eight hours. Cached viewing history saves source page URLs so it resolves fresh tickets on resume.
+Rule updates run during visits, not as a background cron when nobody opens the site. Signed-in watchlists and viewing history are stored privately in D1; anonymous changes and offline queues are retained in the browser. The source proxy limits response size and redirects and accepts public HTTPS domain destinations. API requests use only the rule's configured destination and a limited header set. Remote scripts are never evaluated in the app context. Set the secret runtime environment variable `LINGQI_MEDIA_SECRET` to a random value of at least 32 bytes for signed media tickets; keep it out of source control. Tickets expire after eight hours. Cached viewing history saves source page URLs so it resolves fresh tickets on resume.
 
 ## Development
 
@@ -26,6 +26,8 @@ pnpm dev
 pnpm build
 node scripts/check-web.mjs
 node scripts/check-security-cache.cjs
+node scripts/check-library.cjs
+node scripts/check-library-hook.cjs
 pnpm exec tsc --noEmit
 ```
 
@@ -33,7 +35,7 @@ The Sites Vinext starter and `sites()` integration are retained. Public source d
 
 ## Shared cache and request protection
 
-The hosting manifest enables the logical D1 binding `DB`. Publish the checked-in Drizzle migration before serving the Worker; do not create tables in request handlers. D1 stores public metadata/directories and short-lived request counters. Watchlists and viewing history remain browser-local. Video files, media proxy bytes, playback tickets and custom API credentials are not stored in this cache. Rules containing authorization/API-key/password/token fields bypass the shared directory cache.
+The hosting manifest enables the logical D1 binding `DB`. Publish the checked-in Drizzle migration before serving the Worker; do not create tables in request handlers. D1 stores public metadata/directories, short-lived request counters and separately authorized personal records. Personal records are never included in the shared cache. Video files, media proxy bytes, playback tickets and custom API credentials are not stored in this cache. Rules containing authorization/API-key/password/token fields bypass the shared directory cache.
 
 | Cached data | Fresh lifetime | Additional fallback lifetime |
 | --- | --- | --- |
@@ -48,6 +50,14 @@ Identical misses are coalesced per Worker isolate. Failed upstream responses are
 The Worker rejects unknown API routes, unsupported methods, cross-site source POSTs, oversized URLs and non-JSON/over-64-KiB source bodies (8-second body-read deadline). It adds browser security headers and retains signed media/origin/redirect/response-size validation. Per-client fixed-minute quotas are 180 metadata queries, 180 source queries, 30 playback resolutions, 1,200 media requests, 40 rule requests and 300 page requests. Resolution consumes source quota too. Responses use HTTP 429 and `Retry-After` when a quota or concurrency cap is reached. D1 atomically reserves small quota blocks across isolates; unused reserved slots conservatively consume that minute's allowance. Concurrent work is capped per client and per isolate, and streaming slots are released on completion or cancellation.
 
 Client identity uses only Cloudflare's connecting-IP header at the Worker entrypoint and is stored as an HMAC using the runtime binding `LINGQI_MEDIA_SECRET`; raw IP addresses are not persisted. The Worker explicitly marks the edge request as trusted because dispatch can reconstruct it without `cf` metadata. Library calls without a trusted edge context or native `cf` metadata do not trust incoming forwarding headers. Without a trusted identity, requests share an eight-times-larger fallback quota. Old counters are deleted opportunistically. Application quotas are not network-layer DDoS protection: distributed attacks, edge WAF/bot rules and billing protections require the hosting provider's edge controls. The application does not configure or claim a custom WAF rule set.
+
+## Personal library persistence
+
+Public browsing/playback does not require login. The native Sites sign-in flow links watchlists and viewing history to the platform's stable site-specific account ID; email is display-only. Each `/api/library` read/write scopes its SQL to the authenticated account. Private responses use `private, no-store`. Writes require a matching same-origin JSON request and an explicit matching account ID, preventing an old offline queue from being uploaded after account switching. Anonymous clients cannot read or write another visitor's records.
+
+The first signed-in visit merges legacy/anonymous browser records into the database. Deleted rows retain versioned tombstones, so stale devices and repeat imports cannot silently revive them. Mutations use atomic version checks and stable operation IDs: retries are idempotent, unrelated changes merge, and conflicting older writes keep the database version. Watchlists allow up to 1,000 active entries; history retains the most recent 100 titles. A source page and playback position are saved, with fresh media tickets resolved on resume. No video files or proxy tickets are stored.
+
+The client batches changes, saves progress during playback and flushes on pause/exit. Small writes use fetch keepalive; pending operations remain in an account-scoped local retry queue if the connection fails. Refresh/focus/online events and a 30-second in-page poll synchronize other devices; no Codex automation is created. The UI distinguishes pending, saving, saved, anonymous and failure states. Custom rules and appearance remain local because imported rules can contain credentials. Optional JSON export/import remains available. The library endpoint has a separate 120-per-minute client quota and a 256-KiB write-body limit.
 
 ## Attribution
 

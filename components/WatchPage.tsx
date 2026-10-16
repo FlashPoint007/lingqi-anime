@@ -1,5 +1,5 @@
 'use client';
-import {useEffect,useMemo,useState} from 'react';
+import {useEffect,useMemo,useState,type ReactNode} from 'react';
 import {ArrowLeft,ChevronLeft,ChevronRight,PanelRightClose,PanelRightOpen,Play,RefreshCw,Search,X} from 'lucide-react';
 import Player from './Player';
 import SourceAvailabilityList from './SourceAvailability';
@@ -8,7 +8,7 @@ import type {Subject} from '../lib/catalog';
 import type {Rule} from '../lib/web-core';
 import {episodeNumber,episodeNeighbors,visibleEpisodes,playbackUrls,type Episode,type EpisodeTarget,type Road} from '../lib/playback-client';
 type Playback={subject:Subject;episode:string;url:string;sourceUrl:string;source?:string;position:number;mediaUrl?:string;mediaType?:'hls'|'video';preferDirect?:boolean;number?:number;ruleName?:string};
-type Props={player:Playback;mode:string;error:string;status:string;rules:Rule[];ruleIdx:number;query:string;busy:boolean;sourceError:string;results:{name:string;url:string}[];roads:Road[];road:number;episodes:{id:number;sort:number;name:string;name_cn?:string}[];checks:Record<string,SourceAvailability>;onCheckRefresh:()=>void;onCheckSelect:(index:number,check:SourceAvailability)=>void;onBack:()=>void;onRetry:()=>void;onCancel:()=>void;onReady:()=>void;onError:(s:string)=>void;onTime:(n:number,flush?:boolean)=>void;onRule:(n:number)=>void;onQuery:(s:string)=>void;onSearch:()=>void;onResult:(url:string)=>void;onRoad:(n:number)=>void;onPlay:(e:Episode)=>void;onAuto:(n:number)=>void};
+type Props={dataSync?:ReactNode;player:Playback;mode:string;error:string;status:string;rules:Rule[];ruleIdx:number;query:string;busy:boolean;sourceError:string;results:{name:string;url:string}[];roads:Road[];road:number;episodes:{id:number;sort:number;name:string;name_cn?:string}[];checks:Record<string,SourceAvailability>;onCheckRefresh:()=>void;onCheckSelect:(index:number,check:SourceAvailability)=>void;onBack:()=>void;onRetry:()=>void;onCancel:()=>void;onReady:()=>void;onError:(s:string)=>void;onTime:(n:number,flush?:boolean)=>void;onRule:(n:number)=>void;onQuery:(s:string)=>void;onSearch:()=>void;onResult:(url:string)=>void;onRoad:(n:number)=>void;onPlay:(e:Episode)=>void;onAuto:(n:number)=>void};
 export default function WatchPage(p:Props){
  const [panel,setPanel]=useState(true),[autoNext,setAutoNext]=useState(false),[episodeQuery,setEpisodeQuery]=useState(''),[descending,setDescending]=useState(false);
  useEffect(()=>setEpisodeQuery(''),[p.player.subject.id,p.ruleIdx]);
@@ -35,7 +35,7 @@ export default function WatchPage(p:Props){
    </div>}
   </div>{p.error&&<div className="watch-error" role="alert" data-source-url={p.player.sourceUrl}>{p.error}</div>}</main>
   {panel&&<aside className="watch-sidebar" aria-label="选集与视频源">
-   <div className="watch-section-heading"><h2>选集与线路</h2><span>{p.rules[p.ruleIdx]?.name||'选择视频源'}</span></div>
+   {p.dataSync}<div className="watch-section-heading"><h2>选集与线路</h2><span>{p.rules[p.ruleIdx]?.name||'选择视频源'}</span></div>
    <label className="watch-source-label">视频源<select aria-label="播放页视频源" value={p.ruleIdx} onChange={e=>p.onRule(Number(e.target.value))}>{p.ruleIdx<0&&<option value={-1}>请选择视频源</option>}{p.rules.map((r,i)=>r.enabled!==false&&<option key={r.name} value={i}>{r.name}{p.checks[r.name]?' · '+availabilityLabels[p.checks[r.name].state]:''}</option>)}</select></label>
    {p.player.subject.id!==0&&<SourceAvailabilityList rules={p.rules} checks={p.checks} selected={p.ruleIdx} busy={p.busy} onRefresh={p.onCheckRefresh} onSelect={p.onCheckSelect}/>}
    <div className="watch-preferences"><label><input type="checkbox" checked={autoNext} onChange={e=>{setAutoNext(e.target.checked);try{localStorage.setItem('kw-auto-next',String(e.target.checked));}catch{}}}/>自动播放下一集</label><span>空格暂停 · F 全屏</span></div>

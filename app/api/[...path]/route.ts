@@ -1,4 +1,5 @@
 import {cachedJson} from '../../../lib/server-cache';
+import {libraryResponse} from '../../../lib/library-server';
 import {readRequestText,RequestLimitError} from '../../../lib/request-guard';
 import {ruleManifest,ruleBatch} from '../../../lib/rule-subscription-server';
 import {apiRequest,apiSearch,apiChapters,extractMedia} from '../../../lib/rule-api';
@@ -7,6 +8,7 @@ import {browseCatalog,seasonCatalog} from '../../../lib/catalog-server';
 import {normalizeSubject,normalizeEpisodes} from '../../../lib/catalog';
 import {boundedText,proxyMedia,resolvePlayback,signedMediaUrl} from '../../../lib/playback-server';
 const UA='KazumiWeb/0.1 (+https://github.com/Predidit/Kazumi)';
+export const dynamic='force-dynamic';
 const json=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':status>=400?'no-store':'private, max-age=60'}});
 async function upstream(url:string,init:RequestInit={}) {
  const res=await fetch(url,{...init,headers:{'User-Agent':UA,'Accept':'application/json',...init.headers},signal:AbortSignal.timeout(12000)});
@@ -15,6 +17,7 @@ async function upstream(url:string,init:RequestInit={}) {
 export async function GET(req:Request) {
  const u=new URL(req.url); const kind=u.pathname.split('/').pop();
  try {
+  if(kind==='library')return await libraryResponse(req);
   if(kind==='media')return proxyMedia(req);
   if(kind==='catalog') {
    const params=new URLSearchParams();for(const key of ['mode','year','quarter','q','tag','cat','page','offset'])if(u.searchParams.has(key))params.set(key,u.searchParams.get(key)!);params.sort();
@@ -39,6 +42,7 @@ export async function GET(req:Request) {
  }catch(e){return json({error:e instanceof Error?e.message:'请求失败，请稍后重试'},502);}
 }
 export async function POST(req:Request) {
+ if(new URL(req.url).pathname==='/api/library')return libraryResponse(req);
  if(!new URL(req.url).pathname.endsWith('/source')) return json({error:'接口不存在'},404);
  const origin=req.headers.get('origin');if(origin&&origin!==new URL(req.url).origin) return json({error:'跨站请求被拒绝'},403);
  try {

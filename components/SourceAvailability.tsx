@@ -13,6 +13,8 @@ export function useSourceAvailability(subject:Subject|null,rules:Rule[]){
  const scope=JSON.stringify([subject?.id,names,rules.filter(r=>r.enabled!==false).map(r=>r)]);
  const current=useRef(scope);current.current=scope;
  const refreshScope=useRef('');
+ const reports=useRef({scope,versions:new Map<string,number>()});
+ if(reports.current.scope!==scope)reports.current={scope,versions:new Map<string,number>()};
  const key=(rule:Rule)=>scope+'|'+rule.name;
  useEffect(()=>{
   const controller=new AbortController();const force=refreshScope.current===scope;refreshScope.current='';setChecksScope(scope);if(!subject||subject.id===0){setChecks({});return;}
@@ -20,13 +22,13 @@ export function useSourceAvailability(subject:Subject|null,rules:Rule[]){
   const initial=Object.fromEntries(enabled.map(rule=>{const unsupported=ruleCompatibility(rule);return [rule.name,unsupported?{...empty,state:'error' as const,message:unsupported}:cachedAvailability(cache,key(rule))||empty];}));setChecks(initial);
   void checkSources(candidates,controller.signal,async rule=>{
    if(initial[rule.name].state!=='queued')return;
-   const started=Date.now();const update=(value:SourceAvailability)=>{if(!controller.signal.aborted)setChecks(old=>{if(controller.signal.aborted||current.current!==scope||(old[rule.name]?.checkedAt||0)>started)return old;if(value.checkedAt)storeAvailability(cache,key(rule),value);return {...old,[rule.name]:value};});};
+   const version=reports.current.versions.get(rule.name)||0;const update=(value:SourceAvailability)=>{if(!controller.signal.aborted)setChecks(old=>{if(controller.signal.aborted||current.current!==scope||(reports.current.versions.get(rule.name)||0)!==version)return old;if(value.checkedAt)storeAvailability(cache,key(rule),value);return {...old,[rule.name]:value};});};
    update({...empty,state:'checking'});
    try{const result=await checkSource(rule,names,controller.signal,undefined,force);if(controller.signal.aborted)return;update(result);}
    catch(e){if(!controller.signal.aborted)update({...empty,state:'error',message:(e as Error).message});}
   });return()=>controller.abort();
  },[scope,revision]);
- const report=(rule:Rule,value:Partial<SourceAvailability>)=>{if(current.current!==scope)return;setChecks(old=>{if(current.current!==scope)return old;const next={...(old[rule.name]||empty),...value,checkedAt:Date.now()};storeAvailability(cache,key(rule),next);return {...old,[rule.name]:next};});};
+ const report=(rule:Rule,value:Partial<SourceAvailability>)=>{if(current.current!==scope)return;reports.current.versions.set(rule.name,(reports.current.versions.get(rule.name)||0)+1);setChecks(old=>{if(current.current!==scope)return old;const next={...(old[rule.name]||empty),...value,checkedAt:Date.now()};storeAvailability(cache,key(rule),next);return {...old,[rule.name]:next};});};
  return {checks:checksScope===scope?checks:{},refresh:()=>{invalidateAvailability(cache,scope);refreshScope.current=scope;setRevision(n=>n+1);},report};
 }
 type Props={rules:Rule[];checks:Record<string,SourceAvailability>;selected:number;busy?:boolean;onRefresh:()=>void;onSelect:(index:number,check:SourceAvailability)=>void};

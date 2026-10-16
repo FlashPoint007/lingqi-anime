@@ -98,7 +98,7 @@ export default function Home(){
  }
  function closePlayer(){saveProgress(playerProgress.current,true);stopPlayback();stopSource();setPlayer(null);if(location.hash.startsWith('#watch/')){if(window.history.state?.lingqiWatch)window.history.back();else window.history.replaceState(null,'',location.pathname+location.search);}}
  function changeRule(i:number){stopSource();if(playMode==='resolving')cancelPlayback();setRuleIdx(i);setSourceResults([]);setRoads([]);setChapterSource('');setSourceError('');}
- function search(e:React.FormEvent){e.preventDefault();setOffset(0);setSort('date');setActiveQuery(query.trim());setTag('');setCategory('');setView('discover');setReload(n=>n+1);}
+ function search(e:React.FormEvent){e.preventDefault();setOffset(0);setSort('date');setActiveQuery(query.trim());setTag('');setCategory('');setCatalogYear('');setView('discover');setReload(n=>n+1);}
  function clearSearch(){setQuery('');setActiveQuery('');setOffset(0);setReload(n=>n+1);}
  function resetFilters(){clearSearch();setTag('');setCategory('');setCatalogYear('');setSort('date');}
  function importRule(text=ruleText){try{const incoming=parseRules(text);setRules(old=>{const map=new Map(old.map(r=>[r.name,r]));incoming.forEach(r=>map.set(r.name,r));return [...map.values()];});setRuleText('');setRuleError('');setToast('已导入 '+incoming.length+' 条规则');}catch(e){setRuleError((e as Error).message);}}
@@ -119,7 +119,7 @@ export default function Home(){
  function chooseAvailableSource(index:number,check:SourceAvailability){
   saveProgress(playerProgress.current,true);
   changeRule(index);setSourceResults(check.results);
-  if(check.source&&check.roads){setChapterSource(check.source);setRoads(check.roads);setActiveRoad(0);setSourceError('');if(player){const number=player.number||1;const road=check.roads.findIndex(line=>!!episodeAtNumber(line.episodes,number));const episode=road>=0?episodeAtNumber(check.roads[road].episodes,number):undefined;if(episode){setActiveRoad(road);void resolveSource(player.subject,{...episode,number,source:check.source},rules[index],playerProgress.current,check.roads);}else setSourceError('此源暂未收录第 '+number+' 集，可选择已收录的剧集。');}}
+  if(check.source&&check.roads){setChapterSource(check.source);setRoads(check.roads);setActiveRoad(0);setSourceError('');if(player){const current=roads.find(line=>line.episodes.some(ep=>ep.url===player.sourceUrl)),at=current?.episodes.findIndex(ep=>ep.url===player.sourceUrl)??-1;const number=player.number??episodeNumber(at>=0?current!.episodes[at]:{name:player.episode,url:player.sourceUrl},Math.max(0,at));const road=check.roads.findIndex(line=>!!episodeAtNumber(line.episodes,number));const episode=road>=0?episodeAtNumber(check.roads[road].episodes,number):undefined;if(episode){setActiveRoad(road);void resolveSource(player.subject,{...episode,number,source:check.source},rules[index],playerProgress.current,check.roads);}else setSourceError('此源暂未收录第 '+number+' 集，可选择已收录的剧集。');}}
   else setSourceError(check.message);
  }
  function selectRule(index:number){const check=availability.checks[rules[index]?.name];if(check?.source&&check.roads)chooseAvailableSource(index,check);else changeRule(index);}

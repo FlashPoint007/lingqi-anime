@@ -29,6 +29,7 @@ node scripts/check-security-cache.cjs
 node scripts/check-library.cjs
 node scripts/check-library-hook.cjs
 node scripts/check-review.mjs
+node scripts/check-availability-hook.cjs
 pnpm exec tsc --noEmit
 ```
 
@@ -53,6 +54,8 @@ The Worker rejects unknown API routes, unsupported methods, cross-site source PO
 Client identity uses Cloudflare's connecting-IP header at the Worker entrypoint; signed-in library requests instead use the platform-authenticated account ID so changing networks does not reset their quota. Both are stored as an HMAC using the runtime binding `LINGQI_MEDIA_SECRET`; raw IP addresses and account IDs are not persisted in rate counters. The Worker explicitly marks the edge request as trusted because dispatch can reconstruct it without `cf` metadata. Outside that trusted entrypoint, account headers are ignored and forwarding headers require native `cf` metadata. Without a trusted identity, requests share an eight-times-larger fallback quota. Old counters are deleted opportunistically. Application quotas are not network-layer DDoS protection: distributed attacks, edge WAF/bot rules and billing protections require the hosting provider's edge controls. The application does not configure or claim a custom WAF rule set.
 
 Hostname validation canonicalizes a trailing DNS dot and rejects IP literals and local/internal suffixes. This validation does not pin DNS resolutions and is not a complete DNS-rebinding defense. Source body reads have independent time and size limits; private playback resolution also follows client cancellation and a 20-second operation deadline. HLS lists allow at most 4,096 references, 20,000 lines and 4 MiB of rewritten output, with at most 16 concurrent signatures. Proxy single-range requests support bounded, open-ended and suffix ranges; invalid ranges are rejected before upstream access, and upstream 416 responses retain their meaning. HTML responses disable object embedding and restrict the base URL.
+
+Seasonal calendar lookups share a 35-second deadline across current, seasonal and paginated fallback services. Missing or invalid fallback totals are rejected rather than labelled complete. Global keyword searches clear previous filters, including year. Source switching derives episode identity for older viewing records and preserves episode zero; completed playback reports take precedence over background directory checks even when timestamps coincide.
 
 ## Personal library persistence
 

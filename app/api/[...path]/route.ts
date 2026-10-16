@@ -12,7 +12,7 @@ const UA='KazumiWeb/0.1 (+https://github.com/Predidit/Kazumi)';
 export const dynamic='force-dynamic';
 const json=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':status>=400?'no-store':'private, max-age=60'}});
 async function upstream(url:string,init:RequestInit={}) {
- const res=await fetch(url,{...init,headers:{'User-Agent':UA,'Accept':'application/json',...init.headers},signal:AbortSignal.timeout(12000)});
+ const deadline=AbortSignal.timeout(12000);const res=await fetch(url,{...init,headers:{'User-Agent':UA,'Accept':'application/json',...init.headers},signal:init.signal?AbortSignal.any([init.signal,deadline]):deadline});
  if(!res.ok){discard(res);throw new Error('上游请求失败（'+res.status+'）');} return JSON.parse(await boundedText(res));
 }
 export async function GET(req:Request) {

@@ -1,0 +1,19 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),ts=require('typescript');
+const callbacks=new Map(),cache=new Map();let clock=1000;
+class Clock extends Date{static now(){return clock;}}
+const core={availabilityLabels:{},checkSource:rule=>new Promise(resolve=>callbacks.set(rule.name,resolve)),checkSources:(rules,_signal,check)=>Promise.all(rules.map(check)),cachedAvailability:(_cache,key)=>cache.get(key),storeAvailability:(_cache,key,value)=>cache.set(key,value),invalidateAvailability:()=>cache.clear()};
+const slots=[],effects=[];let cursor=0,dirty=false,stopped=false,result;
+const schedule=()=>{if(dirty||stopped)return;dirty=true;queueMicrotask(()=>{dirty=false;if(!stopped)render();});};
+const react={useState(initial){const i=cursor++;if(!slots[i])slots[i]={value:initial};return [slots[i].value,value=>{const next=typeof value==='function'?value(slots[i].value):value;if(next!==slots[i].value){slots[i].value=next;schedule();}}];},useRef(value){const i=cursor++;return slots[i]||(slots[i]={current:value});},useEffect(fn,deps){const i=cursor++,old=slots[i];if(!old||deps.some((v,n)=>v!==old.deps[n])){slots[i]={deps,cleanup:old?.cleanup};effects.push(()=>{slots[i].cleanup?.();slots[i].cleanup=fn();});}}};
+const exportsValue={};vm.runInNewContext(ts.transpileModule(fs.readFileSync('components/SourceAvailability.tsx','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText,{exports:exportsValue,require:name=>name==='react'?react:name.includes('source-availability')?core:name.includes('subscriptions')?{ruleCompatibility:()=>''}:{},AbortController,Date:Clock,console});
+let subject={id:77,name:'Example'};const rules=[{name:'A',enabled:true},{name:'B',enabled:true}];
+function render(){cursor=0;result=exportsValue.useSourceAvailability(subject,rules);effects.splice(0).forEach(fn=>fn());}
+const tick=async()=>{for(let n=0;n<5;n++)await new Promise(resolve=>setImmediate(resolve));};
+(async()=>{
+ render();await tick();assert.equal(result.checks.A.state,'checking');
+ result.report(rules[0],{state:'playing',message:'本集已播放'});await tick();callbacks.get('A')({state:'found',message:'后台目录结果',results:[],checkedAt:clock});callbacks.get('B')({state:'found',message:'B 的目录',results:[],checkedAt:clock});await tick();
+ assert.equal(result.checks.A.state,'playing','a background check cannot overwrite a newer manual report in the same millisecond');assert.equal(result.checks.B.state,'found','other source checks still finish normally');
+ result.refresh();await tick();callbacks.get('A')({state:'found',message:'重新检测',results:[],checkedAt:++clock});callbacks.get('B')({state:'found',message:'重新检测',results:[],checkedAt:clock});await tick();assert.equal(result.checks.A.state,'found','explicit recheck may replace an older report');
+ result.refresh();await tick();const old=callbacks.get('A');subject={id:78,name:'Next'};render();await tick();old({state:'playing',message:'上个番剧',results:[],checkedAt:++clock});await tick();assert.equal(result.checks.A.state,'checking','late results do not cross subjects');
+ stopped=true;slots.forEach(slot=>slot?.cleanup?.());console.log('PASS: actual source hook protects manual playback reports, independent checks, explicit refresh and subject isolation');
+})().catch(error=>{stopped=true;slots.forEach(slot=>slot?.cleanup?.());console.error(error);process.exitCode=1;});

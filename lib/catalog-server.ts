@@ -9,19 +9,21 @@ const groups=(items:any[])=>Array.from({length:7},(_,i)=>({weekday:{id:i+1},item
 export async function seasonCatalog(params:URLSearchParams,upstream:Upstream){
  const now=currentSeason(),year=Number(params.get('year')||now.year),quarter=Number(params.get('quarter')||now.quarter);
  const range=seasonRange(year,quarter);
+ const signal=AbortSignal.timeout(35000);
+ const read:Upstream=async(url,init={})=>{try{signal.throwIfAborted();return await upstream(url,{...init,signal});}catch(error){if(signal.aborted)throw new Error('放送时间表加载超时，请重试');throw error;}};
  if(year===now.year&&quarter===now.quarter){
-  try{const calendar=normalizeCalendar(await upstream('https://api.bgm.tv/calendar'));return {calendar,year,quarter,basis:'current',complete:true};}catch{/* Try the same seasonal service as Kazumi. */}
+  try{const calendar=normalizeCalendar(await read('https://api.bgm.tv/calendar'));return {calendar,year,quarter,basis:'current',complete:true};}catch{/* Try the same seasonal service as Kazumi. */}
  }
  try{
-  const data=await upstream('https://api.kazumi.fyi/kazumi/v1/calendar/season?'+new URLSearchParams(range));
+  const data=await read('https://api.kazumi.fyi/kazumi/v1/calendar/season?'+new URLSearchParams(range));
   if(!Array.from({length:7},(_,i)=>data[String(i+1)]).every(Array.isArray))throw new Error('季度数据格式不正确');
   const calendar=Array.from({length:7},(_,i)=>({weekday:{id:i+1},items:normalizeSubjects(data[String(i+1)].map((e:any)=>e?.subject||e))}));
   return {calendar,year,quarter,basis:'premiere',complete:true};
  }catch{
   const items:any[]=[];let total=0;
   for(let offset=0;offset<1000;offset+=100){
-   const data=await upstream('https://api.bgm.tv/v0/search/subjects?limit=100&offset='+offset,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keyword:'',sort:'heat',filter:{type:[2],nsfw:false,air_date:['>='+range.start,'<'+range.end]}})});
-   total=Number(data.total)||0;const batch=normalizeSubjects(data.data);items.push(...batch);if(data.data.length<100||items.length>=total)break;
+   const data=await read('https://api.bgm.tv/v0/search/subjects?limit=100&offset='+offset,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keyword:'',sort:'heat',filter:{type:[2],nsfw:false,air_date:['>='+range.start,'<'+range.end]}})});
+   const batch=normalizeSubjects(data?.data);total=Number(data.total);if(!Number.isSafeInteger(total)||total<0)throw new Error('放送列表总数格式不正确，请重试');items.push(...batch);if(data.data.length<100||items.length>=total)break;
   }
   return {calendar:groups([...new Map(items.map(s=>[s.id,s])).values()]),year,quarter,basis:'premiere',complete:total<=items.length};
  }

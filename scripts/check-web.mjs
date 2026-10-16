@@ -60,6 +60,10 @@ await assert.rejects(catalogServer.browseCatalog(new URLSearchParams('q=Example'
 const malformedCalendar=await catalogServer.seasonCatalog(new URLSearchParams(),async url=>url==='https://api.bgm.tv/calendar'?{error:'bad data'}:Object.fromEntries(Array.from({length:7},(_,i)=>[String(i+1),[]])));assert.equal(malformedCalendar.basis,'premiere');assert.equal(malformedCalendar.calendar.length,7);
 const grouped=await catalogServer.seasonCatalog(new URLSearchParams('year=2023&quarter=2'),async url=>{assert.match(url,/start=2023-03-01/);return Object.fromEntries(Array.from({length:7},(_,i)=>[String(i+1),i===0?[{subject:{id:77,name:'Test',date:'2023-04-03'}}]:[]]));});
 assert.equal(grouped.calendar[0].items[0].name,'Test');assert.equal(grouped.basis,'premiere');
+// A slow seasonal service cannot start another full fallback after its deadline.
+const seasonController=new AbortController(),originalTimeout=AbortSignal.timeout;let seasonalCalls=0;
+try{AbortSignal.timeout=ms=>ms===35000?seasonController.signal:originalTimeout(ms);await assert.rejects(catalogServer.seasonCatalog(new URLSearchParams('year=2023&quarter=2'),async(_url,init)=>{seasonalCalls++;assert.equal(init.signal,seasonController.signal);seasonController.abort();throw Error('season service failed');}),/放送时间表加载超时/);assert.equal(seasonalCalls,1);}finally{AbortSignal.timeout=originalTimeout;}
+await assert.rejects(catalogServer.seasonCatalog(new URLSearchParams('year=2023&quarter=2'),async url=>{if(url.includes('kazumi.fyi'))throw Error('season unavailable');return {data:[{id:77,name:'Test',date:'2023-04-03'}]};}),/放送列表总数/);
 let source=readFileSync('app/api/[...path]/route.ts','utf8').replace("'../../../lib/web-core'",JSON.stringify(coreUrl)).replace("'../../../lib/catalog-server'",JSON.stringify(catalogServerUrl));
 source=source.replace("import {libraryResponse} from '../../../lib/library-server';","const libraryResponse=async()=>Response.json({authenticated:false,entries:[]});");
 const guardUrl=mod(compile(readFileSync('lib/request-guard.ts','utf8')));

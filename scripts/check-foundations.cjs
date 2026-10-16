@@ -33,5 +33,13 @@ const compile=source=>ts.transpileModule(source,{compilerOptions:{target:ts.Scri
  const searchState={catalogYear:'2024',offset:48,sort:'rank',activeQuery:'Old',tag:'日常',category:'1',view:'collection',reload:0};const searchContext={query:'  New anime  '};
  for(const name of Object.keys(searchState))searchContext['set'+name[0].toUpperCase()+name.slice(1)]=value=>searchState[name]=typeof value==='function'?value(searchState[name]):value;
  vm.createContext(searchContext);vm.runInContext(handler('search'),searchContext);searchContext.search({preventDefault(){}});assert.equal(searchState.catalogYear,'','global search must not inherit a hidden year filter');assert.equal(searchState.activeQuery,'New anime');assert.equal(searchState.offset,0);assert.equal(searchState.view,'discover');
+ // Closing or changing the detail dialog wins even before effect cleanup runs.
+ let detailEffect;const findDetail=node=>{if(ts.isCallExpression(node)&&node.expression.getText(source)==='useEffect'&&node.arguments[0]?.getText(source).includes('Promise.allSettled'))detailEffect=node.arguments[0].getText(source);ts.forEachChild(node,findDetail);};findDetail(source);assert.ok(detailEffect);
+ for(const replacement of [null,{id:8,name:'New selection'}]){
+  let resolveSubject;const details={selected:{id:7,name:'Previous'}};const detailContext={selected:details.selected,AbortController,anySignal:signals=>signals[0],timeoutSignal:()=>new AbortController().signal,rules:[],title:s=>s.name,stopSource:()=>{},api:url=>url.startsWith('/api/subject')?new Promise(resolve=>resolveSubject=resolve):Promise.resolve({data:[],total:0})};
+  for(const name of ['DetailLoading','DetailError','Episodes','SourceTerm','SourceResults','Roads','SourceError','RuleIdx'])detailContext['set'+name]=()=>{};
+  detailContext.setSelected=value=>details.selected=typeof value==='function'?value(details.selected):value;
+  vm.createContext(detailContext);vm.runInContext(compile('this.loadDetail='+detailEffect),detailContext);detailContext.loadDetail();details.selected=replacement;resolveSubject({id:7,name:'Loaded previous'});await new Promise(resolve=>setImmediate(resolve));assert.equal(details.selected,replacement,'late detail results cannot reopen a closed dialog or replace another selection');
+ }
  console.log('PASS: legacy abort APIs, network/JSON/body timeout errors, backup validation/theme restore, repeat imports and failed file reads');
 })().catch(error=>{console.error(error);process.exitCode=1;});

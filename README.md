@@ -16,6 +16,8 @@ Super resolution needs WebGPU, CORS permission, decoded video and input up to 10
 
 Rule updates run during visits, not as a background cron when nobody opens the site. Signed-in watchlists and viewing history are stored privately in D1; anonymous changes and offline queues are retained in the browser. The source proxy limits response size and redirects and accepts public HTTPS domain destinations. API requests use only the rule's configured destination and a limited header set. Remote scripts are never evaluated in the app context. Set the secret runtime environment variable `LINGQI_MEDIA_SECRET` to a random value of at least 32 bytes for signed media tickets; keep it out of source control. Tickets expire after eight hours. Cached viewing history saves source page URLs so it resolves fresh tickets on resume.
 
+Enabling Anime4K preserves an intentionally paused video across the CORS reload; active playback still resumes. VTT imports report validation/read failures, allow the same file to be selected again, ignore stale reads after another selection or player exit, and revoke replaced subtitle URLs.
+
 ## Development
 
 Node >=22.13 and pnpm:
@@ -25,6 +27,7 @@ pnpm install
 pnpm dev
 pnpm build
 node scripts/check-web.mjs
+node scripts/check-player-settings.cjs
 node scripts/check-security-cache.cjs
 node scripts/check-library.cjs
 node scripts/check-library-hook.cjs
@@ -63,7 +66,7 @@ Public browsing/playback does not require login. The native Sites sign-in flow l
 
 The first signed-in visit merges legacy/anonymous browser records into the database. Deleted rows retain versioned tombstones, so stale devices and repeat imports cannot silently revive them. Mutations use atomic version checks and stable operation IDs: retries are idempotent, unrelated changes merge, and conflicting older writes keep the database version. Watchlists allow up to 1,000 active entries; history retains the most recent 100 titles. A source page and playback position are saved, with fresh media tickets resolved on resume. No video files or proxy tickets are stored.
 
-The client batches changes, saves progress during playback and flushes on pause/exit. Small writes use fetch keepalive; pending operations remain in an account-scoped local retry queue if the connection fails. Refresh/focus/online events and a 30-second in-page poll synchronize other devices; no Codex automation is created. The UI distinguishes pending, saving, saved, anonymous and failure states. Custom rules and appearance remain local because imported rules can contain credentials. Optional JSON export/import remains available. The library endpoint has a separate 120-per-minute client quota and a 256-KiB write-body limit.
+The client batches changes, saves progress during playback and flushes on pause/exit. Small writes use fetch keepalive; pending operations remain in an account-scoped local retry queue if the connection fails. Recovery validates every stored operation and compacts duplicate record keys, preferring a newer base version and then the last same-version edit. It does not silently truncate valid operations after 2,000 items; local storage capacity still applies and failed writes are reported. Refresh/focus/online events and a 30-second in-page poll synchronize other devices; no Codex automation is created. The UI distinguishes pending, saving, saved, anonymous and failure states. Custom rules and appearance remain local because imported rules can contain credentials. Optional JSON export/import remains available. The library endpoint has a separate 120-per-minute client quota and a 256-KiB write-body limit.
 
 Snapshots and mutation acknowledgements are validated before replacing local data or removing queued writes. At watchlist capacity, rejected favourites remain visible and exportable in the account's retry queue; remove another favourite and retry to upload them. Malformed cached snapshots fall back to anonymous mode instead of leaving the interface loading indefinitely.
 

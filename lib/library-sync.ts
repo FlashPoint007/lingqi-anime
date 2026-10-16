@@ -5,7 +5,15 @@ export type SyncPhase='saved'|'pending'|'saving'|'error';
 type Options={request:(changes?:LibraryChange[])=>Promise<LibrarySnapshot>;apply:(collection:Subject[],history:WatchRecord[])=>void;persist:(pending:LibraryChange[],snapshot:LibrarySnapshot)=>void;status:(phase:SyncPhase,message?:string)=>void;accountChanged:(snapshot:LibrarySnapshot)=>void};
 export function restoreChanges(value:unknown):LibraryChange[]{
  if(!Array.isArray(value))return [];
- return value.slice(0,2000).flatMap(change=>{try{if(!change||!['collection','history'].includes(change.kind)||!Number.isSafeInteger(change.id)||change.id<0||change.id>9999999999||!Number.isSafeInteger(change.expectedVersion)||change.expectedVersion<0||typeof change.mutationId!=='string'||!/^[-\w]{16,80}$/.test(change.mutationId))return [];const clean=libraryValue(change.kind,change.value);if(clean!==null&&(change.kind==='collection'?(clean as Subject).id:(clean as WatchRecord).subject.id)!==change.id)return [];return [{kind:change.kind,id:change.id,expectedVersion:change.expectedVersion,mutationId:change.mutationId,value:clean}];}catch{return [];}});
+ const restored=new Map<string,LibraryChange>();
+ for(const change of value){try{
+  if(!change||!['collection','history'].includes(change.kind)||!Number.isSafeInteger(change.id)||change.id<0||change.id>9999999999||!Number.isSafeInteger(change.expectedVersion)||change.expectedVersion<0||typeof change.mutationId!=='string'||!/^[-\w]{16,80}$/.test(change.mutationId))continue;
+  const clean=libraryValue(change.kind,change.value);if(clean!==null&&(change.kind==='collection'?(clean as Subject).id:(clean as WatchRecord).subject.id)!==change.id)continue;
+  const normalized:LibraryChange={kind:change.kind,id:change.id,expectedVersion:change.expectedVersion,mutationId:change.mutationId,value:clean},key=entryKey(normalized);
+  if((restored.get(key)?.expectedVersion??-1)>normalized.expectedVersion)continue;
+  restored.delete(key);restored.set(key,normalized);
+ }catch{/* Corrupt entries cannot replace valid queued changes. */}}
+ return [...restored.values()];
 }
 const mutationId=()=>crypto.randomUUID();
 export class LibrarySync{

@@ -28,7 +28,7 @@ export default function useLibrarySync(ready:boolean,collection:Subject[],histor
    let knownPending=new Set(outbox.map(change=>change.mutationId));
    const sync=new LibrarySync(snapshot,{
     request,apply:(collection,history)=>{if(!alive)return;save('kw-library-cache:'+id,{collection,history});save('kw-collection',collection);save('kw-history',history);latest.current.apply(collection,history);},
-    persist:(pending,snapshot)=>{if(alive){const foreign=restoreChanges(read('kw-library-outbox:'+id,[])).filter(change=>!knownPending.has(change.mutationId));const merged=[...new Map([...foreign,...pending].map(change=>[change.mutationId,change])).values()];save('kw-library-outbox:'+id,merged);save('kw-library-snapshot:'+id,snapshot);knownPending=new Set(pending.map(change=>change.mutationId));}},
+    persist:(pending,snapshot)=>{if(alive){const foreign=restoreChanges(read('kw-library-outbox:'+id,[])).filter(change=>!knownPending.has(change.mutationId));const merged=restoreChanges([...foreign,...pending]);save('kw-library-outbox:'+id,merged);save('kw-library-snapshot:'+id,snapshot);knownPending=new Set(pending.map(change=>change.mutationId));}},
     status:(phase,message)=>{if(alive)setState({ready:true,account:snapshot.account,phase,message:storageFailed.current&&phase!=='saved'?'浏览器暂存失败，请保持页面打开，等待数据库保存':message||(phase==='saved'?'追番与观看记录已保存到数据库':phase==='saving'?'正在保存到数据库…':'有更新等待同步…')});},
     accountChanged:next=>{if(alive)activate(next);},
    },legacy,outbox);engine.current=sync;

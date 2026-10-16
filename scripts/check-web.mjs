@@ -53,6 +53,9 @@ const pageResult=await catalogServer.browseCatalog(new URLSearchParams('mode=dat
 assert.match(requested,/offset=1224/);assert.match(requested,/cat=1/);assert.match(requested,/year=2024/);assert.equal(pageResult.page,52);assert.equal(pageResult.total,1234);
 await assert.rejects(catalogServer.browseCatalog(new URLSearchParams('mode=popular&cat=3'),async()=>({data:[],total:0})),/不能同时使用/);
 await assert.rejects(catalogServer.browseCatalog(new URLSearchParams('mode=popular&page=43'),async()=>({data:[],total:1100})),/1000/);
+const lastSearchPage=await catalogServer.browseCatalog(new URLSearchParams('q=Example&page=42'),async url=>{requested=url;return {data:Array.from({length:24},(_,i)=>({id:i+1,name:'Example '+i})),total:2000};});
+assert.equal(new URL(requested).searchParams.get('limit'),'16');assert.equal(new URL(requested).searchParams.get('offset'),'984');assert.equal(lastSearchPage.data.length,16,'the final search page must stay within the 1000-result window even with an oversized upstream response');
+await assert.rejects(catalogServer.browseCatalog(new URLSearchParams('q=Example'),async()=>({data:[],total:1e20})),/总数/);
 assert.deepEqual(catalog.normalizeSubjects([null,{id:7,name:'Safe',rating:{score:'bad'},summary:{}},{}]).map(s=>[s.id,s.rating,s.summary]),[[7,undefined,'']]);
 assert.throws(()=>catalog.normalizeCalendar({error:'unavailable'}),/格式/);assert.throws(()=>catalog.normalizeEpisodes({data:[null]}),/有效/);
 assert.deepEqual(catalog.normalizeEpisodes({data:[{id:8,sort:2,name:{bad:true}},null],total:20}).data,[{id:8,sort:2,name:'',name_cn:''}]);

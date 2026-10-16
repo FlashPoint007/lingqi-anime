@@ -1,0 +1,11 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),ts=require('typescript');
+let failed;
+const jsx=(type,props)=>({type,props});
+const context={exports:{},require:name=>name==='react'?{useState:()=>[failed,value=>failed=value]}:{jsx,jsxs:jsx}};
+vm.runInNewContext(ts.transpileModule(fs.readFileSync('components/AnimeCover.tsx','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText,context);
+const render=src=>context.exports.default({src,alt:'测试番剧',lazy:true});
+let tree=render('https://images.example/broken.jpg');assert.equal(tree.props.children.type,'img');tree.props.children.props.onError();
+tree=render('https://images.example/broken.jpg');assert.equal(tree.props.children.type,'span');assert.equal(tree.props.children.props['aria-label'],'测试番剧');assert.equal(tree.props.children.props.children[1].props.children,'暂无封面');
+tree=render('https://images.example/fresh.jpg');assert.equal(tree.props.children.type,'img','a fresh cover URL must be tried after the old one failed');assert.equal(tree.props.children.props.src,'https://images.example/fresh.jpg');assert.equal(tree.props.children.props.loading,'lazy');
+tree=render(undefined);assert.equal(tree.props.children.type,'span','missing covers also need a visible, named placeholder');
+console.log('PASS: failed and missing cover placeholders, accessible title, new-source recovery');

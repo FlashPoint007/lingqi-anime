@@ -27,7 +27,9 @@ pnpm install
 pnpm dev
 pnpm build
 node scripts/check-web.mjs
+node scripts/check-player.cjs
 node scripts/check-player-settings.cjs
+node scripts/check-covers.cjs
 node scripts/check-security-cache.cjs
 node scripts/check-library.cjs
 node scripts/check-library-hook.cjs
@@ -77,3 +79,5 @@ Security dependency pins live in `pnpm-workspace.yaml`, which is authoritative f
 GPL-3.0; see LICENSE. Kazumi by Predidit and contributors. KazumiRules snapshots retain the upstream MIT license in LICENSE-KazumiRules. Anime4K-WebGPU is MIT; hls.js is Apache-2.0. Bangumi provides metadata; artwork belongs to its respective owners. Restricted upstream logos/fonts are not used. The original Flutter application remains in the linked upstream repository.
 
 Automated checks validate subscription merging, snapshot coverage, API request/JSONPath behavior, media extraction and proxy bounds. UI playback, GPU quality and real receiver checks require a browser and compatible hardware.
+
+Search pages respect the 1,000-result upstream window, including the partial last page. Missing or failed covers display a named placeholder in catalog cards, details and watch history; a changed cover URL is retried. Starting playback cancels obsolete source-directory requests, and direct media keeps its episode number and catalog source for episode navigation.

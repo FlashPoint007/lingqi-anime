@@ -22,7 +22,7 @@ export async function GET(req:Request) {
   if(kind==='media')return proxyMedia(req);
   if(kind==='catalog') {
    const params=new URLSearchParams();for(const key of ['mode','year','quarter','q','tag','cat','page','offset'])if(u.searchParams.has(key))params.set(key,u.searchParams.get(key)!);params.sort();
-   return await cachedJson('catalog',params.toString(),()=>u.searchParams.get('mode')==='calendar'?seasonCatalog(u.searchParams,upstream):browseCatalog(u.searchParams,upstream),{ttl:300000,stale:86400000,refresh:u.searchParams.get('refresh')==='1'});
+   return await cachedJson('catalog',(u.searchParams.get('mode')==='calendar'?'':'browse-v2:')+params.toString(),()=>u.searchParams.get('mode')==='calendar'?seasonCatalog(u.searchParams,upstream):browseCatalog(u.searchParams,upstream),{ttl:300000,stale:86400000,refresh:u.searchParams.get('refresh')==='1'});
   }
   if(kind==='subject'||kind==='episodes') {
    const id=u.searchParams.get('id')||''; if(!/^\d{1,10}$/.test(id)) return json({error:'无效条目 ID'},400);

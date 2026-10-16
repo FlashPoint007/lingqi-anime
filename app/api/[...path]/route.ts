@@ -1,3 +1,5 @@
+import {cachedJson} from '../../../lib/server-cache';
+import {readRequestText,RequestLimitError} from '../../../lib/request-guard';
 import {ruleManifest,ruleBatch} from '../../../lib/rule-subscription-server';
 import {apiRequest,apiSearch,apiChapters,extractMedia} from '../../../lib/rule-api';
 import {publicUrl,validateRule,sourcePageError} from '../../../lib/web-core';
@@ -8,21 +10,24 @@ const UA='KazumiWeb/0.1 (+https://github.com/Predidit/Kazumi)';
 const json=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':status>=400?'no-store':'private, max-age=60'}});
 async function upstream(url:string,init:RequestInit={}) {
  const res=await fetch(url,{...init,headers:{'User-Agent':UA,'Accept':'application/json',...init.headers},signal:AbortSignal.timeout(12000)});
- if(!res.ok) throw new Error('上游请求失败（'+res.status+'）'); return res.json() as Promise<any>;
+ if(!res.ok) throw new Error('上游请求失败（'+res.status+'）'); return JSON.parse(await boundedText(res));
 }
 export async function GET(req:Request) {
  const u=new URL(req.url); const kind=u.pathname.split('/').pop();
  try {
   if(kind==='media')return proxyMedia(req);
   if(kind==='catalog') {
-   return json(u.searchParams.get('mode')==='calendar'?await seasonCatalog(u.searchParams,upstream):await browseCatalog(u.searchParams,upstream));
+   const params=new URLSearchParams();for(const key of ['mode','year','quarter','q','tag','cat','page','offset'])if(u.searchParams.has(key))params.set(key,u.searchParams.get(key)!);params.sort();
+   return await cachedJson('catalog',params.toString(),()=>u.searchParams.get('mode')==='calendar'?seasonCatalog(u.searchParams,upstream):browseCatalog(u.searchParams,upstream),{ttl:300000,stale:86400000,refresh:u.searchParams.get('refresh')==='1'});
   }
   if(kind==='subject'||kind==='episodes') {
    const id=u.searchParams.get('id')||''; if(!/^\d{1,10}$/.test(id)) return json({error:'无效条目 ID'},400);
    const offset=Math.floor(Math.min(10000,Math.max(0,Number(u.searchParams.get('offset'))||0)));
-   const data=await upstream(kind==='subject'?'https://api.bgm.tv/v0/subjects/'+id:'https://api.bgm.tv/v0/episodes?subject_id='+id+'&type=0&limit=100&offset='+offset);
-   if(kind==='episodes')return json(normalizeEpisodes(data));
-   const subject=normalizeSubject(data);if(!subject||subject.id!==Number(id))throw new Error('番剧详情格式不正确，请重试');return json(subject);
+   return await cachedJson(kind,id+':'+offset,async()=>{
+    const data=await upstream(kind==='subject'?'https://api.bgm.tv/v0/subjects/'+id:'https://api.bgm.tv/v0/episodes?subject_id='+id+'&type=0&limit=100&offset='+offset);
+    if(kind==='episodes')return normalizeEpisodes(data);
+    const subject=normalizeSubject(data);if(!subject||subject.id!==Number(id))throw new Error('番剧详情格式不正确，请重试');return subject;
+   },{ttl:kind==='subject'?21600000:600000,stale:86400000,refresh:u.searchParams.get('refresh')==='1'});
   }
   if(kind==='rules') {
    const batch=u.searchParams.get('batch');
@@ -37,8 +42,9 @@ export async function POST(req:Request) {
  if(!new URL(req.url).pathname.endsWith('/source')) return json({error:'接口不存在'},404);
  const origin=req.headers.get('origin');if(origin&&origin!==new URL(req.url).origin) return json({error:'跨站请求被拒绝'},403);
  try {
-  const raw=await req.text(); if(raw.length>65536) return json({error:'请求过大'},413);
+  const raw=await readRequestText(req);
   const body=JSON.parse(raw);const rule=validateRule(body.rule);
+  body.operation??=body.search?'search':'chapters';
   if(body.operation==='resolve'){
    const page=publicUrl(String(body.url));if(page.origin!==publicUrl(rule.baseURL).origin)throw new Error('播放页面必须与规则同源');
    let declared:string|undefined;
@@ -50,12 +56,20 @@ export async function POST(req:Request) {
    if(!resolved.media)return json({mode:'unavailable',sourceUrl:page.href,message:resolved.reason||'当前线路暂不能在本站解析，请切换线路或视频源'});
    return json({mode:'video',url:await signedMediaUrl(resolved.media,resolved.referer),mediaUrl:resolved.media,sourceUrl:page.href,verified:resolved.verified,preferDirect:new URL(resolved.referer).hostname==='next.xifanacg.com'&&!/\.m3u8(?:[?#]|$)/i.test(resolved.media),mediaType:/\.m3u8(?:[?#]|$)/i.test(resolved.media)?'hls':'video'});
   }
+  if(!['search','chapters'].includes(body.operation))throw new Error('无效的源查询操作');
+  const sensitive=/authorization|api[-_]?key|password|access[-_]?token|bearer/i.test(JSON.stringify([rule,body.url]));
+  if(sensitive)return json(await loadSourceData(body,rule));
+  const identity=JSON.stringify({rule,url:body.url,operation:body.operation,keyword:body.keyword||'',source:body.source||''});
+  return await cachedJson('source-'+body.operation,identity,()=>loadSourceData(body,rule),{ttl:body.operation==='chapters'?600000:120000,stale:3600000,refresh:body.refresh===true});
+ }catch(e){return json({error:e instanceof Error?e.message:'源站访问失败'},e instanceof RequestLimitError?e.status:400);}
+}
+async function loadSourceData(body:any,rule:ReturnType<typeof validateRule>){
   if(rule.searchMode==='api'&&(body.operation==='search'||body.operation==='chapters')){
    const operation=body.operation as 'search'|'chapters';const vars={keyword:String(body.keyword||'').slice(0,120),source:String(body.source||'').slice(0,200)};const request=apiRequest(rule,operation,vars);
-   const response=await fetch(request.url,{...request.init,redirect:'manual',signal:AbortSignal.timeout(12000)});if(!response.ok)throw new Error('源站 API 响应 '+response.status);const data=JSON.parse(await boundedText(response));return json(operation==='search'?{results:apiSearch(data,request.config)}:{roads:apiChapters(data,request.config,vars.source)});
+   const response=await fetch(request.url,{...request.init,redirect:'manual',signal:AbortSignal.timeout(12000)});if(!response.ok)throw new Error('源站 API 响应 '+response.status);const data=JSON.parse(await boundedText(response));return operation==='search'?{results:apiSearch(data,request.config)}:{roads:apiChapters(data,request.config,vars.source)};
   }
   let target=publicUrl(body.url); const base=publicUrl(rule.baseURL);
-  if(target.origin!==base.origin) return json({error:'地址必须与规则站点同源'},400);
+  if(target.origin!==base.origin)throw new Error('地址必须与规则站点同源');
   let method=body.search&&rule.usePost?'POST':'GET';let form:string|undefined;
   if(method==='POST'){form=target.searchParams.toString();target.search='';}
   let response:Response|undefined;
@@ -71,7 +85,6 @@ export async function POST(req:Request) {
   const bytes=new Uint8Array(size);let at=0;for(const c of chunks){bytes.set(c,at);at+=c.length;}
   const charset=type.match(/charset=([^;\s]+)/i)?.[1]||'utf-8';let html:string;try{html=new TextDecoder(charset).decode(bytes);}catch{html=new TextDecoder().decode(bytes);}
   const pageError=sourcePageError(html);if(pageError)throw new Error(pageError);
-  return json({html,url:target.href,media:extractMedia(html,target.href)});
- }catch(e){return json({error:e instanceof Error?e.message:'源站访问失败'},400);}
+  return {html,url:target.href,media:extractMedia(html,target.href)};
 }
 export const HEAD=GET;

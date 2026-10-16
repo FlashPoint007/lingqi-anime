@@ -25,10 +25,29 @@ pnpm install
 pnpm dev
 pnpm build
 node scripts/check-web.mjs
+node scripts/check-security-cache.cjs
 pnpm exec tsc --noEmit
 ```
 
 The Sites Vinext starter and `sites()` integration are retained. Public source deliberately omits deployment URL, Site identity, credentials and generated bundles. Set a new project identity through the hosting workflow when deploying your own copy. No account login is required by the application.
+
+## Shared cache and request protection
+
+The hosting manifest enables the logical D1 binding `DB`. Publish the checked-in Drizzle migration before serving the Worker; do not create tables in request handlers. D1 stores public metadata/directories and short-lived request counters. Watchlists and viewing history remain browser-local. Video files, media proxy bytes, playback tickets and custom API credentials are not stored in this cache. Rules containing authorization/API-key/password/token fields bypass the shared directory cache.
+
+| Cached data | Fresh lifetime | Additional fallback lifetime |
+| --- | --- | --- |
+| Catalog/search/calendar | 5 minutes | 24 hours |
+| Subject details | 6 hours | 24 hours |
+| Episode metadata | 10 minutes | 24 hours |
+| Source searches | 2 minutes | 1 hour |
+| Source chapter directories | 10 minutes | 1 hour |
+
+Identical misses are coalesced per Worker isolate. Failed upstream responses are not saved; a successful older entry may be returned with `cacheStale: true` and `Cache-Control: no-store` during its fallback lifetime. Recheck resources bypasses fresh entries (`refresh: true` on source queries); metadata endpoints accept `refresh=1`. Cached source directories do not guarantee that every video is playable. Entries are limited to 192 KiB, the process cache to 128 entries/8 MiB of text, and D1 to 1,000 entries with opportunistic cleanup. `X-Lingqi-Cache` reports hit/miss/stale; `X-Lingqi-Storage: d1` confirms a D1-backed response. Database failures fall back to live upstream requests and local rate limits.
+
+The Worker rejects unknown API routes, unsupported methods, cross-site source POSTs, oversized URLs and non-JSON/over-64-KiB source bodies (8-second body-read deadline). It adds browser security headers and retains signed media/origin/redirect/response-size validation. Per-client fixed-minute quotas are 180 metadata queries, 180 source queries, 30 playback resolutions, 1,200 media requests, 40 rule requests and 300 page requests. Resolution consumes source quota too. Responses use HTTP 429 and `Retry-After` when a quota or concurrency cap is reached. D1 atomically reserves small quota blocks across isolates; unused reserved slots conservatively consume that minute's allowance. Concurrent work is capped per client and per isolate, and streaming slots are released on completion or cancellation.
+
+Client identity uses only Cloudflare's connecting-IP header at the Worker entrypoint and is stored as an HMAC using the runtime binding `LINGQI_MEDIA_SECRET`; raw IP addresses are not persisted. The Worker explicitly marks the edge request as trusted because dispatch can reconstruct it without `cf` metadata. Library calls without a trusted edge context or native `cf` metadata do not trust incoming forwarding headers. Without a trusted identity, requests share an eight-times-larger fallback quota. Old counters are deleted opportunistically. Application quotas are not network-layer DDoS protection: distributed attacks, edge WAF/bot rules and billing protections require the hosting provider's edge controls. The application does not configure or claim a custom WAF rule set.
 
 ## Attribution
 

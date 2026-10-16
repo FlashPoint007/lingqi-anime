@@ -25,6 +25,7 @@ const signal=new AbortController().signal;
 let operations=[];
 const available=await availability.checkSource(valid,['Example'],signal,async body=>{operations.push(body.operation);return body.operation==='search'?{results:[{name:'Example',url:'https://example.com/catalog/1'}]}:{roads:[{name:'Line',episodes:[{name:'1',url:'https://example.com/play/1'}]}]};});
 assert.equal(available.state,'found');assert.deepEqual(operations,['search','chapters']);
+let refreshed=0;const historical=await availability.checkSource(valid,['Example'],signal,async body=>{assert.equal(body.refresh,true);refreshed++;return body.operation==='search'?{results:[{name:'Example',url:'https://example.com/catalog/1'}]}:{cacheStale:true,roads:[{name:'Line',episodes:[{name:'1',url:'https://example.com/play/1'}]}]};},true);assert.equal(refreshed,2);assert.match(historical.message,/历史目录/);
 assert.equal((await availability.checkSource(valid,['Example'],signal,async()=>({results:[]}))).state,'not-found');
 assert.equal((await availability.checkSource(valid,['Example'],signal,async()=>{throw Error('源站响应 404');})).state,'error');
 assert.equal((await availability.checkSource(valid,['Example'],signal,async()=>({results:[{name:'Example 第二季',url:'https://example.com/2'}]}))).state,'possible');
@@ -60,6 +61,9 @@ const malformedCalendar=await catalogServer.seasonCatalog(new URLSearchParams(),
 const grouped=await catalogServer.seasonCatalog(new URLSearchParams('year=2023&quarter=2'),async url=>{assert.match(url,/start=2023-03-01/);return Object.fromEntries(Array.from({length:7},(_,i)=>[String(i+1),i===0?[{subject:{id:77,name:'Test',date:'2023-04-03'}}]:[]]));});
 assert.equal(grouped.calendar[0].items[0].name,'Test');assert.equal(grouped.basis,'premiere');
 let source=readFileSync('app/api/[...path]/route.ts','utf8').replace("'../../../lib/web-core'",JSON.stringify(coreUrl)).replace("'../../../lib/catalog-server'",JSON.stringify(catalogServerUrl));
+const guardUrl=mod(compile(readFileSync('lib/request-guard.ts','utf8')));
+const cacheUrl=mod(compile(readFileSync('lib/server-cache.ts','utf8').replace("import {env} from 'cloudflare:workers';",'const env={};')));
+source=source.replace("'../../../lib/request-guard'",JSON.stringify(guardUrl)).replace("'../../../lib/server-cache'",JSON.stringify(cacheUrl));
 source=source.replace("'../../../lib/catalog'",JSON.stringify(catalogUrl));
 const apiUrl=mod(compile(readFileSync('lib/rule-api.ts','utf8').replace("'./web-core'",JSON.stringify(coreUrl))));
 const subscriptionServerUrl=mod(compile(readFileSync('lib/rule-subscription-server.ts','utf8').replace("import snapshot from './rules-snapshot.json';",'const snapshot='+readFileSync('lib/rules-snapshot.json','utf8')+';')));
@@ -146,6 +150,7 @@ r=await route.GET(new Request('https://site.example/api/catalog?page=2'));assert
 r=await route.GET(new Request('https://site.example/api/subject?id=oops'));assert.equal(r.status,400);
 globalThis.fetch=async()=>Response.json({error:'bad data'});r=await route.GET(new Request('https://site.example/api/subject?id=1'));assert.equal(r.status,502);assert.equal(r.headers.get('cache-control'),'no-store');
 globalThis.fetch=async()=>Response.json({data:[null]});r=await route.GET(new Request('https://site.example/api/episodes?id=1'));assert.equal(r.status,502);
+globalThis.fetch=async()=>new Response('x'.repeat(2097153));r=await route.GET(new Request('https://site.example/api/subject?id=1'));assert.equal(r.status,502);
 globalThis.fetch=async()=>Response.json({id:1,name:'Safe',rating:{score:{bad:true}}});r=await route.GET(new Request('https://site.example/api/subject?id=1'));assert.equal(r.status,200);assert.equal((await r.json()).rating,undefined);
 globalThis.fetch=originalFetch;
 // Workers reject redirect:"error" before fetching; API routes use manual and reject redirects.

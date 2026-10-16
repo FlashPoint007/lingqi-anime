@@ -21,10 +21,10 @@ export async function sourceRequest(body:unknown,signal:AbortSignal){
  return requestJson('/api/source',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal});
 }
 // Search and chapter checks deliberately do not resolve media or download video.
-export async function checkSource(rule:Rule,names:string[],signal:AbortSignal,request=sourceRequest):Promise<SourceAvailability>{
+export async function checkSource(rule:Rule,names:string[],signal:AbortSignal,request=sourceRequest,refresh=false):Promise<SourceAvailability>{
  const terms=[...new Set(names.map(n=>n.trim()).filter(Boolean))].slice(0,2),results:SourceResult[]=[];
  const deadline=timeoutSignal(24000),combined=anySignal([signal,deadline]);
- const call=(body:unknown)=>request(body,anySignal([combined,timeoutSignal(10000)]));
+ const call=(body:Record<string,unknown>)=>request(refresh?{...body,refresh:true}:body,anySignal([combined,timeoutSignal(10000)]));
  let lastError='',successfulSearch=false;const inspected=new Set<string>();
  for(const keyword of terms){
   if(signal.aborted)throw signal.reason;
@@ -36,7 +36,7 @@ export async function checkSource(rule:Rule,names:string[],signal:AbortSignal,re
    for(const match of results.filter(r=>matchesTitle(r.name,terms)).slice(0,3)){
     if(inspected.has(match.url))continue;inspected.add(match.url);
     try{const detail=await call({rule,url:match.url,operation:'chapters',source:match.url});const roads:Road[]=detail.roads||parseChapters(detail.html,rule,detail.url||match.url);
-     if(roads.some(r=>r.episodes.length))return {state:'found',message:roads.length+' 条线路 · 最多 '+Math.max(...roads.map(r=>r.episodes.length))+' 集',results,source:match.url,roads,checkedAt:Date.now()};
+     if(roads.some(r=>r.episodes.length))return {state:'found',message:roads.length+' 条线路 · 最多 '+Math.max(...roads.map(r=>r.episodes.length))+' 集'+(detail.cacheStale?' · 源站暂不可用，使用历史目录':''),results,source:match.url,roads,checkedAt:Date.now()};
      lastError='同名条目未解析到分集';
     }catch(e){lastError=sourceErrorMessage(e);}
    }

@@ -4,6 +4,7 @@ import {LibrarySync,restoreChanges,type SyncPhase} from '../lib/library-sync';
 import {requestJson,timeoutSignal,anySignal} from '../lib/request-client';
 import {cleanCollection,mergeHistory,readStorage,writeStorage,type WatchRecord} from '../lib/personal-data';
 import type {Subject} from '../lib/catalog';
+import {parseLibrarySnapshot} from '../lib/library-model';
 import type {LibraryChange,LibrarySnapshot} from '../lib/library-model';
 const read=(key:string,fallback:any)=>{try{return JSON.parse(readStorage(key)||'null')??fallback;}catch{return fallback;}};
 export default function useLibrarySync(ready:boolean,collection:Subject[],history:WatchRecord[],apply:(collection:Subject[],history:WatchRecord[])=>void){
@@ -13,10 +14,10 @@ export default function useLibrarySync(ready:boolean,collection:Subject[],histor
  const save=(key:string,value:unknown)=>{if(!writeStorage(key,JSON.stringify(value))){storageFailed.current=true;setState(old=>({...old,message:'浏览器暂存失败，请保持页面打开，待数据库同步完成后再离开'}));}};
  useEffect(()=>{
   if(!ready)return;let alive=true,loading=false;const controller=new AbortController();
-  const request=async(changes?:LibraryChange[]):Promise<LibrarySnapshot>=>{const body=changes?JSON.stringify({changes,accountId:owner.current}):undefined;return requestJson('/api/library',{...(body?{method:'POST',headers:{'Content-Type':'application/json'},body,keepalive:new TextEncoder().encode(body).length<60000}:{}),cache:'no-store',signal:anySignal([controller.signal,timeoutSignal(15000)])});};
+  const request=async(changes?:LibraryChange[]):Promise<LibrarySnapshot>=>{const body=changes?JSON.stringify({changes,accountId:owner.current}):undefined;return parseLibrarySnapshot(await requestJson('/api/library',{...(body?{method:'POST',headers:{'Content-Type':'application/json'},body,keepalive:new TextEncoder().encode(body).length<60000}:{}),cache:'no-store',signal:anySignal([controller.signal,timeoutSignal(15000)])}));};
   const local=(key:string)=>{const data=read(key,{collection:[],history:[]});return {collection:cleanCollection(data.collection),history:mergeHistory([],data.history)};};
   const activate=(snapshot:LibrarySnapshot)=>{
-   if(!alive)return;engine.current?.stop();engine.current=null;clearTimeout(timer.current);const previous=read('kw-library-owner',null);
+   if(!alive)return;snapshot=parseLibrarySnapshot(snapshot);engine.current?.stop();engine.current=null;clearTimeout(timer.current);const previous=read('kw-library-owner',null);
    if(!snapshot.authenticated){owner.current='anonymous';const data=local('kw-library-cache:anonymous');if(previous===null){data.collection=cleanCollection(read('kw-collection',[]));data.history=mergeHistory([],read('kw-history',[]));}owner.current='anonymous';save('kw-library-owner','anonymous');latest.current.apply(data.collection,data.history);setState({ready:true,phase:'anonymous',message:'尚未同步到数据库；登录后自动保存追番与观看进度'});return;}
    if(!snapshot.account||!Array.isArray(snapshot.entries))throw new Error('个人数据库返回的数据格式不正确');
    const id=snapshot.account.id;owner.current=id;
@@ -36,7 +37,7 @@ export default function useLibrarySync(ready:boolean,collection:Subject[],histor
    if(previous==='anonymous'&&!storageFailed.current)save('kw-library-cache:anonymous',{collection:[],history:[]});
    if(sync.hasPending)void sync.flush();
   };
-  const load=async()=>{if(loading||!alive)return;loading=true;try{activate(await request());}catch(error){if(alive){const previous=read('kw-library-owner',null),cached=previous&&read('kw-library-snapshot:'+previous,null);if(cached?.authenticated&&cached.account?.id===previous&&Array.isArray(cached.entries)){activate(cached);}else activate({authenticated:false,entries:[]});setState(old=>({...old,phase:'error',message:(error as Error).message+'；当前更改会暂存并重试'}));}}finally{loading=false;}};
+  const load=async()=>{if(loading||!alive)return;loading=true;try{activate(await request());}catch(error){if(alive){const previous=read('kw-library-owner',null),cached=previous&&read('kw-library-snapshot:'+previous,null);let restored=false;if(cached?.authenticated&&cached.account?.id===previous){try{activate(cached);restored=true;}catch{/* Invalid local snapshots must not leave the personal area stuck loading. */}}if(!restored)activate({authenticated:false,entries:[]});setState(old=>({...old,phase:'error',message:(error as Error).message+'；当前更改会暂存并重试'}));}}finally{loading=false;}};
   retryRef.current=()=>{if(engine.current)void engine.current.refresh();else void load();};
   void load();
   const refresh=()=>{if(document.visibilityState==='hidden')return;retryRef.current();};

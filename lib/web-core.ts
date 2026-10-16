@@ -1,8 +1,11 @@
 // Browser adaptation of Kazumi's XPath rule model, GPL-3.0.
 export type Rule = {name:string; version?:string; baseURL:string; searchURL:string; searchList:string; searchName:string; searchResult:string; chapterRoads:string; chapterResult:string; usePost?:boolean; searchMode?:string; chapterMode?:string; enabled?:boolean; [key:string]:unknown};
 export function publicUrl(input:string):URL {
-  const u=new URL(input); const h=u.hostname.toLowerCase();
-  if(u.protocol!=='https:'||u.username||u.password||u.port||!h.includes('.')||/^\d/.test(h)||h.includes(':')||h.endsWith('.local')||h.endsWith('.internal')||h.endsWith('.localhost')||h==='localhost') throw new Error('仅支持公开 HTTPS 域名');
+  const u=new URL(input); const h=u.hostname.toLowerCase().replace(/\.$/,'');
+  const local=['localhost','local','internal','localdomain','lan','home','intranet','arpa'].some(suffix=>h===suffix||h.endsWith('.'+suffix));
+  const labels=h.split('.'),valid=labels.length>1&&h.length<=253&&labels.every(label=>/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label))&&!/^\d+$/.test(labels.at(-1)!);
+  if(u.protocol!=='https:'||u.username||u.password||u.port||!valid||local) throw new Error('仅支持公开 HTTPS 域名');
+  u.hostname=h;
   return u;
 }
 export function validateRule(input:unknown):Rule {

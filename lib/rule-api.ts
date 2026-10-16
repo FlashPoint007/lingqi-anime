@@ -20,7 +20,7 @@ export function apiChapters(data:any,c:any,source:string){
  return selectJson(data,c.roadsPath||'$').map((road,i)=>({name:String(selectJson(road,c.roadNamePath)[0]??'线路 '+(i+1)),episodes:selectJson(road,c.episodesPath||'$.episodes[*]').map((ep,j)=>{const v={...vars,roadIndex:String(i),episodeIndex:String(j),episodeUrl:String(selectJson(ep,c.episodeUrlPath)[0]??'')};const url=publicUrl(substitute(c.episodePage.url,v,true));for(const [k,value] of Object.entries(c.episodePage.query||{}))url.searchParams.set(k,substitute(String(value),v));if(url.hostname==='next.xifanacg.com'&&typeof road.code==='string')url.searchParams.set('source',road.code);return {name:String(selectJson(ep,c.episodeNamePath)[0]??'第 '+(j+1)+' 集'),url:url.href,number:Number.isFinite(ep.episode_number)?ep.episode_number:undefined,mediaUrl:declaredMedia(ep)[0]};})})).filter(r=>r.episodes.length);
 }
 export function mediaUrl(input:string,base?:string):URL {
- const u=new URL(input,base);const check=new URL(u);check.port='';publicUrl(check.href);
+ const u=new URL(input,base);const check=new URL(u);check.port='';u.hostname=publicUrl(check.href).hostname;
  if(u.port&&!['8088','8443'].includes(u.port))throw new Error('不支持的视频端口');return u;
 }
 export const isMedia=(input:string)=>/\.(mp4|webm|m3u8)(?:[?#]|$)/i.test(input);

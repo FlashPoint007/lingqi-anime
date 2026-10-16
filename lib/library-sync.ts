@@ -1,11 +1,11 @@
-import {entryKey,libraryValue,sameValue,visibleEntries,type LibraryChange,type LibraryEntry,type LibrarySnapshot,type LibraryValue} from './library-model';
+import {entryKey,libraryValue,parseLibrarySnapshot,sameValue,visibleEntries,type LibraryChange,type LibraryEntry,type LibrarySnapshot,type LibraryValue} from './library-model';
 import type {Subject} from './catalog';
 import type {WatchRecord} from './personal-data';
 export type SyncPhase='saved'|'pending'|'saving'|'error';
 type Options={request:(changes?:LibraryChange[])=>Promise<LibrarySnapshot>;apply:(collection:Subject[],history:WatchRecord[])=>void;persist:(pending:LibraryChange[],snapshot:LibrarySnapshot)=>void;status:(phase:SyncPhase,message?:string)=>void;accountChanged:(snapshot:LibrarySnapshot)=>void};
 export function restoreChanges(value:unknown):LibraryChange[]{
  if(!Array.isArray(value))return [];
- return value.slice(0,2000).flatMap(change=>{try{if(!change||!['collection','history'].includes(change.kind)||!Number.isSafeInteger(change.id)||change.id<0||!Number.isSafeInteger(change.expectedVersion)||change.expectedVersion<0||!/^[-\w]{16,80}$/.test(change.mutationId))return [];return [{...change,value:libraryValue(change.kind,change.value)}];}catch{return [];}});
+ return value.slice(0,2000).flatMap(change=>{try{if(!change||!['collection','history'].includes(change.kind)||!Number.isSafeInteger(change.id)||change.id<0||change.id>9999999999||!Number.isSafeInteger(change.expectedVersion)||change.expectedVersion<0||typeof change.mutationId!=='string'||!/^[-\w]{16,80}$/.test(change.mutationId))return [];const clean=libraryValue(change.kind,change.value);if(clean!==null&&(change.kind==='collection'?(clean as Subject).id:(clean as WatchRecord).subject.id)!==change.id)return [];return [{kind:change.kind,id:change.id,expectedVersion:change.expectedVersion,mutationId:change.mutationId,value:clean}];}catch{return [];}});
 }
 const mutationId=()=>crypto.randomUUID();
 export class LibrarySync{
@@ -21,7 +21,7 @@ export class LibrarySync{
   }
   this.render();this.persist();
  }
- private replace(snapshot:LibrarySnapshot){this.snapshot=snapshot;this.entries=new Map(snapshot.entries.map(entry=>[entryKey(entry),entry]));}
+ private replace(snapshot:LibrarySnapshot){const valid=parseLibrarySnapshot(snapshot);this.entries=new Map(valid.entries.map(entry=>[entryKey(entry),entry]));this.snapshot=valid;}
  private persist(){this.options.persist([...this.pending.values()],this.snapshot);this.options.status(this.pending.size?'pending':'saved');}
  private render(){
   const values=new Map<string,LibraryValue>([...this.entries].map(([key,entry])=>[key,entry.value]));for(const [key,change] of this.pending)values.set(key,change.value);
@@ -44,16 +44,19 @@ export class LibrarySync{
   try{
    while(this.pending.size&&!this.stopped){
     const batch:LibraryChange[]=[];let bytes=0;for(const change of this.pending.values()){const size=new TextEncoder().encode(JSON.stringify(change)).length;if(batch.length>=50||bytes+size>200000)break;batch.push(change);bytes+=size;}if(!batch.length)throw new Error('待同步记录过大，请导出备份后重试');
-    const next=await this.options.request(batch);if(this.stopped)return;if(!next.authenticated||next.account?.id!==this.snapshot.account?.id){this.options.accountChanged(next);return;}
-    this.replace(next);const accepted=new Set(next.accepted||[]);
-    for(const sent of batch){const key=entryKey(sent),current=this.pending.get(key);if(!current)continue;if(current.mutationId===sent.mutationId)this.pending.delete(key);else if(accepted.has(sent.mutationId))current.expectedVersion=this.entries.get(key)?.version||0;else this.pending.delete(key);}
-    this.render();this.persist();if(next.limited?.length)this.options.status('error','追番数量已达 1000 条上限，部分条目未保存');else if(next.conflicts?.length)this.options.status('saved','部分记录版本已更新，已保留数据库中的最新记录');
+    const next=parseLibrarySnapshot(await this.options.request(batch));if(this.stopped)return;if(!next.authenticated||next.account?.id!==this.snapshot.account?.id){this.options.accountChanged(next);return;}
+    const confirmed=[...(next.accepted||[]),...(next.conflicts||[]),...(next.limited||[])],ids=new Set(batch.map(change=>change.mutationId));
+    if(confirmed.length!==batch.length||new Set(confirmed).size!==batch.length||confirmed.some(id=>!ids.has(id)))throw new Error('同步确认不完整，待上传记录已保留，请重试');
+    const received=new Map(next.entries.map(entry=>[entryKey(entry),entry]));for(const sent of batch)if(next.accepted?.includes(sent.mutationId)&&(received.get(entryKey(sent))?.version||0)<=sent.expectedVersion)throw new Error('同步结果缺少已保存记录，待上传记录已保留，请重试');
+    this.replace(next);const accepted=new Set(next.accepted||[]),limited=new Set(next.limited||[]);
+    for(const sent of batch){if(limited.has(sent.mutationId))continue;const key=entryKey(sent),current=this.pending.get(key);if(!current)continue;if(current.mutationId===sent.mutationId)this.pending.delete(key);else if(accepted.has(sent.mutationId))current.expectedVersion=this.entries.get(key)?.version||0;else this.pending.delete(key);}
+    this.render();this.persist();if(limited.size){this.options.status('error','追番已达 1000 条上限；待上传条目已保留，可导出备份或移除部分追番后重试');return;}else if(next.conflicts?.length)this.options.status('saved','部分记录版本已更新，已保留数据库中的最新记录');
    }
   }catch(error){if(!this.stopped){this.options.persist([...this.pending.values()],this.snapshot);this.options.status('error',(error as Error).message||'同步失败，待上传记录已保留');}}
  }
  async refresh(){
   if(this.stopped||this.work||this.refreshing)return;this.refreshing=true;
-  try{const next=await this.options.request();if(this.stopped)return;if(!next.authenticated||next.account?.id!==this.snapshot.account?.id){this.options.accountChanged(next);return;}this.replace(next);this.render();this.persist();}catch(error){if(!this.stopped)this.options.status('error',(error as Error).message);}finally{this.refreshing=false;if(!this.stopped&&this.pending.size)void this.flush();}
+  try{const next=parseLibrarySnapshot(await this.options.request());if(this.stopped)return;if(!next.authenticated||next.account?.id!==this.snapshot.account?.id){this.options.accountChanged(next);return;}this.replace(next);this.render();this.persist();}catch(error){if(!this.stopped)this.options.status('error',(error as Error).message);}finally{this.refreshing=false;if(!this.stopped&&this.pending.size)void this.flush();}
  }
  stop(){this.stopped=true;}
 }

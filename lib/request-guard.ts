@@ -13,12 +13,16 @@ export async function readRequestText(req:Request,max=65536){
 }
 function reject(message:string,status:number,retry=0){return Response.json({error:message},{status,headers:{'Cache-Control':'no-store',...(retry?{'Retry-After':String(retry)}:{})}});}
 function group(req:Request):Group{const path=new URL(req.url).pathname;if(path==='/api/library')return 'personal';if(path==='/api/media')return 'media';if(path==='/api/source')return 'source';if(path==='/api/rules')return 'rules';return path.startsWith('/api/')?'metadata':'page';}
-async function identity(req:Request,secret?:string,trustedEdge=false){
+async function identity(req:Request,secret?:string,trustedEdge=false,accountBound=false){
  // Dispatch can reconstruct Request and omit `cf`. Only the Cloudflare Worker
  // entrypoint may opt into trusting the edge-provided connecting-IP header.
+ const account=trustedEdge&&accountBound?req.headers.get('oai-authenticated-user-id'):null;
  const ip=trustedEdge||(req as Request & {cf?:unknown}).cf?req.headers.get('cf-connecting-ip'):null;
- if(!ip||!secret||ip.length>64||!/^([\d.]+|[\da-f:]+)$/i.test(ip))return 'shared';
- const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(secret),{name:'HMAC',hash:'SHA-256'},false,['sign']);const digest=await crypto.subtle.sign('HMAC',key,new TextEncoder().encode('rate:'+ip));return Array.from(new Uint8Array(digest),byte=>byte.toString(16).padStart(2,'0')).join('');
+ if(!secret)return 'shared';let input:string;
+ if(account&&account.length<=512)input='account:'+account;
+ else if(ip&&ip.length<=64&&/^([\d.]+|[\da-f:]+)$/i.test(ip))input='rate:'+ip;
+ else return 'shared';
+ const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(secret),{name:'HMAC',hash:'SHA-256'},false,['sign']);const digest=await crypto.subtle.sign('HMAC',key,new TextEncoder().encode(input));return Array.from(new Uint8Array(digest),byte=>byte.toString(16).padStart(2,'0')).join('');
 }
 async function reserveUnlocked(key:string,g:Group,shared:boolean,db?:DB){
  const now=Date.now(),window=Math.floor(now/60000)*60000,config=limits[g],limit=config.limit*(shared?8:1);let bucket=buckets.get(key);
@@ -53,7 +57,7 @@ export async function guardRequest(req:Request,db?:DB,secret?:string,override?:'
   if(!/^application\/json(?:;|$)/i.test(req.headers.get('content-type')||''))return {response:reject('请使用 JSON 请求',415),release:noop};
   if(Number(req.headers.get('content-length'))>(url.pathname==='/api/library'?262144:65536))return {response:reject('请求过大',413),release:noop};
  }
- const client=await identity(req,secret,trustedEdge),g=override||group(req),key=client+':'+g,shared=client==='shared',config=limits[g],retry=Math.max(1,Math.ceil((60000-Date.now()%60000)/1000));
+ const g=override||group(req),client=await identity(req,secret,trustedEdge,g==='personal'),key=client+':'+g,shared=client==='shared',config=limits[g],retry=Math.max(1,Math.ceil((60000-Date.now()%60000)/1000));
  if((globalActive.get(g)||0)>=config.parallel||(active.get(key)||0)>=(shared?config.parallel:config.clientParallel))return {response:reject('当前请求较多，请稍后重试',429,3),release:noop};
  // Reserve concurrency before the asynchronous rate lookup as well.
  globalActive.set(g,(globalActive.get(g)||0)+1);active.set(key,(active.get(key)||0)+1);let released=false;
@@ -63,7 +67,7 @@ export async function guardRequest(req:Request,db?:DB,secret?:string,override?:'
 }
 export function secureResponse(response:Response,release:()=>void=()=>{}){
  const headers=new Headers(response.headers);headers.set('X-Content-Type-Options','nosniff');headers.set('Referrer-Policy','no-referrer');headers.set('Permissions-Policy','camera=(), microphone=(), geolocation=()');
- if((headers.get('content-type')||'').includes('text/html')&&!headers.has('content-security-policy'))headers.set('Content-Security-Policy',"frame-ancestors 'self' https://chatgpt.com https://*.chatgpt.com");
+ if((headers.get('content-type')||'').includes('text/html')&&!headers.has('content-security-policy'))headers.set('Content-Security-Policy',"frame-ancestors 'self' https://chatgpt.com https://*.chatgpt.com; object-src 'none'; base-uri 'self'");
  if(response.status>=400)headers.set('Cache-Control','no-store');
  if(!response.body){release();return new Response(null,{status:response.status,statusText:response.statusText,headers});}
  const reader=response.body.getReader();const body=new ReadableStream<Uint8Array>({async pull(controller){try{const {value,done}=await reader.read();if(done){release();controller.close();}else controller.enqueue(value);}catch(error){release();controller.error(error);}},async cancel(reason){release();await reader.cancel(reason);}});

@@ -7,12 +7,13 @@ import {publicUrl,validateRule,sourcePageError} from '../../../lib/web-core';
 import {browseCatalog,seasonCatalog} from '../../../lib/catalog-server';
 import {normalizeSubject,normalizeEpisodes} from '../../../lib/catalog';
 import {boundedText,proxyMedia,resolvePlayback,signedMediaUrl} from '../../../lib/playback-server';
+function discard(response:Response){void response.body?.cancel().catch(()=>{});}
 const UA='KazumiWeb/0.1 (+https://github.com/Predidit/Kazumi)';
 export const dynamic='force-dynamic';
 const json=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':status>=400?'no-store':'private, max-age=60'}});
 async function upstream(url:string,init:RequestInit={}) {
  const res=await fetch(url,{...init,headers:{'User-Agent':UA,'Accept':'application/json',...init.headers},signal:AbortSignal.timeout(12000)});
- if(!res.ok) throw new Error('上游请求失败（'+res.status+'）'); return JSON.parse(await boundedText(res));
+ if(!res.ok){discard(res);throw new Error('上游请求失败（'+res.status+'）');} return JSON.parse(await boundedText(res));
 }
 export async function GET(req:Request) {
  const u=new URL(req.url); const kind=u.pathname.split('/').pop();
@@ -53,10 +54,10 @@ export async function POST(req:Request) {
    const page=publicUrl(String(body.url));if(page.origin!==publicUrl(rule.baseURL).origin)throw new Error('播放页面必须与规则同源');
    let declared:string|undefined;
    if(rule.searchMode==='api'&&body.source&&page.hostname!=='next.xifanacg.com'){
-    const spec=apiRequest(rule,'chapters',{source:String(body.source).slice(0,200),keyword:''});const response=await fetch(spec.url,{...spec.init,redirect:'manual',signal:AbortSignal.timeout(12000)});if(!response.ok)throw new Error('源站 API 响应 '+response.status);
+    const spec=apiRequest(rule,'chapters',{source:String(body.source).slice(0,200),keyword:''});const response=await fetch(spec.url,{...spec.init,redirect:'manual',signal:AbortSignal.any([req.signal,AbortSignal.timeout(12000)])});if(!response.ok){discard(response);throw new Error('源站 API 响应 '+response.status);}
     const data=JSON.parse(await boundedText(response));const roads=apiChapters(data,spec.config,String(body.source));declared=roads.flatMap(road=>road.episodes).find(ep=>ep.url===page.href)?.mediaUrl;
    }
-   const resolved=await resolvePlayback(rule,page.href,declared);
+   const resolved=await resolvePlayback(rule,page.href,declared,req.signal);
    if(!resolved.media)return json({mode:'unavailable',sourceUrl:page.href,message:resolved.reason||'当前线路暂不能在本站解析，请切换线路或视频源'});
    return json({mode:'video',url:await signedMediaUrl(resolved.media,resolved.referer),mediaUrl:resolved.media,sourceUrl:page.href,verified:resolved.verified,preferDirect:new URL(resolved.referer).hostname==='next.xifanacg.com'&&!/\.m3u8(?:[?#]|$)/i.test(resolved.media),mediaType:/\.m3u8(?:[?#]|$)/i.test(resolved.media)?'hls':'video'});
   }
@@ -68,9 +69,10 @@ export async function POST(req:Request) {
  }catch(e){return json({error:e instanceof Error?e.message:'源站访问失败'},e instanceof RequestLimitError?e.status:400);}
 }
 async function loadSourceData(body:any,rule:ReturnType<typeof validateRule>){
+  const signal=AbortSignal.timeout(15000);
   if(rule.searchMode==='api'&&(body.operation==='search'||body.operation==='chapters')){
    const operation=body.operation as 'search'|'chapters';const vars={keyword:String(body.keyword||'').slice(0,120),source:String(body.source||'').slice(0,200)};const request=apiRequest(rule,operation,vars);
-   const response=await fetch(request.url,{...request.init,redirect:'manual',signal:AbortSignal.timeout(12000)});if(!response.ok)throw new Error('源站 API 响应 '+response.status);const data=JSON.parse(await boundedText(response));return operation==='search'?{results:apiSearch(data,request.config)}:{roads:apiChapters(data,request.config,vars.source)};
+   const response=await fetch(request.url,{...request.init,redirect:'manual',signal});if(!response.ok){discard(response);throw new Error('源站 API 响应 '+response.status);}const data=JSON.parse(await boundedText(response));return operation==='search'?{results:apiSearch(data,request.config)}:{roads:apiChapters(data,request.config,vars.source)};
   }
   let target=publicUrl(body.url); const base=publicUrl(rule.baseURL);
   if(target.origin!==base.origin)throw new Error('地址必须与规则站点同源');
@@ -78,16 +80,13 @@ async function loadSourceData(body:any,rule:ReturnType<typeof validateRule>){
   if(method==='POST'){form=target.searchParams.toString();target.search='';}
   let response:Response|undefined;
   for(let i=0;i<4;i++){
-   response=await fetch(target.href,{method,body:form,headers:{'User-Agent':UA,'Accept':'text/html',...(form?{'Content-Type':'application/x-www-form-urlencoded'}:{})},redirect:'manual',signal:AbortSignal.timeout(12000)});
-   if(response.status>=300&&response.status<400){const location=response.headers.get('location');if(!location) throw new Error('重定向无目标');const next=publicUrl(new URL(location,target).href);if(next.origin!==base.origin) throw new Error('源站跳转至其他域名，请更新规则');target=next;if(response.status===303){method='GET';form=undefined;}continue;}
+   response=await fetch(target.href,{method,body:form,headers:{'User-Agent':UA,'Accept':'text/html',...(form?{'Content-Type':'application/x-www-form-urlencoded'}:{})},redirect:'manual',signal});
+   if(response.status>=300&&response.status<400){const location=response.headers.get('location');discard(response);if(!location) throw new Error('重定向无目标');const next=publicUrl(new URL(location,target).href);if(next.origin!==base.origin) throw new Error('源站跳转至其他域名，请更新规则');target=next;if(response.status===303){method='GET';form=undefined;}continue;}
    break;
   }
-  if(!response?.ok) throw new Error('源站响应 '+response?.status+'，可能需要验证或规则已失效');
-  const type=response.headers.get('content-type')||'';if(!type.includes('text/html')&&!type.includes('text/plain')) throw new Error('源站没有返回 HTML');
-  const reader=response.body!.getReader();let size=0;const chunks:Uint8Array[]=[];
-  while(true){const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>2*1024*1024){await reader.cancel();throw new Error('源站页面超过 2 MB');}chunks.push(value);}
-  const bytes=new Uint8Array(size);let at=0;for(const c of chunks){bytes.set(c,at);at+=c.length;}
-  const charset=type.match(/charset=([^;\s]+)/i)?.[1]||'utf-8';let html:string;try{html=new TextDecoder(charset).decode(bytes);}catch{html=new TextDecoder().decode(bytes);}
+  if(!response?.ok){if(response)discard(response);throw new Error('源站响应 '+response?.status+'，可能需要验证或规则已失效');}
+  const type=response.headers.get('content-type')||'';if(!type.includes('text/html')&&!type.includes('text/plain')){discard(response);throw new Error('源站没有返回 HTML');}
+  const html=await boundedText(response);
   const pageError=sourcePageError(html);if(pageError)throw new Error(pageError);
   return {html,url:target.href,media:extractMedia(html,target.href)};
 }

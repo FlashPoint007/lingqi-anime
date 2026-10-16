@@ -17,5 +17,22 @@ packageImportMethod: auto
 # The explicit installer owns dependency setup, including restored workspaces.
 verifyDepsBeforeRun: false
 optimisticRepeatInstall: false
+# Keep security pins in pnpm's authoritative workspace settings.
 overrides:
-  miniflare>sharp: 0.35.4
+  miniflare>sharp: 0.35.5
+  sharp: 0.35.5
+  '@babel/core': 7.29.6
+  browserslist: 4.28.7
+  baseline-browser-mapping: 2.11.0
+  fast-uri: 3.1.8
+  source-map-js: 1.2.2
+  react-server-dom-webpack: 19.2.8
+  ws: 8.21.0
+  undici: 7.29.1
+  js-yaml: 4.3.2
+  'brace-expansion@1': 1.1.21
+  'brace-expansion@5': 5.0.12
+  'fflate@0.7': 0.7.5
+  image-size: 2.0.3
+  'esbuild@<0.25.0': 0.25.12
+  'esbuild@>=0.27.3': 0.28.1

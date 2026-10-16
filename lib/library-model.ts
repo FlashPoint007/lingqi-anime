@@ -24,3 +24,19 @@ export function visibleEntries(collection:Subject[],history:WatchRecord[]){
  return map;
 }
 export const sameValue=(a:unknown,b:unknown)=>JSON.stringify(a)===JSON.stringify(b);
+// Validate the complete snapshot before replacing cached data or acknowledging
+// an outbox. An HTTP 200 response alone is not proof that a mutation was saved.
+export function parseLibrarySnapshot(value:any):LibrarySnapshot{
+ if(!value||typeof value.authenticated!=='boolean'||!Array.isArray(value.entries))throw new Error('个人同步数据格式不正确，已保留待上传记录');
+ if(!value.authenticated){if(value.entries.length)throw new Error('匿名同步数据格式不正确');return {authenticated:false,entries:[]};}
+ if(!value.account||typeof value.account.id!=='string'||!value.account.id||value.account.id.length>512||typeof value.account.displayName!=='string'||value.account.displayName.length>1024)throw new Error('个人同步账号格式不正确');
+ const keys=new Set<string>();const entries:LibraryEntry[]=value.entries.map((entry:any)=>{
+  if(!entry||!['collection','history'].includes(entry.kind)||!Number.isSafeInteger(entry.id)||entry.id<0||entry.id>9999999999||!Number.isSafeInteger(entry.version)||entry.version<1||!Number.isFinite(entry.updatedAt)||entry.updatedAt<0||!Number.isFinite(entry.sortAt)||entry.sortAt<0)throw new Error('个人同步条目格式不正确');
+  const clean=libraryValue(entry.kind,entry.value),id=entry.kind==='collection'?(clean as Subject)?.id:(clean as WatchRecord)?.subject.id;
+  if(clean!==null&&id!==entry.id)throw new Error('个人同步条目 ID 不一致');const key=entryKey(entry);if(keys.has(key))throw new Error('个人同步条目重复');keys.add(key);
+  return {kind:entry.kind,id:entry.id,value:clean,version:entry.version,updatedAt:entry.updatedAt,sortAt:entry.sortAt};
+ });
+ const acknowledgements:Pick<LibrarySnapshot,'accepted'|'conflicts'|'limited'>={};
+ for(const key of ['accepted','conflicts','limited'] as const){if(value[key]===undefined)continue;if(!Array.isArray(value[key])||value[key].some((id:unknown)=>typeof id!=='string'||!/^[-\w]{16,80}$/.test(id)))throw new Error('同步确认格式不正确，已保留待上传记录');acknowledgements[key]=value[key];}
+ return {authenticated:true,account:{id:value.account.id,displayName:value.account.displayName},entries,...acknowledgements};
+}

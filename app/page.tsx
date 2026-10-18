@@ -1,5 +1,5 @@
 'use client';
-import {useEffect,useRef,useState} from 'react';
+import {useEffect,useLayoutEffect,useRef,useState} from 'react';
 import {Compass,CalendarDays,Heart,History,Layers,Settings,Search,ArrowUpRight,ChevronRight,Play,Plus,X,Download,Upload,Star,BookOpen,Check,Sun,Moon,ExternalLink,Link as LinkIcon,RefreshCw} from 'lucide-react';
 import WatchPage from '../components/WatchPage';
 import AnimeCover from '../components/AnimeCover';
@@ -80,7 +80,8 @@ export default function Home(){
  useEffect(()=>{if(ready&&personal.ready)routeHandler.current();},[ready,personal.ready]);
  useEffect(()=>{if(!player)return;const hash='#watch/'+player.subject.id;if(location.hash!==hash)window.history.pushState({lingqiWatch:true},'',hash);navigationHash.current=hash;document.title=title(player.subject)+' · 零柒番剧';return()=>{document.title='零柒番剧';};},[player?.subject.id]);
  useEffect(()=>{if(toast){const t=setTimeout(()=>setToast(''),3000);return()=>clearTimeout(t);}},[toast]);
- useEffect(()=>{
+ // Apply the matching cached list before paint so new filters never label old cards.
+ useLayoutEffect(()=>{
   if(view!=='discover')return;
   let alive=true;const controller=new AbortController(),params=new URLSearchParams({mode:sort,q:activeQuery,tag,cat:category,year:catalogYear,page:String(offset/PAGE_SIZE+1)}),key=params.toString(),saved=readBrowseCache(key),force=forceCatalogReload.current;forceCatalogReload.current=false;
   const home=!activeQuery&&!tag&&!category&&!catalogYear&&sort==='date'&&offset===0;
@@ -93,7 +94,7 @@ export default function Home(){
   api('/api/catalog?'+key+(force?'&refresh=1':''),{signal:anySignal([controller.signal,timeoutSignal(20000)])}).then(raw=>{if(!alive)return;const d=browseData(raw);if(d.page!==offset/PAGE_SIZE+1)throw Error('番剧分页不匹配，请重试');saveBrowseCache(key,d);setItems(d.data);setTotal(d.total);setCached(d.offline||d.cacheStale);setSearchLimited(d.searchLimited);}).catch(e=>{if(alive)setError((initial?'列表更新失败，保留已加载内容：':'')+e.message);}).finally(()=>{if(alive){setLoading(false);setCatalogUpdating(false);}});
   return()=>{alive=false;controller.abort();};
  },[view,activeQuery,sort,tag,category,catalogYear,offset,reload]);
- useEffect(()=>{
+ useLayoutEffect(()=>{
   if(view!=='calendar')return;
   let alive=true;const controller=new AbortController(),saved=readSeasonCache(seasonYear,seasonQuarter),force=forceCatalogReload.current;forceCatalogReload.current=false;
   setLoading(!saved);setCalendarUpdating(false);setError('');setCalendar(saved?.calendar||[]);setCalendarBasis(saved?.basis||'premiere');setCalendarComplete(saved?.complete!==false);

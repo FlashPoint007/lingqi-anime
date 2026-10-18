@@ -83,3 +83,14 @@ Automated checks validate subscription merging, snapshot coverage, API request/J
 Search pages respect the 1,000-result upstream window, including the partial last page. Missing or failed covers display a named placeholder in catalog cards, details and watch history; a changed cover URL is retried. Starting playback cancels obsolete source-directory requests, and direct media keeps its episode number and catalog source for episode navigation.
 
 Playback recovery recognizes episode numbers in legacy history titles (including episode zero) and preserves same-episode progress. Among sources with the same availability status, automatic playback respects the manually selected source, then the last successfully played source; a failed preferred source still yields to a healthy source.
+
+
+## Email accounts and shared rules
+
+The default sign-in is a site email/password account. Passwords must be 12–128 characters and are stored as salted PBKDF2-HMAC-SHA256 (100,000 iterations) over a server-peppered input. Configure and preserve the secret runtime value `LINGQI_AUTH_SECRET` (at least 32 random bytes); changing it invalidates password verification. Session cookies are Secure, HttpOnly, SameSite=Lax, expire after seven days, and only token hashes are stored in D1. Login rotates the previous session; logout revokes it. Auth requests have client and per-email attempt limits. Email addresses currently serve as usernames: mailbox verification and password recovery are not enabled without a mail delivery service. No automatic linking by matching email is allowed. Existing ChatGPT identities remain compatible solely to retain access to older personal records; new email accounts have separate libraries.
+
+Server-owned Kazumi subscription rules are saved in `site_rule_sets`, independent of login, and rechecked on visits after one hour (manual refresh has a one-minute cooldown). Failed upstream fetches retain the previous complete set. Browser settings only affect local source preferences and custom rules, which may contain private credentials and are not public writes. There is no Codex scheduled task.
+
+Calendar requests race the current-week and seasonal services, cancel the unused request, and bound each service request to six seconds within the existing total deadline. Fallback pages use at most three concurrent requests. Calendar responses stay fresh in D1 for one hour with a seven-day fallback; the browser retains at most four validated quarter snapshots for seven days and shows a saved quarter while revalidating. Card/history covers normalize Bangumi HTTP URLs to HTTPS and request the 400-pixel variant, decode asynchronously and use native lazy loading on cards; hero/detail covers retain large artwork.
+
+Additional regression checks: `node scripts/check-email-rules.cjs` and `node scripts/check-calendar-cache.cjs`.

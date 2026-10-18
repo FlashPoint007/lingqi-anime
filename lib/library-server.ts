@@ -1,5 +1,5 @@
 import {env} from 'cloudflare:workers';
-import {getChatGPTUser} from '../app/chatgpt-auth';
+import {getSiteUser} from './email-auth';
 import {readRequestText,RequestLimitError} from './request-guard';
 import {libraryValue,entryKey,type LibraryChange,type LibraryEntry} from './library-model';
 type Row={kind:'collection'|'history';subject_id:number;value_json:string|null;version:number;updated_at:number;sort_at:number};
@@ -29,9 +29,9 @@ const write=`INSERT INTO personal_items(user_id,kind,subject_id,value_json,versi
  mutation_id=excluded.mutation_id WHERE personal_items.version=? OR personal_items.mutation_id=? RETURNING kind,subject_id,version`;
 export async function libraryResponse(req:Request){
  try{
-  const user=await getChatGPTUser();if(!user)return response({authenticated:false,entries:[],...(req.method==='POST'?{error:'请先登录，再同步追番和观看记录'}:{})},req.method==='POST'?401:200);
+  const user=await getSiteUser(req);if(!user)return response({authenticated:false,entries:[],...(req.method==='POST'?{error:'请先登录，再同步追番和观看记录'}:{})},req.method==='POST'?401:200);
   const db=env.DB;if(!db)return response({error:'个人数据库暂不可用，请稍后重试'},503);
-  const account={id:user.userId,displayName:user.displayName};
+  const account={id:user.userId,displayName:user.displayName,provider:user.provider};
   if(req.method!=='POST')return response({authenticated:true,account,entries:await entries(db,user.userId)});
   if(req.headers.get('origin')!==new URL(req.url).origin||req.headers.get('sec-fetch-site')==='cross-site')return response({error:'跨站请求被拒绝'},403);
   if(!/^application\/json(?:;|$)/i.test(req.headers.get('content-type')||''))return response({error:'请使用 JSON 请求'},415);

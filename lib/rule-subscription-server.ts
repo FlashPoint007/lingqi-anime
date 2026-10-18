@@ -19,7 +19,7 @@ export function parseRuleArchive(bytes:Uint8Array):ArchiveEntry[]{
  }
  if(!entries.length||entries.length>500||!active?.size)throw new Error('规则仓库内容或有效索引无效');return entries.filter(e=>active!.has(e.rule.name)&&!e.rule.deprecated&&e.rule.baseURL.startsWith('https://')).sort((a,b)=>a.file.localeCompare(b.file));
 }
-async function archiveRules():Promise<ArchiveEntry[]>{
+export async function archiveRules():Promise<ArchiveEntry[]>{
  if(archiveCache&&Date.now()-archiveCache.at<3600000)return archiveCache.entries;if(pendingArchive)return pendingArchive;
  pendingArchive=(async()=>{
   const response=await fetch('https://codeload.github.com/Predidit/KazumiRules/tar.gz/refs/heads/main',{signal:AbortSignal.timeout(20000)});if(!response.ok||!response.body)throw new Error('规则归档下载失败');

@@ -4,7 +4,7 @@ export type LibraryKind='collection'|'history';
 export type LibraryValue=Subject|WatchRecord|null;
 export type LibraryEntry={kind:LibraryKind;id:number;value:LibraryValue;version:number;updatedAt:number;sortAt:number};
 export type LibraryChange={kind:LibraryKind;id:number;value:LibraryValue;expectedVersion:number;mutationId:string};
-export type LibrarySnapshot={authenticated:boolean;account?:{id:string;displayName:string};entries:LibraryEntry[];accepted?:string[];conflicts?:string[];limited?:string[]};
+export type LibrarySnapshot={authenticated:boolean;account?:{id:string;displayName:string;provider?:'email'|'chatgpt'};entries:LibraryEntry[];accepted?:string[];conflicts?:string[];limited?:string[]};
 export const entryKey=(entry:{kind:LibraryKind;id:number})=>entry.kind+':'+entry.id;
 const clip=(value:unknown,max:number)=>typeof value==='string'?value.slice(0,max):undefined;
 function https(value:unknown,max=2048){if(typeof value!=='string'||value.length>max)return;try{const u=new URL(value);if(u.protocol==='https:'&&!u.username&&!u.password&&!(u.pathname==='/api/media'&&u.searchParams.has('ticket')))return u.href;}catch{}}
@@ -38,5 +38,5 @@ export function parseLibrarySnapshot(value:any):LibrarySnapshot{
  });
  const acknowledgements:Pick<LibrarySnapshot,'accepted'|'conflicts'|'limited'>={};
  for(const key of ['accepted','conflicts','limited'] as const){if(value[key]===undefined)continue;if(!Array.isArray(value[key])||value[key].some((id:unknown)=>typeof id!=='string'||!/^[-\w]{16,80}$/.test(id)))throw new Error('同步确认格式不正确，已保留待上传记录');acknowledgements[key]=value[key];}
- return {authenticated:true,account:{id:value.account.id,displayName:value.account.displayName},entries,...acknowledgements};
+ return {authenticated:true,account:{id:value.account.id,displayName:value.account.displayName,...(['email','chatgpt'].includes(value.account.provider)?{provider:value.account.provider}:{})},entries,...acknowledgements};
 }

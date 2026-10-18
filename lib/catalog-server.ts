@@ -10,24 +10,33 @@ export async function seasonCatalog(params:URLSearchParams,upstream:Upstream){
  const now=currentSeason(),year=Number(params.get('year')||now.year),quarter=Number(params.get('quarter')||now.quarter);
  const range=seasonRange(year,quarter);
  const signal=AbortSignal.timeout(35000);
- const read:Upstream=async(url,init={})=>{try{signal.throwIfAborted();return await upstream(url,{...init,signal});}catch(error){if(signal.aborted)throw new Error('放送时间表加载超时，请重试');throw error;}};
- if(year===now.year&&quarter===now.quarter){
-  try{const calendar=normalizeCalendar(await read('https://api.bgm.tv/calendar'));return {calendar,year,quarter,basis:'current',complete:true};}catch{/* Try the same seasonal service as Kazumi. */}
- }
- try{
-  const data=await read('https://api.kazumi.fyi/kazumi/v1/calendar/season?'+new URLSearchParams(range));
+ const services=new AbortController();
+ const read:Upstream=async(url,init={})=>{try{signal.throwIfAborted();return await upstream(url,{...init,signal:AbortSignal.any([signal,...(init.signal?[init.signal]:[]),AbortSignal.timeout(6000)])});}catch(error){if(signal.aborted)throw new Error('放送时间表加载超时，请重试');throw error;}};
+ const kazumi=async()=>{
+  const data=await read('https://api.kazumi.fyi/kazumi/v1/calendar/season?'+new URLSearchParams(range),{signal:services.signal});
   if(!Array.from({length:7},(_,i)=>data[String(i+1)]).every(Array.isArray))throw new Error('季度数据格式不正确');
   const calendar=Array.from({length:7},(_,i)=>({weekday:{id:i+1},items:normalizeSubjects(data[String(i+1)].map((e:any)=>e?.subject||e))}));
   return {calendar,year,quarter,basis:'premiere',complete:true};
+ };
+ try{
+  const candidates=[kazumi()];
+  if(year===now.year&&quarter===now.quarter)candidates.push((async()=>{const calendar=normalizeCalendar(await read('https://api.bgm.tv/calendar',{signal:services.signal}));return {calendar,year,quarter,basis:'current',complete:true};})());
+  const result=await Promise.any(candidates);services.abort();return result;
  }catch{
-  const items:any[]=[];let total=0;
-  for(let offset=0;offset<1000;offset+=100){
+  services.abort();
+  const page=async(offset:number)=>{
    const data=await read('https://api.bgm.tv/v0/search/subjects?limit=100&offset='+offset,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keyword:'',sort:'heat',filter:{type:[2],nsfw:false,air_date:['>='+range.start,'<'+range.end]}})});
-   const batch=normalizeSubjects(data?.data);total=Number(data.total);if(!Number.isSafeInteger(total)||total<0)throw new Error('放送列表总数格式不正确，请重试');items.push(...batch);if(data.data.length<100||items.length>=total)break;
+   const batch=normalizeSubjects(data?.data),total=Number(data.total);if(!Number.isSafeInteger(total)||total<0)throw new Error('放送列表总数格式不正确，请重试');return {batch,total};
+  };
+  const first=await page(0),items=[...first.batch];let total=first.total;
+  // Independent fallback pages run in bounded batches instead of waiting serially.
+  if(first.batch.length===100)for(let offset=100;offset<Math.min(total,1000);offset+=300){
+   const batches=await Promise.all([offset,offset+100,offset+200].filter(n=>n<Math.min(total,1000)).map(page));for(const data of batches){items.push(...data.batch);total=Math.max(total,data.total);}
   }
-  return {calendar:groups([...new Map(items.map(s=>[s.id,s])).values()]),year,quarter,basis:'premiere',complete:total<=items.length};
+  const unique=[...new Map(items.map(s=>[s.id,s])).values()];return {calendar:groups(unique),year,quarter,basis:'premiere',complete:total<=unique.length};
  }
 }
+
 export async function browseCatalog(params:URLSearchParams,upstream:Upstream){
  const q=(params.get('q')||'').slice(0,120),tag=(params.get('tag')||'').slice(0,40),cat=params.get('cat')||'',year=params.get('year')||'';
  const mode=['date','rank','popular'].includes(params.get('mode')||'')?params.get('mode')!:'date';

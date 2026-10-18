@@ -1,7 +1,7 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),ts=require('typescript');
 let failed;
 const jsx=(type,props)=>({type,props});
-const context={exports:{},require:name=>name==='react'?{useState:()=>[failed,value=>failed=value]}:{jsx,jsxs:jsx}};
+const context={exports:{},require:name=>name==='react'?{useState:()=>[failed,value=>failed=value]}:name.includes('cover-url')?{coverUrl:src=>src}:{jsx,jsxs:jsx}};
 vm.runInNewContext(ts.transpileModule(fs.readFileSync('components/AnimeCover.tsx','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText,context);
 const render=src=>context.exports.default({src,alt:'测试番剧',lazy:true});
 let tree=render('https://images.example/broken.jpg');assert.equal(tree.props.children.type,'img');tree.props.children.props.onError();

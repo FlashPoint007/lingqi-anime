@@ -15,6 +15,20 @@
       "when": 1792122980624,
       "tag": "0001_personal_library",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1792297886910,
+      "tag": "0002_classy_hellion",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1792298142176,
+      "tag": "0003_tidy_calypso",
+      "breakpoints": true
     }
   ]
 }

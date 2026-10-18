@@ -17,7 +17,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-CN">
-      <head><meta name="referrer" content="no-referrer" /></head>
+      <head><link rel="preconnect" href="https://lain.bgm.tv" crossOrigin="anonymous"/><meta name="referrer" content="no-referrer" /></head>
       <body className="antialiased">{children}</body>
     </html>
   );

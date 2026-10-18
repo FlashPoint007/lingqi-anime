@@ -8,7 +8,7 @@ import {parseLibrarySnapshot} from '../lib/library-model';
 import type {LibraryChange,LibrarySnapshot} from '../lib/library-model';
 const read=(key:string,fallback:any)=>{try{return JSON.parse(readStorage(key)||'null')??fallback;}catch{return fallback;}};
 export default function useLibrarySync(ready:boolean,collection:Subject[],history:WatchRecord[],apply:(collection:Subject[],history:WatchRecord[])=>void){
- const [state,setState]=useState<{ready:boolean;phase:SyncPhase|'checking'|'anonymous';message:string;account?:{id:string;displayName:string}}>({ready:false,phase:'checking',message:'正在读取个人数据库…'});
+ const [state,setState]=useState<{ready:boolean;phase:SyncPhase|'checking'|'anonymous';message:string;account?:{id:string;displayName:string;provider?:'email'|'chatgpt'}}>({ready:false,phase:'checking',message:'正在读取个人数据库…'});
  const engine=useRef<LibrarySync|null>(null),latest=useRef({collection,history,apply}),retryRef=useRef<()=>void>(()=>{}),owner=useRef<string|null>(null),timer=useRef<ReturnType<typeof setTimeout>|undefined>(undefined),storageFailed=useRef(false);
  latest.current={collection,history,apply};
  const save=(key:string,value:unknown)=>{if(!writeStorage(key,JSON.stringify(value))){storageFailed.current=true;setState(old=>({...old,message:'浏览器暂存失败，请保持页面打开，待数据库同步完成后再离开'}));}};

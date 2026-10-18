@@ -1,7 +1,8 @@
+import {siteRules} from '../../../lib/site-rules';
+import {emailAuthResponse} from '../../../lib/email-auth';
 import {cachedJson} from '../../../lib/server-cache';
 import {libraryResponse} from '../../../lib/library-server';
 import {readRequestText,RequestLimitError} from '../../../lib/request-guard';
-import {ruleManifest,ruleBatch} from '../../../lib/rule-subscription-server';
 import {apiRequest,apiSearch,apiChapters,extractMedia} from '../../../lib/rule-api';
 import {publicUrl,validateRule,sourcePageError} from '../../../lib/web-core';
 import {browseCatalog,seasonCatalog} from '../../../lib/catalog-server';
@@ -22,7 +23,7 @@ export async function GET(req:Request) {
   if(kind==='media')return proxyMedia(req);
   if(kind==='catalog') {
    const params=new URLSearchParams();for(const key of ['mode','year','quarter','q','tag','cat','page','offset'])if(u.searchParams.has(key))params.set(key,u.searchParams.get(key)!);params.sort();
-   return await cachedJson('catalog',(u.searchParams.get('mode')==='calendar'?'':'browse-v2:')+params.toString(),()=>u.searchParams.get('mode')==='calendar'?seasonCatalog(u.searchParams,upstream):browseCatalog(u.searchParams,upstream),{ttl:300000,stale:86400000,refresh:u.searchParams.get('refresh')==='1'});
+   return await cachedJson('catalog',(u.searchParams.get('mode')==='calendar'?'':'browse-v2:')+params.toString(),()=>u.searchParams.get('mode')==='calendar'?seasonCatalog(u.searchParams,upstream):browseCatalog(u.searchParams,upstream),{ttl:u.searchParams.get('mode')==='calendar'?3600000:300000,stale:u.searchParams.get('mode')==='calendar'?7*86400000:86400000,refresh:u.searchParams.get('refresh')==='1'});
   }
   if(kind==='subject'||kind==='episodes') {
    const id=u.searchParams.get('id')||''; if(!/^\d{1,10}$/.test(id)) return json({error:'无效条目 ID'},400);
@@ -34,15 +35,15 @@ export async function GET(req:Request) {
    },{ttl:kind==='subject'?21600000:600000,stale:86400000,refresh:u.searchParams.get('refresh')==='1'});
   }
   if(kind==='rules') {
-   const batch=u.searchParams.get('batch');
-   if(batch)return json(await ruleBatch(batch.split(',')));
-   const name=u.searchParams.get('name');if(name)return json((await ruleBatch([name])).entries[0]);
-   return json(await ruleManifest());
+   const data=await siteRules(u.searchParams.get('refresh')==='1'),batch=u.searchParams.get('batch'),name=u.searchParams.get('name');
+   if(batch||name){const names=batch?batch.split(','):[name!];if(names.length>10)return json({error:'规则批次无效'},400);const entries=names.map(file=>{const entry=data.entries.find(e=>e.file===file);return entry?{...entry,fresh:!data.stale}:{file,error:'该规则不在全站有效目录中'};});return json(batch?{entries,checkedAt:data.checkedAt}:entries[0]);}
+   return json(data);
   }
   return json({error:'接口不存在'},404);
  }catch(e){return json({error:e instanceof Error?e.message:'请求失败，请稍后重试'},502);}
 }
 export async function POST(req:Request) {
+ if(new URL(req.url).pathname==='/api/auth')return emailAuthResponse(req);
  if(new URL(req.url).pathname==='/api/library')return libraryResponse(req);
  if(!new URL(req.url).pathname.endsWith('/source')) return json({error:'接口不存在'},404);
  const origin=req.headers.get('origin');if(origin&&origin!==new URL(req.url).origin) return json({error:'跨站请求被拒绝'},403);

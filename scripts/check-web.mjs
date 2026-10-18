@@ -50,11 +50,18 @@ const catalogServerUrl=mod(compile(readFileSync('lib/catalog-server.ts','utf8').
 const catalogServer=await import(catalogServerUrl);
 let requested='';
 const pageResult=await catalogServer.browseCatalog(new URLSearchParams('mode=date&page=52&cat=1&year=2024'),async url=>{requested=url;return {data:[{id:123,name:'Example',date:'2024-04-01'}],total:1234};});
-assert.match(requested,/offset=1224/);assert.match(requested,/cat=1/);assert.match(requested,/year=2024/);assert.equal(pageResult.page,52);assert.equal(pageResult.total,1234);
+assert.match(requested,/offset=1020/);assert.match(requested,/cat=1/);assert.match(requested,/year=2024/);assert.equal(pageResult.page,52);assert.equal(pageResult.total,1234);
 await assert.rejects(catalogServer.browseCatalog(new URLSearchParams('mode=popular&cat=3'),async()=>({data:[],total:0})),/不能同时使用/);
-await assert.rejects(catalogServer.browseCatalog(new URLSearchParams('mode=popular&page=43'),async()=>({data:[],total:1100})),/1000/);
-const lastSearchPage=await catalogServer.browseCatalog(new URLSearchParams('q=Example&page=42'),async url=>{requested=url;return {data:Array.from({length:24},(_,i)=>({id:i+1,name:'Example '+i})),total:2000};});
-assert.equal(new URL(requested).searchParams.get('limit'),'16');assert.equal(new URL(requested).searchParams.get('offset'),'984');assert.equal(lastSearchPage.data.length,16,'the final search page must stay within the 1000-result window even with an oversized upstream response');
+await assert.rejects(catalogServer.browseCatalog(new URLSearchParams('mode=popular&page=51'),async()=>({data:[],total:1100})),/1000/);
+const lastSearchPage=await catalogServer.browseCatalog(new URLSearchParams('q=Example&page=50'),async url=>{requested=url;return {data:Array.from({length:24},(_,i)=>({id:i+1,name:'Example '+i})),total:2000};});
+assert.equal(new URL(requested).searchParams.get('limit'),'20');assert.equal(new URL(requested).searchParams.get('offset'),'980');assert.equal(lastSearchPage.data.length,20,'the final search page must stay within the 1000-result window even with an oversized upstream response');
+// Match the upstream's real 20-item clamp: adjacent pages must not skip four items.
+const allSearchIds=[];
+for(let page=1;page<=4;page++){
+ const result=await catalogServer.browseCatalog(new URLSearchParams('q=Example&page='+page),async url=>{const u=new URL(url),offset=Number(u.searchParams.get('offset')),limit=Math.min(20,Number(u.searchParams.get('limit')));return {total:65,limit,offset,data:Array.from({length:Math.min(limit,65-offset)},(_,i)=>({id:offset+i+1,name:'Result '+(offset+i+1)}))};});
+ allSearchIds.push(...result.data.map(s=>s.id));
+}
+assert.deepEqual(allSearchIds,Array.from({length:65},(_,i)=>i+1),'all search results remain reachable without gaps or duplicates');
 await assert.rejects(catalogServer.browseCatalog(new URLSearchParams('q=Example'),async()=>({data:[],total:1e20})),/总数/);
 assert.deepEqual(catalog.normalizeSubjects([null,{id:7,name:'Safe',rating:{score:'bad'},summary:{}},{}]).map(s=>[s.id,s.rating,s.summary]),[[7,undefined,'']]);
 assert.throws(()=>catalog.normalizeCalendar({error:'unavailable'}),/格式/);assert.throws(()=>catalog.normalizeEpisodes({data:[null]}),/有效/);
@@ -69,7 +76,7 @@ try{AbortSignal.timeout=ms=>ms===35000?seasonController.signal:originalTimeout(m
 await assert.rejects(catalogServer.seasonCatalog(new URLSearchParams('year=2023&quarter=2'),async url=>{if(url.includes('kazumi.fyi'))throw Error('season unavailable');return {data:[{id:77,name:'Test',date:'2023-04-03'}]};}),/放送列表总数/);
 // The healthy seasonal service can win without waiting for a hung current-week service.
 const seasonNow=catalog.currentSeason(),parallelCalls=[];const quick=await catalogServer.seasonCatalog(new URLSearchParams('year='+seasonNow.year+'&quarter='+seasonNow.quarter),async(url,init)=>{parallelCalls.push(url);if(url==='https://api.bgm.tv/calendar')return new Promise((_,reject)=>init.signal.addEventListener('abort',()=>reject(Error('cancelled')),{once:true}));return Object.fromEntries(Array.from({length:7},(_,i)=>[String(i+1),[]]));});assert.equal(quick.basis,'premiere');assert.equal(parallelCalls.length,2);
-let activeSeason=0,maxSeason=0;const bounded=await catalogServer.seasonCatalog(new URLSearchParams('year=2023&quarter=2'),async url=>{if(url.includes('kazumi.fyi'))throw Error('unavailable');activeSeason++;maxSeason=Math.max(maxSeason,activeSeason);await new Promise(resolve=>setTimeout(resolve,2));activeSeason--;const offset=Number(new URL(url).searchParams.get('offset'));return {total:350,data:Array.from({length:Math.min(100,350-offset)},(_,i)=>({id:offset+i+1,name:'Season '+(offset+i),date:'2023-04-03'}))};});assert.equal(maxSeason,3);assert.equal(bounded.calendar[0].items.length,350);assert.equal(bounded.complete,true);
+let activeSeason=0,maxSeason=0;const bounded=await catalogServer.seasonCatalog(new URLSearchParams('year=2023&quarter=2'),async url=>{if(url.includes('kazumi.fyi'))throw Error('unavailable');activeSeason++;maxSeason=Math.max(maxSeason,activeSeason);await new Promise(resolve=>setTimeout(resolve,2));activeSeason--;const offset=Number(new URL(url).searchParams.get('offset'));return {total:350,data:Array.from({length:Math.min(20,350-offset)},(_,i)=>({id:offset+i+1,name:'Season '+(offset+i),date:'2023-04-03'}))};});assert.equal(maxSeason,3);assert.equal(bounded.calendar[0].items.length,350);assert.equal(bounded.complete,true);
 let source=readFileSync('app/api/[...path]/route.ts','utf8').replace("import {emailAuthResponse} from '../../../lib/email-auth';","const emailAuthResponse=async()=>Response.json({error:'test'}, {status:401});").replace("import {siteRules} from '../../../lib/site-rules';","const siteRules=async()=>({entries:[],files:[],checkedAt:0});").replace("'../../../lib/web-core'",JSON.stringify(coreUrl)).replace("'../../../lib/catalog-server'",JSON.stringify(catalogServerUrl));
 source=source.replace("import {libraryResponse} from '../../../lib/library-server';","const libraryResponse=async()=>Response.json({authenticated:false,entries:[]});");
 const guardUrl=mod(compile(readFileSync('lib/request-guard.ts','utf8')));

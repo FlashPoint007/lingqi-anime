@@ -25,13 +25,13 @@ export async function seasonCatalog(params:URLSearchParams,upstream:Upstream){
  }catch{
   services.abort();
   const page=async(offset:number)=>{
-   const data=await read('https://api.bgm.tv/v0/search/subjects?limit=100&offset='+offset,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keyword:'',sort:'heat',filter:{type:[2],nsfw:false,air_date:['>='+range.start,'<'+range.end]}})});
+   const data=await read('https://api.bgm.tv/v0/search/subjects?limit='+PAGE_SIZE+'&offset='+offset,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keyword:'',sort:'heat',filter:{type:[2],nsfw:false,air_date:['>='+range.start,'<'+range.end]}})});
    const batch=normalizeSubjects(data?.data),total=Number(data.total);if(!Number.isSafeInteger(total)||total<0)throw new Error('放送列表总数格式不正确，请重试');return {batch,total};
   };
   const first=await page(0),items=[...first.batch];let total=first.total;
   // Independent fallback pages run in bounded batches instead of waiting serially.
-  if(first.batch.length===100)for(let offset=100;offset<Math.min(total,1000);offset+=300){
-   const batches=await Promise.all([offset,offset+100,offset+200].filter(n=>n<Math.min(total,1000)).map(page));for(const data of batches){items.push(...data.batch);total=Math.max(total,data.total);}
+  if(first.batch.length===PAGE_SIZE)for(let offset=PAGE_SIZE;offset<Math.min(total,1000);offset+=PAGE_SIZE*3){
+   const batches=await Promise.all([offset,offset+PAGE_SIZE,offset+PAGE_SIZE*2].filter(n=>n<Math.min(total,1000)).map(page));for(const data of batches){items.push(...data.batch);total=Math.max(total,data.total);}
   }
   const unique=[...new Map(items.map(s=>[s.id,s])).values()];return {calendar:groups(unique),year,quarter,basis:'premiere',complete:total<=unique.length};
  }

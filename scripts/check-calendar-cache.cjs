@@ -13,4 +13,6 @@ assert.equal(covers.coverUrl(apiLarge,'large'),apiLarge,'detail images preserve 
 assert.equal(covers.coverUrl(apiLarge.replace('https:','http:')),'https://api.bgm.tv/v0/subjects/555605/image?type=common');
 assert.equal(covers.coverUrl('https://api.bgm.tv/v0/subjects/7/image?foo=bar'),'https://api.bgm.tv/v0/subjects/7/image?foo=bar&type=common');
 for(const url of ['https://api.bgm.tv/v0/subjects/7?type=large','https://images.example/v0/subjects/7/image?type=large','https://api.bgm.tv.example/v0/subjects/7/image?type=large'])assert.equal(covers.coverUrl(url),url,'unrelated endpoints and hosts remain unchanged');
+assert.equal(covers.coverUrl(large,'hero'),'https://lain.bgm.tv/r/800/pic/cover/l/aa/bb/example.jpg');assert.equal(covers.coverUrl(apiLarge,'hero'),'https://api.bgm.tv/v0/subjects/555605/image?type=medium');
+assert.equal(cache.seasonCacheFresh({savedAt:Date.now()}),true);assert.equal(cache.seasonCacheFresh({savedAt:Date.now()-300001}),false);assert.equal(cache.seasonCacheFresh({savedAt:Date.now(),cacheStale:true}),false);assert.throws(()=>cache.seasonData({calendar:'bad',basis:'premiere'},2026,1));
 console.log('PASS: persistent quarter isolation, validation, bounded cache and corrupt storage; 400-pixel card covers and API image thumbnails preserve full detail artwork');

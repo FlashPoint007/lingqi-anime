@@ -21,7 +21,7 @@ function load(file,dependencies={}){
 const req=(path='/api/catalog',ip='203.0.113.1',init={})=>{const request=new Request('https://site.example'+path,{...init,headers:{'cf-connecting-ip':ip,...init.headers}});Object.defineProperty(request,'cf',{value:{}});return request;};
 const secret='test-key-with-more-than-thirty-two-bytes';
 (async()=>{
- const db=database(),fresh=()=>load('lib/server-cache.ts',{'cloudflare:workers':{env:{DB:db}}});
+ const background=[];const db=database(),fresh=()=>load('lib/server-cache.ts',{'cloudflare:workers':{env:{DB:db},waitUntil:task=>background.push(task)}});
  let cache=fresh(),calls=0;
  const get=()=>cache.cachedJson('catalog','query',async()=>({data:[{id:++calls}]}),{ttl:1000,stale:10000});
  let response=await get();assert.equal(response.headers.get('x-lingqi-storage'),'d1');assert.equal((await response.json()).data[0].id,1);
@@ -30,6 +30,12 @@ const secret='test-key-with-more-than-thirty-two-bytes';
  await cache.cachedJson('catalog','query',async()=>({data:[{id:++calls}]}),{ttl:1000,stale:10000,refresh:true});assert.equal(calls,2);
  clock+=1001;
  response=await cache.cachedJson('catalog','query',async()=>{throw Error('origin down');},{ttl:1000,stale:10000});let data=await response.json();assert.equal(data.cacheStale,true);assert.equal(data.offline,true);assert.equal(data.data[0].id,2);assert.equal(response.headers.get('cache-control'),'no-store');
+ // Stale public catalogue rows return before a slow refresh and coalesce it.
+ await cache.cachedJson('catalog','background',async()=>({value:'old'}),{ttl:1000,stale:10000});clock+=1001;
+ let finishRefresh,backgroundCalls=0;const refreshGate=new Promise(resolve=>finishRefresh=resolve),slowRefresh=async()=>{backgroundCalls++;await refreshGate;return {value:'new'};};
+ const fast=await cache.cachedJson('catalog','background',slowRefresh,{ttl:1000,stale:10000,background:true});assert.equal((await fast.json()).value,'old');assert.equal(fast.headers.get('x-lingqi-cache'),'stale-updating');
+ const alsoFast=await cache.cachedJson('catalog','background',slowRefresh,{ttl:1000,stale:10000,background:true});assert.equal((await alsoFast.json()).value,'old');assert.equal(backgroundCalls,1);assert.equal(background.length,1);
+ finishRefresh();await Promise.all(background);assert.equal((await (await cache.cachedJson('catalog','background',slowRefresh,{ttl:1000,stale:10000,background:true})).json()).value,'new');
  clock+=10001;await assert.rejects(cache.cachedJson('catalog','query',async()=>{throw Error('origin down');},{ttl:1000,stale:10000}),/origin down/);
  let unlock;const gate=new Promise(resolve=>unlock=resolve);calls=0;
  const batch=Array.from({length:12},()=>cache.cachedJson('source-chapters','one',async()=>{calls++;await gate;return {roads:[]};},{ttl:1000,stale:1000}));

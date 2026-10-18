@@ -80,7 +80,7 @@ let activeSeason=0,maxSeason=0;const bounded=await catalogServer.seasonCatalog(n
 let source=readFileSync('app/api/[...path]/route.ts','utf8').replace("import {emailAuthResponse} from '../../../lib/email-auth';","const emailAuthResponse=async()=>Response.json({error:'test'}, {status:401});").replace("import {siteRules} from '../../../lib/site-rules';","const siteRules=async()=>({entries:[],files:[],checkedAt:0});").replace("'../../../lib/web-core'",JSON.stringify(coreUrl)).replace("'../../../lib/catalog-server'",JSON.stringify(catalogServerUrl));
 source=source.replace("import {libraryResponse} from '../../../lib/library-server';","const libraryResponse=async()=>Response.json({authenticated:false,entries:[]});");
 const guardUrl=mod(compile(readFileSync('lib/request-guard.ts','utf8')));
-const cacheUrl=mod(compile(readFileSync('lib/server-cache.ts','utf8').replace("import {env} from 'cloudflare:workers';",'const env={};')));
+const cacheUrl=mod(compile(readFileSync('lib/server-cache.ts','utf8').replace("import {env,waitUntil} from 'cloudflare:workers';",'const env={};const waitUntil=()=>{};')));
 source=source.replace("'../../../lib/request-guard'",JSON.stringify(guardUrl)).replace("'../../../lib/server-cache'",JSON.stringify(cacheUrl));
 source=source.replace("'../../../lib/catalog'",JSON.stringify(catalogUrl));
 const apiUrl=mod(compile(readFileSync('lib/rule-api.ts','utf8').replace("'./web-core'",JSON.stringify(coreUrl))));

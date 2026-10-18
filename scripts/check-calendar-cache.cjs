@@ -7,4 +7,10 @@ cache.saveSeasonCache(2026,2,{...value,calendar:'broken'});assert.equal(cache.re
 for(let year=2020;year<2026;year++)cache.saveSeasonCache(year,1,value);assert.equal(Object.keys(JSON.parse(storage.get('kw-season-cache-v1'))).length,4);
 const restarted=()=>load('lib/calendar-client.ts',{'./catalog':catalog,'./personal-data':{readStorage:key=>storage.get(key),writeStorage:()=>{}}});assert.ok(restarted().readSeasonCache(2025,1));storage.set('kw-season-cache-v1','broken');assert.equal(restarted().readSeasonCache(2025,1),undefined);
 const large='https://lain.bgm.tv/pic/cover/l/aa/bb/example.jpg';assert.equal(covers.coverUrl(large),'https://lain.bgm.tv/r/400/pic/cover/l/aa/bb/example.jpg');assert.equal(covers.coverUrl(large,'large'),large);assert.equal(covers.coverUrl(large.replace('https:','http:')),'https://lain.bgm.tv/r/400/pic/cover/l/aa/bb/example.jpg');assert.equal(covers.coverUrl(large.replace('https:','http:'),'large'),large);assert.equal(covers.coverUrl('https://images.example/pic/cover/l/test.jpg'),'https://images.example/pic/cover/l/test.jpg');assert.equal(covers.coverUrl(undefined),undefined);
-console.log('PASS: persistent quarter isolation, validation, bounded cache and corrupt storage; 400-pixel card covers preserve full detail artwork');
+const apiLarge='https://api.bgm.tv/v0/subjects/555605/image?type=large';
+assert.equal(covers.coverUrl(apiLarge),'https://api.bgm.tv/v0/subjects/555605/image?type=common');
+assert.equal(covers.coverUrl(apiLarge,'large'),apiLarge,'detail images preserve the requested size');
+assert.equal(covers.coverUrl(apiLarge.replace('https:','http:')),'https://api.bgm.tv/v0/subjects/555605/image?type=common');
+assert.equal(covers.coverUrl('https://api.bgm.tv/v0/subjects/7/image?foo=bar'),'https://api.bgm.tv/v0/subjects/7/image?foo=bar&type=common');
+for(const url of ['https://api.bgm.tv/v0/subjects/7?type=large','https://images.example/v0/subjects/7/image?type=large','https://api.bgm.tv.example/v0/subjects/7/image?type=large'])assert.equal(covers.coverUrl(url),url,'unrelated endpoints and hosts remain unchanged');
+console.log('PASS: persistent quarter isolation, validation, bounded cache and corrupt storage; 400-pixel card covers and API image thumbnails preserve full detail artwork');

@@ -81,3 +81,5 @@ GPL-3.0; see LICENSE. Kazumi by Predidit and contributors. KazumiRules snapshots
 Automated checks validate subscription merging, snapshot coverage, API request/JSONPath behavior, media extraction and proxy bounds. UI playback, GPU quality and real receiver checks require a browser and compatible hardware.
 
 Search pages respect the 1,000-result upstream window, including the partial last page. Missing or failed covers display a named placeholder in catalog cards, details and watch history; a changed cover URL is retried. Starting playback cancels obsolete source-directory requests, and direct media keeps its episode number and catalog source for episode navigation.
+
+Playback recovery recognizes episode numbers in legacy history titles (including episode zero) and preserves same-episode progress. Among sources with the same availability status, automatic playback respects the manually selected source, then the last successfully played source; a failed preferred source still yields to a healthy source.

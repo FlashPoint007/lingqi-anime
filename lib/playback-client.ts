@@ -6,11 +6,14 @@ export function ruleForPlayback<T extends {name:string;baseURL:string;enabled?:b
  return matching.find(rule=>rule.name===preferredName)||matching[0];
 }
 
-export function episodeNumber(episode:Episode,index:number){
+export function knownEpisodeNumber(episode:Pick<Episode,'name'|'number'>){
  if(Number.isFinite(episode.number))return episode.number!;
  const name=episode.name.normalize('NFKC').trim();
  const match=name.match(/^(?:第\s*)?(\d+(?:\.\d+)?)\s*(?:[集话話回]|$)/)||name.match(/^(?:EP(?:ISODE)?|Chapter)\s*[.:-]?\s*(\d+(?:\.\d+)?)(?=$|\s|[:：-])/i);
- return match?Number(match[1]):index+1;
+ return match?Number(match[1]):undefined;
+}
+export function episodeNumber(episode:Episode,index:number){
+ return knownEpisodeNumber(episode)??index+1;
 }
 type EpisodeIdentity={subjectId:number;number?:number;sourceUrl?:string};
 export function resumeEpisodePosition(current:EpisodeIdentity|undefined,target:EpisodeIdentity,position:number){

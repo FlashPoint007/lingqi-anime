@@ -6,7 +6,7 @@ import SourceAvailabilityList from './SourceAvailability';
 import {availabilityLabels,type SourceAvailability} from '../lib/source-availability';
 import type {Subject} from '../lib/catalog';
 import type {Rule} from '../lib/web-core';
-import {knownEpisodeNumber,episodeNumber,episodeNeighbors,visibleEpisodes,playbackUrls,type Episode,type EpisodeTarget,type Road} from '../lib/playback-client';
+import {knownEpisodeNumber,episodeLabel,episodeNumber,episodeNeighbors,visibleEpisodes,playbackUrls,type Episode,type EpisodeTarget,type Road} from '../lib/playback-client';
 type Playback={subject:Subject;episode:string;url:string;sourceUrl:string;source?:string;position:number;mediaUrl?:string;mediaType?:'hls'|'video';preferDirect?:boolean;number?:number;ruleName?:string};
 type Props={dataSync?:ReactNode;player:Playback;mode:string;error:string;status:string;rules:Rule[];ruleIdx:number;query:string;busy:boolean;sourceError:string;results:{name:string;url:string}[];roads:Road[];road:number;episodes:{id:number;sort:number;name:string;name_cn?:string}[];checks:Record<string,SourceAvailability>;onCheckRefresh:()=>void;onCheckSelect:(index:number,check:SourceAvailability)=>void;onBack:()=>void;onRetry:()=>void;onCancel:()=>void;onReady:()=>void;onError:(s:string)=>void;onTime:(n:number,flush?:boolean)=>void;onRule:(n:number)=>void;onQuery:(s:string)=>void;onSearch:()=>void;onResult:(url:string)=>void;onRoad:(n:number)=>void;onPlay:(e:Episode)=>void;onAuto:(n:number)=>void};
 export default function WatchPage(p:Props){
@@ -22,7 +22,7 @@ export default function WatchPage(p:Props){
  return <div className={'watch-page '+(!panel?'watch-theater':'')}>
   <header className="watch-header">
    <button className="watch-back" onClick={p.onBack}><ArrowLeft size={18}/><span>返回番剧</span></button>
-   <div className="watch-title"><h1>{p.player.subject.name_cn||p.player.subject.name}</h1><p>{p.player.number!==undefined?'第 '+p.player.number+' 集 · ':''}{p.player.episode} · {p.mode==='resolving'?'正在寻找播放线路':p.mode==='video'?'本站播放':'当前线路'}</p></div>
+   <div className="watch-title"><h1>{p.player.subject.name_cn||p.player.subject.name}</h1><p>{episodeLabel(p.player.episode,currentNumber)} · {p.mode==='resolving'?'正在寻找播放线路':p.mode==='video'?'本站播放':'当前线路'}</p></div>
    <button className="watch-next watch-previous" disabled={!previous||p.mode==='resolving'} onClick={()=>go(previous)}><ChevronLeft size={16}/><span>上一集</span></button>
    <button className="watch-next" disabled={!next||p.mode==='resolving'} onClick={()=>go(next)}>下一集 <ChevronRight size={16}/></button>
    <button className="watch-panel-toggle" aria-label={panel?'收起选集面板':'展开选集面板'} onClick={()=>setPanel(!panel)}>{panel?<PanelRightClose size={19}/>:<PanelRightOpen size={19}/>}</button>

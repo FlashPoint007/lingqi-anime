@@ -20,7 +20,7 @@ export default function Pagination({page,pages,total,disabled,onChange}:Props){
    </div>)}
    <button type="button" disabled={disabled||page>=pages} onClick={()=>onChange(page+1)} aria-label="下一页"><ChevronRight size={16}/></button>
   </div>
-  <form onSubmit={e=>{e.preventDefault();const n=Number(jump);if(jump!==''&&Number.isInteger(n)&&n>=1&&n<=pages){onChange(n);setJump('');}}}>
+  <form onSubmit={e=>{e.preventDefault();const n=Number(jump);if(!disabled&&jump!==''&&Number.isInteger(n)&&n>=1&&n<=pages){onChange(n);setJump('');}}}>
    <label>跳至 <input type="number" aria-label="跳转页码" min={1} max={pages} value={jump} onChange={e=>setJump(e.target.value)} placeholder={String(page)}/></label>
    <button disabled={disabled||!jump}>跳转</button>
   </form>

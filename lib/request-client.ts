@@ -20,6 +20,7 @@ export async function requestJson(url:string,options:RequestInit={}) {
  let data:any;try{data=await response.json();}catch(error){
   if(signal.reason?.name==='TimeoutError'||(error as Error).name==='TimeoutError')throw new Error('请求超时，请重试');
   if(signal.aborted)throw error;
+  if([502,503,504].includes(response.status))throw new Error('站点网关暂时无法连接，请稍后重试（'+response.status+'）');
   throw new Error('本站接口未返回有效数据（'+response.status+'），请重试');
  }
  if(!response.ok)throw new Error(typeof data?.error==='string'?data.error:'请求失败（'+response.status+'），请重试');

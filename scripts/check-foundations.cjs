@@ -9,7 +9,7 @@ const compile=source=>ts.transpileModule(source,{compilerOptions:{target:ts.Scri
  const timeout=api.timeoutSignal(25);[...timers.values()].find(timer=>timer.delay===25).fn();assert.equal(timeout.aborted,true);assert.equal(timeout.reason.name,'TimeoutError');
  assert.equal((await api.requestJson('/api/test')).ok,true);
  context.fetch=async()=>{throw new TypeError('Failed to fetch');};await assert.rejects(api.requestJson('/api/test'),/网络连接失败/);
- context.fetch=async()=>new Response('<html>Bad gateway</html>',{status:502});await assert.rejects(api.requestJson('/api/test'),/有效数据（502）/);
+ context.fetch=async()=>new Response('<html>Bad gateway</html>',{status:502});await assert.rejects(api.requestJson('/api/test'),/网关.*（502）/);
  context.fetch=async()=>Response.json(null);await assert.rejects(api.requestJson('/api/test'),/格式不正确/);
  context.fetch=async()=>Response.json({error:'请缩小搜索范围'},{status:400});await assert.rejects(api.requestJson('/api/test'),/缩小搜索/);
  context.fetch=async()=>({ok:true,status:200,json:async()=>{throw new DOMException('timeout','TimeoutError');}});await assert.rejects(api.requestJson('/api/test'),/请求超时/);
@@ -49,5 +49,14 @@ const compile=source=>ts.transpileModule(source,{compilerOptions:{target:ts.Scri
   detailContext.setSelected=value=>details.selected=typeof value==='function'?value(details.selected):value;
   vm.createContext(detailContext);vm.runInContext(compile('this.loadDetail='+detailEffect),detailContext);detailContext.loadDetail();details.selected=replacement;resolveSubject({id:7,name:'Loaded previous'});await new Promise(resolve=>setImmediate(resolve));assert.equal(details.selected,replacement,'late detail results cannot reopen a closed dialog or replace another selection');
  }
+ // Fast metadata is rendered while a slower episode catalogue remains pending.
+ let finishEpisodes;const partial={selected:{id:7,name:'Old'},loading:false,error:''};
+ const partialContext={sourceOperation:{current:0},sourceRequestRef:{current:null},selected:partial.selected,AbortController,anySignal:signals=>signals[0],timeoutSignal:()=>new AbortController().signal,rules:[],title:s=>s.name,stopSource:()=>{},api:url=>url.startsWith('/api/subject')?Promise.resolve({id:7,name:'Fast metadata'}):new Promise(resolve=>finishEpisodes=resolve)};
+ for(const name of ['Episodes','SourceTerm','SourceResults','Roads','SourceError','RuleIdx'])partialContext['set'+name]=()=>{};
+ partialContext.setSelected=fn=>partial.selected=fn(partial.selected);partialContext.setDetailLoading=v=>partial.loading=v;partialContext.setDetailError=v=>partial.error=typeof v==='function'?v(partial.error):v;
+ vm.createContext(partialContext);vm.runInContext(compile('this.loadDetail='+detailEffect),partialContext);const leave=partialContext.loadDetail();await new Promise(resolve=>setImmediate(resolve));assert.equal(partial.selected.name,'Fast metadata');assert.equal(partial.loading,true);
+ finishEpisodes({data:[],total:101});await new Promise(resolve=>setImmediate(resolve));assert.equal(partial.loading,false);assert.match(partial.error,/前 100 集/);leave();
+ // A cached stale page must not masquerade as fresh when revisited.
+ catalogueContext.activeQuery='Saved';catalogueContext.readBrowseCache=()=>({data:[{id:8,name:'Cached'}],total:65,offline:false,cacheStale:true,searchLimited:false});catalogueContext.browseCacheFresh=()=>false;catalogueContext.api=()=>new Promise(()=>{});const clearCached=catalogueContext.load();assert.equal(catalogueState.cached,true);clearCached();
  console.log('PASS: legacy abort APIs, network/JSON/body timeout errors, backup validation/theme restore, repeat imports and failed file reads');
 })().catch(error=>{console.error(error);process.exitCode=1;});

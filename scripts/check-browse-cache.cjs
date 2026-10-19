@@ -10,6 +10,10 @@ assert.throws(()=>cache.browseData({...value,total:-1}));assert.throws(()=>cache
 cache.saveBrowseCache(key('wrong',2),value);assert.equal(cache.readBrowseCache(key('wrong',2)),undefined,'responses cannot migrate to a different page');
 cache.saveBrowseCache(key('offline'),{...value,offline:true});assert.equal(cache.readBrowseCache(key('offline')),undefined,'built-in fallback never replaces live cached data');
 cache.saveBrowseCache(key('stale'),{...value,cacheStale:true});assert.equal(cache.browseCacheFresh(cache.readBrowseCache(key('stale'))),false,'server stale fallback never counts as freshly fetched');
+cache.saveBrowseCache(key('server-stale'),{...value,offline:true,cacheStale:true});
+assert.equal(cache.readBrowseCache(key('server-stale')).data[0].id,7,'database stale lists remain available in memory');
+assert.equal(restart().readBrowseCache(key('server-stale')).data[0].id,7,'database stale lists survive a browser reload');
+assert.equal(cache.browseCacheFresh(cache.readBrowseCache(key('server-stale'))),false,'stale lists are displayed immediately but still checked for updates');
 for(let i=0;i<20;i++){now++;cache.saveBrowseCache(key('Entry '+i),value);}assert.equal(Object.keys(JSON.parse(storage.get('kw-browse-cache-v1'))).length,6);assert.ok(storage.get('kw-browse-cache-v1').length<=700000);
 now+=86400001;assert.equal(cache.readBrowseCache(key('Entry 19')),undefined);assert.equal(restart().readBrowseCache(key('Entry 19')),undefined);
 storage.set('kw-browse-cache-v1','broken');assert.equal(restart().readBrowseCache(key('Entry 19')),undefined);

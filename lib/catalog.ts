@@ -4,6 +4,8 @@ export type Subject={id:number;name:string;name_cn?:string;images?:{large?:strin
 export const categories=[{value:'',label:'全部类型'},{value:'1',label:'TV 动画'},{value:'3',label:'剧场版'},{value:'2',label:'OVA'},{value:'5',label:'WEB 动画'},{value:'0',label:'其他'}];
 export const animeTags=['','日常','原创','校园','搞笑','奇幻','百合','恋爱','悬疑','热血','后宫','机战','轻改','偶像','治愈','异世界','冒险','科幻'];
 export const seasonNames=['冬季','春季','夏季','秋季'];
+export function scoreLabel(value:number){return Number.isFinite(value)&&value>0?value.toFixed(1):'暂无评分';}
+export function catalogYears(items:Subject[],year=currentSeason().year,selected=''){const years=[Number(selected),...items.map(s=>Number((s.date||s.air_date||'').slice(0,4)))].filter(y=>Number.isInteger(y)&&y>=1900&&y<=2100);const latest=Math.min(2100,Math.max(year+2,...years));return Array.from({length:latest-1900+1},(_,i)=>latest-i);}
 export function currentSeason(){const parts=new Intl.DateTimeFormat('en',{timeZone:'Asia/Shanghai',year:'numeric',month:'numeric'}).formatToParts(new Date());const year=Number(parts.find(p=>p.type==='year')?.value),month=Number(parts.find(p=>p.type==='month')?.value);return {year,quarter:Math.ceil(month/3)};}
 // Kazumi includes the month before each quarter to retain early premieres.
 export function seasonRange(year:number,quarter:number){

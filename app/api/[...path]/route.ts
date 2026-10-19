@@ -32,7 +32,7 @@ export async function GET(req:Request) {
     const data=await upstream(kind==='subject'?'https://api.bgm.tv/v0/subjects/'+id:'https://api.bgm.tv/v0/episodes?subject_id='+id+'&type=0&limit=100&offset='+offset);
     if(kind==='episodes')return normalizeEpisodes(data);
     const subject=normalizeSubject(data);if(!subject||subject.id!==Number(id))throw new Error('番剧详情格式不正确，请重试');return subject;
-   },{ttl:kind==='subject'?21600000:600000,stale:86400000,refresh:u.searchParams.get('refresh')==='1'});
+   },{background:true,ttl:kind==='subject'?21600000:600000,stale:86400000,refresh:u.searchParams.get('refresh')==='1'});
   }
   if(kind==='rules') {
    const data=await siteRules(u.searchParams.get('refresh')==='1'),batch=u.searchParams.get('batch'),name=u.searchParams.get('name');

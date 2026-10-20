@@ -1,0 +1,70 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),ts=require('typescript'),{webcrypto}=require('node:crypto');
+function load(file,deps={},globals={}){const context={exports:{},Request,Response,Headers,URL,URLSearchParams,TextEncoder,TextDecoder,Uint8Array,AbortController,AbortSignal,DOMException,Event,EventTarget,crypto:webcrypto,btoa,setTimeout,clearTimeout,console,process:{env:{}},...globals,require:name=>{if(name in deps)return deps[name];throw Error('Unexpected dependency '+name);}};vm.runInNewContext(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText,context);return context.exports;}
+const core=load('lib/danmaku.ts');
+const xml='<?xml version="1.0"?><i><d p="1.5,1,25,16711680,0,0,private-user,123">A &amp; &lt;script&gt; &#x1f600;</d><d p="8,5,25,16777215">Top</d><d p="9,4,25,255">Bottom</d><d p="2,7,25,255">Unsupported</d><d p="-1,1,25,255">Invalid</d></i>';
+const parsed=core.parseBilibiliXml(xml);assert.equal(parsed.length,3);assert.equal(parsed[0][3],'A & <script> 😀');assert.equal(parsed[0][2],16711680);assert.ok(!JSON.stringify(parsed).includes('private-user'));
+assert.throws(()=>core.parseBilibiliXml('<!DOCTYPE i [<!ENTITY a SYSTEM "file:///secret">]><i></i>'),/有效/);assert.throws(()=>core.parseBilibiliXml('<html>blocked</html>'),/有效/);assert.throws(()=>core.parseBilibiliXml('<i>'),/有效/);
+const aggregated=core.parseDandanComments([{p:'1,1,16777215,[BiliBili]123',m:'Bili'},{p:'2,4,255,[Gamer]456',m:'Gamer'},{p:'3,5,1,own',m:'Dandan'}]);assert.deepEqual(Array.from(aggregated,c=>c[4]),['bilibili','gamer','dandan']);
+assert.deepEqual(Array.from(core.parseGamerComments([{time:105,position:0,color:'#ff0000',text:'Scroll'},{time:20,position:1,color:'#ffffff',text:'Top'},{time:30,position:2,color:'#ffffff',text:'Bottom'}]),c=>[c[0],c[1]]),[[10.5,1],[2,5],[3,4]]);
+assert.equal(core.importDanmaku(xml).comments[0][4],'local');assert.equal(core.importDanmaku(JSON.stringify({comments:[{p:'1,1,1,[BiliBili]',m:'Local'}]})).comments[0][4],'local');assert.throws(()=>core.importDanmaku('{}'),/格式/);
+const many=Array.from({length:10000},(_,i)=>[i/2,1,0xffffff,'Unique '+i+' 长句'.repeat(35),'bilibili']);const limited=core.limitDanmaku(many);assert.equal(limited.comments.at(-1)[0],4999.5);assert.ok(limited.sampled);assert.ok(new TextEncoder().encode(JSON.stringify(limited)).length<192*1024);
+const settings=core.danmakuSettings({opacity:Infinity,fontSize:900,offset:-999,keywords:'gamer\nSpoiler',sources:{bilibili:false}});assert.equal(settings.opacity,.85);assert.equal(settings.fontSize,36);assert.equal(settings.offset,-300);assert.equal(core.filteredDanmaku(aggregated,settings).length,1);
+const episodes=[{id:'zero',number:0},{id:'one',number:1},{id:'special',title:'SP'}];assert.equal(core.exactDanmakuEpisode(episodes,0).id,'zero');assert.equal(core.exactDanmakuEpisode(episodes,undefined),undefined);assert.equal(core.exactDanmakuEpisode([...episodes,{id:'dub',number:1}],1),undefined);
+for(const bad of ['http://www.bilibili.com/bangumi/play/ss1','https://www.bilibili.com.evil/bangumi/play/ss1','https://user:pass@www.bilibili.com/bangumi/play/ss1','https://localhost/private','../secret','ss900719925474099100'])assert.equal(core.parseDanmakuLink(bad),null);
+assert.equal(core.parseDanmakuLink('https://www.bilibili.com/bangumi/play/ss46089').key,'ss46089');assert.equal(core.parseDanmakuLink('https://ani.gamer.com.tw/animeVideo.php?sn=127137').key,'sn127137');
+const layout=load('lib/danmaku-layout.ts');const rows=layout.layoutDanmaku(parsed,800,450,core.defaultDanmakuSettings,t=>t.length*12);assert.ok(layout.activeDanmaku(rows,2,8).length);assert.equal(layout.activeDanmaku(rows,0,8).length,0);assert.equal(layout.activeDanmaku(rows,30,8).length,0);
+const crowded=layout.layoutDanmaku(Array.from({length:30},(_,i)=>[1,1,0xffffff,'same time '+i,'bilibili']),500,90,{...core.defaultDanmakuSettings,area:.5},t=>t.length*12);assert.equal(crowded.length,1,'same-time comments cannot pile onto one lane');
+console.log('PASS: real formats, privacy reduction, XML entities, unsupported modes, whole-episode bounded sampling, exact episodes, source/keyword filters and collision limits');
+(async()=>{
+ const requests=[],writes=[];const cache={cachedJson:async(kind,key,fn)=>{const value=await fn();writes.push({kind,key,value});return Response.json(value);}};
+ const globals={fetch:async(url,init)=>{requests.push({url:String(url),headers:init.headers});
+  if(url.includes('api.bgm.tv'))return Response.json({date:'2023-09-29'});
+  if(url.includes('raw.githubusercontent'))return Response.json([{title:'Wrong same-title season',sites:[{site:'bangumi',id:'99'},{site:'bilibili',id:'666'}]},{title:'Exact subject',sites:[{site:'bangumi',id:'400602'},{site:'bilibili',id:'21087073'},{site:'gamer',id:'127137'}]}]);
+  if(url.includes('review/user'))return Response.json({code:0,result:{media:{season_id:46089}}});
+  if(url.includes('view/web/season'))return Response.json({code:0,result:{title:'Correct season',episodes:[{cid:1339446971,title:'1',long_title:'冒险的结束'},{cid:2,title:'SP',long_title:'Special'}]}});
+  if(url.includes('comment.bilibili.com'))return new Response(xml);
+  throw Error('Unexpected URL '+url);
+ }};
+ const server=load('lib/danmaku-server.ts',{'./danmaku':core,'./server-cache':cache,'./playback-server':{boundedText:r=>r.text()}},globals);
+ const run=query=>server.danmakuResponse(new URLSearchParams(query));
+ const match=await(await run('op=match&id=400602')).json();assert.equal(match.sources[0].key,'md21087073');assert.ok(match.notices.some(n=>n.provider==='dandan'&&!n.configured));assert.ok(!requests.some(r=>r.url.includes('dandanplay')),'unconfigured providers cannot send authentication-free requests');
+ const catalogue=await(await run('op=episodes&provider=bilibili&key=md21087073')).json();assert.equal(catalogue.episodes[0].id,'1339446971');assert.equal(catalogue.episodes[1].number,undefined);assert.ok(requests.some(r=>r.url.endsWith('season_id=46089')));
+ const comments=await(await run('op=comments&provider=bilibili&key=1339446971')).json();assert.equal(comments.comments.length,3);assert.equal(comments.provider,'bilibili');
+ const direct=await(await run('op=episodes&provider=bilibili&key=cid1339446971')).json();assert.equal(direct.direct,true);assert.equal(direct.episodes[0].id,'1339446971');assert.equal(core.parseDanmakuLink('https://comment.bilibili.com/1339446971.xml').key,'cid1339446971');
+ const count=requests.length;for(const query of ['op=match&id=../x','op=comments&provider=bilibili&key=https://localhost','op=episodes&provider=bilibili&key=ss9007199254740999','op=comments&provider=evil&key=1','op=unsupported&provider=gamer&key=1'])assert.equal((await run(query)).status,400);assert.equal(requests.length,count);assert.equal((await run('op=comments&provider=dandan&key=1')).status,503);
+ const broken=load('lib/danmaku-server.ts',{'./danmaku':core,'./server-cache':cache,'./playback-server':{boundedText:r=>r.text()}},{fetch:async()=>new Response(null,{status:403})});const failedMatch=await(await broken.danmakuResponse(new URLSearchParams('id=400602'))).json();assert.equal(failedMatch.offline,true,'failed index lookup must not become a cached empty match');assert.equal((await broken.danmakuResponse(new URLSearchParams('op=episodes&provider=gamer&key=127137'))).status,502);
+ let signed;const env={LINGQI_DANDAN_APP_ID:'test-app',LINGQI_DANDAN_APP_SECRET:'unit-test-only-not-a-real-key'};
+ const dandan=load('lib/danmaku-server.ts',{'./danmaku':core,'./server-cache':cache,'./playback-server':{boundedText:r=>r.text()}},{process:{env},fetch:async(url,init)=>{signed={url,headers:init.headers};return Response.json({success:true,comments:[]});}});
+ await dandan.dandanRequest('/api/v2/comment/123','?withRelated=true&chConvert=1');const expected=Buffer.from(await webcrypto.subtle.digest('SHA-256',new TextEncoder().encode(env.LINGQI_DANDAN_APP_ID+signed.headers['X-Timestamp']+'/api/v2/comment/123'+env.LINGQI_DANDAN_APP_SECRET))).toString('base64');assert.equal(signed.headers['X-Signature'],expected);assert.ok(!signed.url.includes(env.LINGQI_DANDAN_APP_SECRET));
+ const guard=load('lib/request-guard.ts');const allowed=await guard.guardRequest(new Request('https://site.example/api/danmaku?op=match&id=1'));assert.equal(allowed.response,undefined);allowed.release();assert.equal((await guard.guardRequest(new Request('https://site.example/api/unknown'))).response.status,404);
+ console.log('PASS: real endpoint registration, fixed destinations/validated IDs, exact Bangumi mapping, provider availability, no secret leakage and official signature');
+ await checkHook();await checkOverlay();
+})().catch(error=>{console.error(error);process.exitCode=1;});
+const tick=async()=>{for(let i=0;i<8;i++)await new Promise(resolve=>setImmediate(resolve));};
+async function checkHook(){
+ const slots=[],effects=[],requests=[];let cursor=0,dirty=false,stopped=false,hook;
+ const schedule=()=>{if(stopped||dirty)return;dirty=true;queueMicrotask(()=>{dirty=false;if(!stopped)render();});};
+ const react={useState(value){const i=cursor++;if(!(i in slots))slots[i]={value};return [slots[i].value,n=>{const next=typeof n==='function'?n(slots[i].value):n;if(next!==slots[i].value){slots[i].value=next;schedule();}}];},useRef(value){const i=cursor++;return slots[i]||(slots[i]={current:value});},useEffect(fn,deps){const i=cursor++,old=slots[i];if(!old||deps.some((v,j)=>v!==old.deps[j])){slots[i]={deps,cleanup:old?.cleanup};effects.push(()=>{slots[i].cleanup?.();slots[i].cleanup=fn();});}}};
+ const client={anySignal:signals=>AbortSignal.any(signals),timeoutSignal:()=>new AbortController().signal,requestJson:(url,init)=>new Promise((resolve,reject)=>requests.push({url,init,resolve,reject}))};
+ const module=load('components/useDanmaku.ts',{react,'../lib/danmaku':core,'../lib/request-client':client},{localStorage:{getItem:()=>null,setItem(){}}});
+ const render=()=>{cursor=0;hook=module.useDanmaku(0,undefined);effects.splice(0).forEach(fn=>fn());};render();await tick();assert.equal(requests.length,0);
+ hook.manualMatch('ss46089');await tick();requests.at(-1).resolve({title:'Frieren',episodes:[{id:'1339446971',number:1,title:'1'},{id:'2',number:2,title:'2'}]});await tick();assert.equal(hook.episode,undefined,'an unknown video number cannot silently become episode one');
+ hook.chooseEpisode('1339446971');await tick();const obsolete=requests.at(-1);hook.chooseEpisode('2');await tick();assert.equal(obsolete.init.signal.aborted,true);const latest=requests.at(-1);latest.resolve({comments:[[2,1,1,'Episode two','bilibili']],total:1,sampled:false});await tick();obsolete.resolve({comments:[[1,1,1,'WRONG EPISODE','bilibili']],total:1,sampled:false});await tick();assert.equal(hook.comments[0][3],'Episode two','obsolete comment requests cannot overwrite the current episode');
+ let finish;const pending=hook.importFile({size:50,name:'late.xml',text:()=>new Promise(resolve=>finish=resolve)});hook.chooseEpisode('1339446971');await tick();finish(xml);await pending;await tick();assert.equal(hook.isLocal,false,'changing episode cancels a pending local import');
+ await hook.importFile({size:xml.length,name:'real.xml',text:async()=>xml});await tick();assert.equal(hook.isLocal,true);assert.equal(hook.comments[0][4],'local');
+ stopped=true;slots.forEach(slot=>slot?.cleanup?.());assert.ok(requests.at(-1).init.signal.aborted);
+ console.log('PASS: unknown episode requires selection; stale fetches and file imports cannot cross episodes; unmount aborts pending requests');
+}
+async function checkOverlay(){
+ const slots=[],effects=[],frames=new Map(),paints=[];let cursor=0,frameId=0;const jsx=(type,props)=>({type,props});
+ const react={useRef(value){const i=cursor++;return slots[i]||(slots[i]={current:value});},useEffect(fn){effects.push(fn);}};
+ const events=new EventTarget(),windowEvents=new EventTarget(),doc=new EventTarget();doc.hidden=false;
+ const media={current:{currentTime:2,paused:true,ended:false,seeking:false,readyState:2,videoWidth:800,videoHeight:450,getBoundingClientRect:()=>({width:800,height:450}),addEventListener:events.addEventListener.bind(events),removeEventListener:events.removeEventListener.bind(events)}};
+ const context={clearRect(){paints.length=0;},setTransform(){},measureText:text=>({width:text.length*12}),strokeText(){},fillText:text=>paints.push(text)};
+ const canvas={style:{},dataset:{},getContext:()=>context};
+ const component=load('components/DanmakuOverlay.tsx',{react,'react/jsx-runtime':{jsx,jsxs:jsx},'../lib/danmaku':core,'../lib/danmaku-layout':layout},{window:{devicePixelRatio:1,addEventListener:windowEvents.addEventListener.bind(windowEvents),removeEventListener:windowEvents.removeEventListener.bind(windowEvents)},document:doc,requestAnimationFrame:fn=>{frames.set(++frameId,fn);return frameId;},cancelAnimationFrame:id=>frames.delete(id)}).default;
+ cursor=0;const tree=component({media,comments:parsed,settings:core.defaultDanmakuSettings});tree.props.ref.current=canvas;const cleanup=effects[0]();assert.ok(paints.some(t=>t.includes('A &')));assert.equal(frames.size,0,'paused media must not run an animation loop');
+ media.current.currentTime=30;events.dispatchEvent(new Event('seeked'));assert.equal(paints.length,0,'seeking clears obsolete comments');media.current.currentTime=8.5;events.dispatchEvent(new Event('seeked'));assert.ok(paints.includes('Top'));
+ media.current.paused=false;events.dispatchEvent(new Event('play'));assert.ok(frames.size);cleanup();assert.equal(frames.size,0);
+ console.log('PASS: actual canvas drawing, media-clock pause, seek clearing, pinned modes and animation cleanup');
+}

@@ -28,7 +28,7 @@ export default function WatchPage(p:Props){
    <button className="watch-panel-toggle" aria-label={panel?'收起选集面板':'展开选集面板'} onClick={()=>setPanel(!panel)}>{panel?<PanelRightClose size={19}/>:<PanelRightOpen size={19}/>}</button>
   </header>
   <div className="watch-layout"><main className="watch-main" aria-label="站内播放器"><div className="watch-stage">
-   {p.mode==='video'?<Player key={p.player.url} {...urls} mediaType={p.player.mediaType} castUrl={p.player.mediaUrl} position={p.player.position} onTime={p.onTime} onReady={p.onReady} onError={p.onError} onEnded={()=>{if(autoNext&&next)go(next);}}/>:<div className="playback-placeholder">
+   {p.mode==='video'?<Player key={p.player.url} {...urls} mediaType={p.player.mediaType} castUrl={p.player.mediaUrl} subjectId={p.player.subject.id} episodeNumber={currentNumber} position={p.player.position} onTime={p.onTime} onReady={p.onReady} onError={p.onError} onEnded={()=>{if(autoNext&&next)go(next);}}/>:<div className="playback-placeholder">
     {p.mode==='resolving'?<><RefreshCw className="spin" size={32}/><h2>正在准备播放器</h2><p role="status">{p.status||'正在寻找可播放的线路…'}</p><button className="secondary" onClick={p.onCancel}><X size={15}/>停止等待</button></>:<><Play size={36}/><h2>此线路暂不可播放</h2><p>可以重新尝试，或选择其他视频源。</p><div className="playback-recovery">
      {p.player.sourceUrl&&(!p.player.ruleName||p.rules[p.ruleIdx]?.name===p.player.ruleName)&&<button className="secondary" onClick={p.onRetry}><RefreshCw size={15}/>重新解析</button>}
      <button className="secondary" onClick={()=>p.onAuto(currentNumber??1)}><RefreshCw size={15}/>自动寻找其他源</button>

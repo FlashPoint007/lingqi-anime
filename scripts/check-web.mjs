@@ -88,6 +88,9 @@ const subscriptionServerUrl=mod(compile(readFileSync('lib/rule-subscription-serv
 source=source.replace("'../../../lib/rule-api'",JSON.stringify(apiUrl)).replace("'../../../lib/rule-subscription-server'",JSON.stringify(subscriptionServerUrl));
 const playbackUrl=mod(compile(readFileSync('lib/playback-server.ts','utf8').replace("'./rule-api'",JSON.stringify(apiUrl)).replace("'./web-core'",JSON.stringify(coreUrl))));
 source=source.replace("'../../../lib/playback-server'",JSON.stringify(playbackUrl));
+const danmakuUrl=mod(compile(readFileSync('lib/danmaku.ts','utf8')));
+const danmakuServerUrl=mod(compile(readFileSync('lib/danmaku-server.ts','utf8').replace("'./danmaku'",JSON.stringify(danmakuUrl)).replace("'./playback-server'",JSON.stringify(playbackUrl)).replace("'./server-cache'",JSON.stringify(cacheUrl))));
+source=source.replace("'../../../lib/danmaku-server'",JSON.stringify(danmakuServerUrl));
 const playback=await import(playbackUrl);
 const client=await import(mod(compile(readFileSync('lib/playback-client.ts','utf8'))));
 const gap=[{name:'First',url:'https://example.com/1',number:1},{name:'Third',url:'https://example.com/3',number:3}];assert.equal(client.episodeAtNumber(gap,2),undefined);assert.equal(client.episodeAtNumber(gap,3).url,'https://example.com/3');assert.equal(client.episodeNumber({name:'第01话',url:''},7),1);assert.equal(client.episodeNumber({name:'Chapter 99',url:'',number:2},0),2);assert.deepEqual(client.playbackUrls({url:'/api/media?ticket=test',mediaUrl:'https://media.example/clip.mp4',preferDirect:true}),{url:'https://media.example/clip.mp4',fallbackUrl:'/api/media?ticket=test'});assert.equal(client.playbackUrls({url:'/api/media?ticket=test',mediaUrl:'https://media.example/stream.m3u8'}).url,'/api/media?ticket=test');

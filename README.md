@@ -94,3 +94,7 @@ Server-owned Kazumi subscription rules are saved in `site_rule_sets`, independen
 Calendar requests race the current-week and seasonal services, cancel the unused request, and bound each service request to six seconds within the existing total deadline. Fallback pages use at most three concurrent requests. Calendar responses stay fresh in D1 for one hour with a seven-day fallback; the browser retains at most four validated quarter snapshots for seven days and shows a saved quarter while revalidating. Card/history covers normalize Bangumi HTTP URLs to HTTPS and request the 400-pixel variant, decode asynchronously and use native lazy loading on cards; hero/detail covers retain large artwork.
 
 Additional regression checks: `node scripts/check-email-rules.cjs` and `node scripts/check-calendar-cache.cjs`.
+
+## Danmaku
+
+The watch player can fetch and overlay episode danmaku from BiliBili, match by Bangumi ID, select another provider/episode, and import XML/JSON comments. Origin filters, opacity, font size, display area, speed, timing offset and keyword blocking are available. Public comments use the existing bounded D1 cache. Gamer availability depends on its public endpoint; Dandanplay aggregation requires this site's own server-only `LINGQI_DANDAN_APP_ID` and `LINGQI_DANDAN_APP_SECRET`. Without credentials the UI states the requirement; it does not borrow another application's keys. See [setup, attribution and provider limits](docs/danmaku.md).

@@ -1,3 +1,4 @@
+import {danmakuResponse} from '../../../lib/danmaku-server';
 import {siteRules} from '../../../lib/site-rules';
 import {subjectCover} from '../../../lib/subject-cover';
 import {emailAuthResponse} from '../../../lib/email-auth';
@@ -20,6 +21,7 @@ async function upstream(url:string,init:RequestInit={}) {
 export async function GET(req:Request) {
  const u=new URL(req.url); const kind=u.pathname.split('/').pop();
  try {
+  if(kind==='danmaku')return await danmakuResponse(u.searchParams);
   if(kind==='library')return await libraryResponse(req);
   if(kind==='media')return proxyMedia(req);
   if(kind==='cover')return await subjectCover(u.searchParams.get('id')||'',req.signal);

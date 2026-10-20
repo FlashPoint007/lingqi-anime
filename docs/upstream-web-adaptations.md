@@ -10,6 +10,6 @@ Reviewed on 2026-10-20 against `Predidit/Kazumi` main `184f8db535f9b4098ada763fc
 | [Cover saving/title copying, 2026-09-28](https://github.com/Predidit/Kazumi/commit/b484025b9c36cd7fbd8d20ddcd9046d39b04b917) | Detail-page menu copies the display title or original name and downloads the cover through a bounded Bangumi-ID endpoint. Clipboard denial offers a selectable title. |
 | [API search detail URL templates, 2026-10-14](https://github.com/Predidit/Kazumi/commit/ff8594727d9d157d23f9c2b26759f943ebb35936) | Already adapted in version 50: independent search/chapter modes, `@source` templates, all 17 valid upstream rules. |
 
-The recent native application updater, Android download-directory and iOS container-path fixes do not apply to this hosted browser app. Screenshot selection and danmaku editing are reviewed upstream features, not implemented in this update.
+The recent native application updater, Android download-directory and iOS container-path fixes do not apply to this hosted browser app. Screenshot selection and danmaku editing are reviewed upstream features, not implemented in this update. Danmaku retrieval and display were subsequently added; see [danmaku.md](danmaku.md).
 
 Validation: `check-upstream-features.cjs`, existing playback/settings/source-rule regressions, TypeScript and production build; cloud-browser acceptance covers real playback, timeline keyboard/drag controls, title copy and cover download.

@@ -3,7 +3,7 @@ import {useState,type RefObject} from 'react';
 import {MessageSquare,Settings2,X,RefreshCw} from 'lucide-react';
 import {useDanmaku} from './useDanmaku';
 import DanmakuOverlay from './DanmakuOverlay';
-import {danmakuNames,type DanmakuSettings,type DanmakuSource} from '../lib/danmaku';
+import {danmakuNames,filteredDanmaku,type DanmakuSettings,type DanmakuSource} from '../lib/danmaku';
 export default function DanmakuLayer({media,subjectId,number}:{media:RefObject<HTMLVideoElement|null>;subjectId:number;number:number|undefined}){
  const d=useDanmaku(subjectId,number),[open,setOpen]=useState(false),[link,setLink]=useState('');
  const change=<K extends keyof DanmakuSettings>(key:K,value:DanmakuSettings[K])=>d.setSettings(current=>({...current,[key]:value}));
@@ -23,6 +23,8 @@ export default function DanmakuLayer({media,subjectId,number}:{media:RefObject<H
    {d.matches.length>1&&<button className="danmaku-reload" type="button" disabled={d.loading||!d.settings.enabled} onClick={d.autoSelect}>{d.automatic?'重新自动选择来源':'自动选择可用来源'}</button>}
    {d.notices.some(n=>n.provider==='dandan'&&!n.configured)&&<p className="danmaku-caption">站长可在<a href="https://dev.dandanplay.com/" target="_blank" rel="noreferrer">弹弹play 开发者中心</a>申请本站应用凭证。访客无需注册弹弹play。</p>}
    <p className="danmaku-caption">来源显示筛选（过滤已加载的弹幕）</p><div className="danmaku-source-filters" aria-label="弹幕来源显示筛选">{(['bilibili','gamer','dandan',...(d.isLocal?['local']:[])] as DanmakuSource[]).map(source=><label key={source}><input type="checkbox" checked={d.settings.sources[source]} onChange={e=>change('sources',{...d.settings.sources,[source]:e.target.checked})}/>{danmakuNames[source]}<small>{d.comments.filter(row=>row[4]===source).length}</small></label>)}</div>
+   <p className="danmaku-caption">弹幕类型</p><div className="danmaku-source-filters" aria-label="弹幕类型筛选">{(['scroll','top','bottom'] as const).map(mode=><label key={mode}><input type="checkbox" checked={d.settings.modes[mode]} onChange={e=>change('modes',{...d.settings.modes,[mode]:e.target.checked})}/>{{scroll:'滚动弹幕',top:'顶部弹幕',bottom:'底部弹幕'}[mode]}</label>)}</div>
+   <div className="danmaku-source-filters"><label><input type="checkbox" checked={d.settings.color} onChange={e=>change('color',e.target.checked)}/>保留弹幕颜色</label><label><input type="checkbox" checked={d.settings.deduplicate} onChange={e=>change('deduplicate',e.target.checked)}/>合并 10 秒内相同弹幕</label></div><p className="danmaku-caption">过滤后可显示 {filteredDanmaku(d.comments,d.settings).length.toLocaleString()} 条；更改不会重新请求片源。</p>
    <div className="danmaku-ranges">
     <label>不透明度 <output>{Math.round(d.settings.opacity*100)}%</output><input aria-label="弹幕不透明度" type="range" min=".2" max="1" step=".05" value={d.settings.opacity} onChange={e=>change('opacity',Number(e.target.value))}/></label>
     <label>字号 <output>{d.settings.fontSize}</output><input aria-label="弹幕字号" type="range" min="16" max="36" step="1" value={d.settings.fontSize} onChange={e=>change('fontSize',Number(e.target.value))}/></label>

@@ -14,7 +14,7 @@ cache.saveBrowseCache(key('server-stale'),{...value,offline:true,cacheStale:true
 assert.equal(cache.readBrowseCache(key('server-stale')).data[0].id,7,'database stale lists remain available in memory');
 assert.equal(restart().readBrowseCache(key('server-stale')).data[0].id,7,'database stale lists survive a browser reload');
 assert.equal(cache.browseCacheFresh(cache.readBrowseCache(key('server-stale'))),false,'stale lists are displayed immediately but still checked for updates');
-for(let i=0;i<20;i++){now++;cache.saveBrowseCache(key('Entry '+i),value);}assert.equal(Object.keys(JSON.parse(storage.get('kw-browse-cache-v1'))).length,6);assert.ok(storage.get('kw-browse-cache-v1').length<=700000);
+for(let i=0;i<20;i++){now++;cache.saveBrowseCache(key('Entry '+i),value);}assert.equal(Object.keys(JSON.parse(storage.get('kw-browse-cache-v2'))).length,6);assert.ok(storage.get('kw-browse-cache-v2').length<=700000);
 now+=86400001;assert.equal(cache.readBrowseCache(key('Entry 19')),undefined);assert.equal(restart().readBrowseCache(key('Entry 19')),undefined);
-storage.set('kw-browse-cache-v1','broken');assert.equal(restart().readBrowseCache(key('Entry 19')),undefined);
+storage.set('kw-browse-cache-v2','broken');assert.equal(restart().readBrowseCache(key('Entry 19')),undefined);
 console.log('PASS: search/filter/page cache isolation, reload persistence, short freshness, malformed response rejection, bounded storage and stale/offline safety');

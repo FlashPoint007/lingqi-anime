@@ -30,6 +30,17 @@ export function normalizeSubjects(value:unknown):Subject[] {
  if(value.length&&!data.length)throw new Error('番剧列表没有有效条目，请重试');
  return [...new Map(data.map(s=>[s.id,s])).values()];
 }
+export function normalizeRelatedSubjects(value:unknown,currentId:number){
+ if(!Array.isArray(value))throw new Error('关联动画格式不正确');
+ const result:(Subject&{relation:string;type:2})[]=[];
+ for(const raw of value.slice(0,200)){
+  if(!raw||typeof raw!=='object')continue;const item=raw as Record<string,unknown>;
+  if(item.type!==2||item.nsfw===true)continue;const subject=normalizeSubject(item);
+  if(!subject||subject.id===currentId||result.some(s=>s.id===subject.id))continue;
+  result.push({...subject,type:2,relation:typeof item.relation==='string'?item.relation.slice(0,40):'关联作品'});
+  if(result.length===30)break;
+ }return result;
+}
 export function normalizeCalendar(value:any){
  if(!Array.isArray(value)||!value.length||value.some(day=>!Number.isInteger(day?.weekday?.id)||day.weekday.id<1||day.weekday.id>7||!Array.isArray(day.items)))throw new Error('放送时间表格式不正确，请重试');
  return Array.from({length:7},(_,i)=>({weekday:{id:i+1},items:normalizeSubjects(value.filter(day=>day.weekday.id===i+1).flatMap(day=>day.items))}));

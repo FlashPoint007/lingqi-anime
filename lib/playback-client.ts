@@ -23,6 +23,19 @@ export function resumeEpisodePosition(current:EpisodeIdentity|undefined,target:E
 export function episodeAtNumber(episodes:Episode[],number:number){
  return episodes.find((e,i)=>episodeNumber(e,i)===number);
 }
+// Some second seasons retain global Bangumi numbering (29..38) while sources
+// restart at 1. Convert only an unambiguous, explicitly numbered local season.
+export function alignEpisodeNumbers(roads:Road[],metadataNumbers:number[]){
+ const known=[...new Set(metadataNumbers)].sort((a,b)=>a-b),first=known[0];
+ if(!first||first<=1||known.length<2||known.some((n,i)=>!Number.isInteger(n)||n!==first+i))return roads;
+ let changed=false;
+ const result=roads.map(road=>{
+  const numbers=road.episodes.map(knownEpisodeNumber);
+  if(!numbers.length||!numbers.includes(1)||numbers.some(n=>n===undefined||!Number.isInteger(n)||n<1||n>known.length)||new Set(numbers).size!==numbers.length)return road;
+  changed=true;return {...road,episodes:road.episodes.map((episode,i)=>({...episode,number:known[numbers[i]!-1]}))};
+ });
+ return changed?result:roads;
+}
 export function visibleEpisodes(episodes:Episode[],query='',descending=false){
  const term=query.normalize('NFKC').trim().toLowerCase(),numeric=/^\d+(?:\.\d+)?$/.test(term);
  return episodes.map((episode,index)=>({episode,number:episodeNumber(episode,index),index}))

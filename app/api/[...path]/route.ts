@@ -8,7 +8,7 @@ import {readRequestText,RequestLimitError} from '../../../lib/request-guard';
 import {apiRequest,apiSearch,apiChapters,extractMedia} from '../../../lib/rule-api';
 import {publicUrl,validateRule,sourcePageError} from '../../../lib/web-core';
 import {browseCatalog,seasonCatalog} from '../../../lib/catalog-server';
-import {normalizeSubject,normalizeEpisodes} from '../../../lib/catalog';
+import {normalizeSubject,normalizeEpisodes,normalizeRelatedSubjects} from '../../../lib/catalog';
 import {boundedText,proxyMedia,resolvePlayback,signedMediaUrl} from '../../../lib/playback-server';
 function discard(response:Response){void response.body?.cancel().catch(()=>{});}
 const UA='KazumiWeb/0.1 (+https://github.com/Predidit/Kazumi)';
@@ -27,12 +27,13 @@ export async function GET(req:Request) {
   if(kind==='cover')return await subjectCover(u.searchParams.get('id')||'',req.signal);
   if(kind==='catalog') {
    const params=new URLSearchParams();for(const key of ['mode','year','quarter','q','tag','cat','page','offset'])if(u.searchParams.has(key))params.set(key,u.searchParams.get(key)!);params.sort();
-   return await cachedJson('catalog',(u.searchParams.get('mode')==='calendar'?'calendar-v2:':'browse-v3:')+params.toString(),()=>u.searchParams.get('mode')==='calendar'?seasonCatalog(u.searchParams,upstream):browseCatalog(u.searchParams,upstream),{background:true,ttl:u.searchParams.get('mode')==='calendar'?3600000:300000,stale:u.searchParams.get('mode')==='calendar'?7*86400000:86400000,refresh:u.searchParams.get('refresh')==='1'});
+   return await cachedJson('catalog',(u.searchParams.get('mode')==='calendar'?'calendar-v2:':'browse-v4:')+params.toString(),()=>u.searchParams.get('mode')==='calendar'?seasonCatalog(u.searchParams,upstream):browseCatalog(u.searchParams,upstream),{background:true,ttl:u.searchParams.get('mode')==='calendar'?3600000:300000,stale:u.searchParams.get('mode')==='calendar'?7*86400000:86400000,refresh:u.searchParams.get('refresh')==='1'});
   }
-  if(kind==='subject'||kind==='episodes') {
+  if(kind==='subject'||kind==='episodes'||kind==='related') {
    const id=u.searchParams.get('id')||''; if(!/^\d{1,10}$/.test(id)) return json({error:'无效条目 ID'},400);
    const offset=Math.floor(Math.min(10000,Math.max(0,Number(u.searchParams.get('offset'))||0)));
    return await cachedJson(kind,id+':'+offset,async()=>{
+    if(kind==='related')return {data:normalizeRelatedSubjects(await upstream('https://api.bgm.tv/v0/subjects/'+id+'/subjects'),Number(id))};
     const data=await upstream(kind==='subject'?'https://api.bgm.tv/v0/subjects/'+id:'https://api.bgm.tv/v0/episodes?subject_id='+id+'&type=0&limit=100&offset='+offset);
     if(kind==='episodes')return normalizeEpisodes(data);
     const subject=normalizeSubject(data);if(!subject||subject.id!==Number(id))throw new Error('番剧详情格式不正确，请重试');return subject;

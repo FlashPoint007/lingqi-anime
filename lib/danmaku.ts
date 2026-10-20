@@ -5,13 +5,13 @@ export type DanmakuComment=[number,1|4|5,number,string,DanmakuSource];
 export type DanmakuEpisode={id:string;number?:number;title:string};
 export type DanmakuMatch={provider:DanmakuProvider;key:string;title:string};
 export type DanmakuNotice={provider:DanmakuProvider;message:string;configured:boolean};
-export type DanmakuSettings={enabled:boolean;opacity:number;fontSize:number;offset:number;area:number;speed:number;keywords:string;sources:Record<DanmakuSource,boolean>};
+export type DanmakuSettings={enabled:boolean;opacity:number;fontSize:number;offset:number;area:number;speed:number;keywords:string;sources:Record<DanmakuSource,boolean>;modes:Record<'scroll'|'top'|'bottom',boolean>;color:boolean;deduplicate:boolean};
 export const danmakuNames:Record<DanmakuSource,string>={bilibili:'BiliBili',gamer:'Gamer 巴哈姆特',dandan:'弹弹play',local:'本地文件'};
-export const defaultDanmakuSettings:DanmakuSettings={enabled:true,opacity:.85,fontSize:22,offset:0,area:.5,speed:1,keywords:'',sources:{bilibili:true,gamer:true,dandan:true,local:true}};
+export const defaultDanmakuSettings:DanmakuSettings={enabled:true,opacity:.85,fontSize:22,offset:0,area:.5,speed:1,keywords:'',modes:{scroll:true,top:true,bottom:true},color:true,deduplicate:true,sources:{bilibili:true,gamer:true,dandan:true,local:true}};
 export function danmakuSettings(value:unknown):DanmakuSettings{
  const v=value&&typeof value==='object'?value as Partial<DanmakuSettings>:{};
  const clamp=(n:unknown,lo:number,hi:number,fallback:number)=>typeof n==='number'&&Number.isFinite(n)?Math.max(lo,Math.min(hi,n)):fallback;
- return {enabled:typeof v.enabled==='boolean'?v.enabled:true,opacity:clamp(v.opacity,.2,1,.85),fontSize:clamp(v.fontSize,16,36,22),offset:clamp(v.offset,-300,300,0),area:clamp(v.area,.25,1,.5),speed:clamp(v.speed,.5,2,1),keywords:typeof v.keywords==='string'?v.keywords.slice(0,2000):'',sources:{bilibili:v.sources?.bilibili!==false,gamer:v.sources?.gamer!==false,dandan:v.sources?.dandan!==false,local:v.sources?.local!==false}};
+ return {modes:{scroll:v.modes?.scroll!==false,top:v.modes?.top!==false,bottom:v.modes?.bottom!==false},color:v.color!==false,deduplicate:v.deduplicate!==false,enabled:typeof v.enabled==='boolean'?v.enabled:true,opacity:clamp(v.opacity,.2,1,.85),fontSize:clamp(v.fontSize,16,36,22),offset:clamp(v.offset,-300,300,0),area:clamp(v.area,.25,1,.5),speed:clamp(v.speed,.5,2,1),keywords:typeof v.keywords==='string'?v.keywords.slice(0,2000):'',sources:{bilibili:v.sources?.bilibili!==false,gamer:v.sources?.gamer!==false,dandan:v.sources?.dandan!==false,local:v.sources?.local!==false}};
 }
 function plain(value:unknown){return typeof value==='string'?value.replace(/[\u0000-\u001f\u007f]/g,' ').trim().slice(0,180):'';}
 function comment(time:unknown,mode:unknown,color:unknown,text:unknown,source:DanmakuSource):DanmakuComment|null{
@@ -60,7 +60,12 @@ export function limitDanmaku(input:DanmakuComment[]){
 }
 export function filteredDanmaku(comments:DanmakuComment[],settings:DanmakuSettings){
  const words=settings.keywords.toLocaleLowerCase().split(/[\n,，]/).map(s=>s.trim()).filter(Boolean).slice(0,100);
- return comments.filter(row=>settings.sources[row[4]]&&!words.some(word=>row[3].toLocaleLowerCase().includes(word)));
+ const seen=new Map<string,number>();
+ return comments.filter(row=>{
+  if(!settings.sources[row[4]]||settings.modes?.[row[1]===1?'scroll':row[1]===4?'bottom':'top']===false||words.some(word=>row[3].toLocaleLowerCase().includes(word)))return false;
+  if(settings.deduplicate){const key=row[1]+':'+row[3].toLocaleLowerCase().replace(/\s+/g,''),last=seen.get(key);if(last!==undefined&&row[0]-last<10)return false;seen.set(key,row[0]);}
+  return true;
+ }).map(row=>settings.color===false?[row[0],row[1],0xffffff,row[3],row[4]] as DanmakuComment:row);
 }
 export function exactDanmakuEpisode(episodes:DanmakuEpisode[],number:number|undefined){
  if(number===undefined||!Number.isFinite(number))return undefined;

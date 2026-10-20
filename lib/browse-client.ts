@@ -1,6 +1,6 @@
 import {normalizeSubjects,PAGE_SIZE} from './catalog';
 import {readStorage,writeStorage} from './personal-data';
-const KEY='kw-browse-cache-v1',MAX_AGE=86400000,memory=new Map<string,BrowseCache>();
+const KEY='kw-browse-cache-v2',MAX_AGE=86400000,memory=new Map<string,BrowseCache>();
 export type BrowseData={data:ReturnType<typeof normalizeSubjects>;total:number;page:number;offline:boolean;searchLimited:boolean;cacheStale:boolean};
 type BrowseCache=BrowseData&{savedAt:number};
 export function browseData(value:any):BrowseData{

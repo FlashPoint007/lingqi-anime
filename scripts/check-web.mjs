@@ -56,6 +56,8 @@ await assert.rejects(catalogServer.browseCatalog(new URLSearchParams('mode=popul
 const lastSearchPage=await catalogServer.browseCatalog(new URLSearchParams('q=Example&page=50'),async url=>{requested=url;return {data:Array.from({length:24},(_,i)=>({id:i+1,name:'Example '+i})),total:2000};});
 assert.equal(new URL(requested).searchParams.get('limit'),'20');assert.equal(new URL(requested).searchParams.get('offset'),'980');assert.equal(lastSearchPage.data.length,20,'the final search page must stay within the 1000-result window even with an oversized upstream response');
 // Match the upstream's real 20-item clamp: adjacent pages must not skip four items.
+await catalogServer.browseCatalog(new URLSearchParams('mode=popular&page=1'),async(_url,init)=>{const body=JSON.parse(init.body);assert.ok(body.filter.air_date[0].startsWith('<='),'home recommendations exclude future premieres before pagination');return {data:[],total:0};});
+await catalogServer.browseCatalog(new URLSearchParams('q=Future&mode=popular&page=1'),async(_url,init)=>{assert.equal(JSON.parse(init.body).filter.air_date,undefined,'explicit searches can still find unreleased shows');return {data:[],total:0};});
 const allSearchIds=[];
 for(let page=1;page<=4;page++){
  const result=await catalogServer.browseCatalog(new URLSearchParams('q=Example&page='+page),async url=>{const u=new URL(url),offset=Number(u.searchParams.get('offset')),limit=Math.min(20,Number(u.searchParams.get('limit')));return {total:65,limit,offset,data:Array.from({length:Math.min(limit,65-offset)},(_,i)=>({id:offset+i+1,name:'Result '+(offset+i+1)}))};});

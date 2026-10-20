@@ -1,0 +1,28 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),ts=require('typescript');
+function load(file,globals={}){const context={exports:{},TextEncoder,Blob,Error,console,...globals};vm.runInNewContext(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,context);return context.exports;}
+const extras=load('lib/player-extras.ts');
+const converted=extras.subtitleVtt('\uFEFF1\r\n00:00:01,250 --> 00:00:03,800\r\n<b>你好</b>\r\n第二行\r\n\r\n2\r\n00:00:04,000 --> 00:00:05,000\r\n后续字幕');
+assert.match(converted,/^WEBVTT\n\n00:00:01\.250 --> 00:00:03\.800\n你好\n第二行/);assert.match(converted,/00:00:04\.000/);assert.ok(!converted.includes('<b>'));
+assert.match(extras.subtitleVtt('00:00:01.000 --> 00:00:02.000\n无编号字幕'),/无编号字幕/);
+assert.equal(extras.subtitleVtt('\uFEFFWEBVTT\r\n\r\n00:00:00.000 --> 00:00:01.000\r\n现有字幕'),'WEBVTT\n\n00:00:00.000 --> 00:00:01.000\n现有字幕\n');
+for(const bad of ['','not subtitles','1\n00:61:00,000 --> 00:62:00,000\nbad','1\n00:00:03,000 --> 00:00:02,000\nbad'])assert.throws(()=>extras.subtitleVtt(bad),/字幕/);
+assert.throws(()=>extras.subtitleVtt('字'.repeat(800000)),/2 MB/);
+let now=1000,expired=0;const timer=extras.createPlaybackTimer(()=>expired++,()=>now);
+timer.set(15);now+=14*60000;assert.equal(timer.remaining,60);assert.equal(timer.mayPlay(true),true,'ordinary episode ending preserves a wall-clock timer');
+now+=60001;assert.equal(timer.mayPlay(),false);assert.equal(expired,1);assert.equal(timer.mayPlay(true),false,'expired timer blocks late ready/ended callbacks');assert.equal(expired,1);
+timer.resume();assert.equal(timer.mayPlay(),true,'explicit play resumes after expiry');timer.set('episode');assert.equal(timer.mayPlay(),true);assert.equal(timer.mayPlay(true),false,'episode timer stops before auto-next');
+timer.set(1);timer.cancel();now+=600000;assert.equal(timer.mayPlay(),true);assert.equal(timer.remaining,0);assert.equal(expired,2,'cancelled or replaced timers never expire later');
+const playback=load('lib/playback-client.ts'),known=Array.from({length:10},(_,i)=>29+i),localRoads=[{name:'Restarted numbering',episodes:Array.from({length:10},(_,i)=>({name:'第'+(i+1)+'集',url:'https://example.com/'+(i+1)}))}];const aligned=playback.alignEpisodeNumbers(localRoads,known);assert.equal(aligned[0].episodes[0].number,29);assert.equal(aligned[0].episodes[9].number,38);assert.equal(localRoads[0].episodes[0].number,undefined,'mapping never mutates cached source catalogues');assert.equal(playback.alignEpisodeNumbers(aligned,known),aligned,'mapping is idempotent');assert.equal(playback.episodeNeighbors(aligned[0].episodes,'https://example.com/1',29,known,10).previous,undefined);assert.equal(playback.episodeNeighbors(aligned[0].episodes,'https://example.com/1',29,known,10).next.number,30);
+for(const bad of [[29,31],[],[1,2,3]])assert.equal(playback.alignEpisodeNumbers(localRoads,bad),localRoads);const unknown=[{name:'Unknown',episodes:[{name:'Opening',url:'https://example.com/sp'}]}];assert.equal(playback.alignEpisodeNumbers(unknown,known),unknown);const duplicated=[{name:'Ambiguous',episodes:[{name:'第1集',url:'https://example.com/a'},{name:'第1集',url:'https://example.com/b'}]}];assert.equal(playback.alignEpisodeNumbers(duplicated,known),duplicated);
+const catalog=load('lib/catalog.ts'),relations=catalog.normalizeRelatedSubjects([{id:1,name:'Self',type:2},{id:2,name:'Sequel',type:2,relation:'续集'},{id:2,name:'Duplicate',type:2},{id:3,name:'Manga',type:1},{id:4,name:'Adult',type:2,nsfw:true},null],1);
+assert.deepEqual(Array.from(relations,row=>row.id),[2]);assert.equal(relations[0].relation,'续集');assert.equal(catalog.normalizeRelatedSubjects(relations,1).length,1,'normalized response remains valid on the client');assert.throws(()=>catalog.normalizeRelatedSubjects({},1),/格式/);
+assert.equal(catalog.normalizeRelatedSubjects(Array.from({length:80},(_,i)=>({id:i+2,name:'Related '+i,type:2})),1).length,30);
+(async()=>{
+ let drawn,exported=false;const screen=load('lib/player-extras.ts',{document:{createElement:()=>({getContext:()=>({drawImage:(...args)=>drawn=args}),toBlob:fn=>{exported=true;fn(new Blob(['png'],{type:'image/png'}));}})}});
+ const media={readyState:2,videoWidth:7680,videoHeight:4320};const blob=await screen.captureVideoFrame(media);assert.equal(blob.type,'image/png');assert.equal(drawn[3],3840);assert.equal(drawn[4],2160);assert.equal(exported,true);
+ await assert.rejects(screen.captureVideoFrame({...media,readyState:0}),/加载/);
+ const blocked=load('lib/player-extras.ts',{document:{createElement:()=>({getContext:()=>({drawImage(){throw Object.assign(new Error('tainted'),{name:'SecurityError'});}})})}});
+ // Native SecurityError is an Error in the browser; use the module's own realm here.
+ await assert.rejects(blocked.captureVideoFrame(media),/禁止读取/);
+ console.log('PASS: SRT/BOM/CRLF and multi-line conversion, subtitle bounds; absolute-time and episode sleep guards; exact anime relations and conservative season numbering; bounded frame capture and cross-origin failure');
+})().catch(error=>{console.error(error);process.exitCode=1;});

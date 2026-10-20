@@ -49,8 +49,9 @@ export async function browseCatalog(params:URLSearchParams,upstream:Upstream){
  try{
   let data:any;
   if(search){
-   const tags=[tag].filter(Boolean);
-   data=await upstream('https://api.bgm.tv/v0/search/subjects?limit='+Math.min(PAGE_SIZE,1000-offset)+'&offset='+offset,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keyword:q,sort:mode==='rank'?'rank':mode==='popular'?'heat':'match',filter:{type:[2],nsfw:false,...(tags.length?{tag:tags}:{}),...(mode==='rank'?{rank:['>0','<=99999']}:{}),...(year?{air_date:['>='+year+'-01-01','<'+(Number(year)+1)+'-01-01']}:{})}})});
+   const tags=[tag].filter(Boolean),homePopular=!q&&!tag&&!year&&mode==='popular';
+   const today=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+   data=await upstream('https://api.bgm.tv/v0/search/subjects?limit='+Math.min(PAGE_SIZE,1000-offset)+'&offset='+offset,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keyword:q,sort:mode==='rank'?'rank':mode==='popular'?'heat':'match',filter:{type:[2],nsfw:false,...(tags.length?{tag:tags}:{}),...(mode==='rank'?{rank:['>0','<=99999']}:{}),...(homePopular?{air_date:['<='+today]}:{}),...(year?{air_date:['>='+year+'-01-01','<'+(Number(year)+1)+'-01-01']}:{})}})});
   }else{
    const query=new URLSearchParams({type:'2',sort:mode,limit:String(PAGE_SIZE),offset:String(offset)});if(cat)query.set('cat',cat);if(year)query.set('year',year);
    data=await upstream('https://api.bgm.tv/v0/subjects?'+query);

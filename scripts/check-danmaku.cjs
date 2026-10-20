@@ -68,3 +68,38 @@ async function checkOverlay(){
  media.current.paused=false;events.dispatchEvent(new Event('play'));assert.ok(frames.size);cleanup();assert.equal(frames.size,0);
  console.log('PASS: actual canvas drawing, media-clock pause, seek clearing, pinned modes and animation cleanup');
 }
+
+(async()=>{
+ const cache={cachedJson:async(_kind,_key,fn)=>Response.json(await fn())};
+ const make=(fetch,env={})=>load('lib/danmaku-server.ts',{'./danmaku':core,'./server-cache':cache,'./playback-server':{boundedText:r=>r.text()}},{fetch,process:{env},console:{...console,warn(){}}});
+ let calls=0;const maintenance=make(async()=>{calls++;return new Response('<html><title>巴哈姆特 -- 系統維修中</title>'+(' '.repeat(50000))+'</html>',{status:403});});
+ const params=new URLSearchParams('op=comments&provider=gamer&key=127137');let response=await maintenance.danmakuResponse(params),data=await response.json();assert.equal(data.code,'UPSTREAM_MAINTENANCE');assert.equal(data.upstreamStatus,403);assert.ok(Number(response.headers.get('Retry-After'))>0);await maintenance.danmakuResponse(params);assert.equal(calls,1,'a maintenance response starts a bounded origin cooldown');
+ const blocked=make(async()=>new Response('<html>request denied</html>',{status:412}));data=await(await blocked.danmakuResponse(new URLSearchParams('op=episodes&provider=bilibili&key=ss46089'))).json();assert.equal(data.code,'UPSTREAM_BLOCKED');assert.equal(data.upstreamStatus,412);
+ const limited=make(async()=>new Response(null,{status:429,headers:{'Retry-After':'3600'}}));response=await limited.danmakuResponse(params);assert.equal(response.headers.get('Retry-After'),'3600','respect an upstream cooldown longer than ten minutes');
+ const healthy=make(async url=>{const u=new URL(url);if(u.pathname.endsWith('/video.php'))return Response.json({data:{data:{anime:{title:'Exact series',episodes:{'2':[{videoSn:127137,episode:1}]}}}}});assert.equal(u.searchParams.get('geo'),'TW,HK');return Response.json({data:{danmu:[{time:30,position:0,color:'#ffffff',text:'Actual-format comment'}]}});});
+ data=await(await healthy.danmakuResponse(new URLSearchParams('op=episodes&provider=gamer&key=127137'))).json();assert.equal(data.episodes[0].number,1);assert.equal(data.episodes[0].id,'127137');data=await(await healthy.danmakuResponse(params)).json();assert.equal(data.comments[0][0],3);
+ const failure=make(async()=>Response.json({error:{code:403,message:'此影片不提供您目前所在的地區'}}));data=await(await failure.danmakuResponse(params)).json();assert.equal(data.code,'UPSTREAM_REGION');assert.notEqual(data.comments,[],'an API error cannot turn into empty comments');
+ const malformed=make(async()=>Response.json({data:{unexpected:[]}}));data=await(await malformed.danmakuResponse(params)).json();assert.equal(data.code,'UPSTREAM_FORMAT');assert.equal(data.comments,undefined);
+ const auth=make(async()=>new Response(null,{status:403,headers:{'X-Error-Message':'Invalid Signature'}}),{LINGQI_DANDAN_APP_ID:'test-app',LINGQI_DANDAN_APP_SECRET:'unit-test-only-secret'});data=await(await auth.danmakuResponse(new URLSearchParams('op=comments&provider=dandan&key=123'))).json();assert.equal(data.code,'UPSTREAM_AUTH');assert.match(data.error,/签名/);assert.ok(!JSON.stringify(data).includes('unit-test-only-secret'));
+ await checkAutomaticFailover();
+ console.log('PASS: upstream maintenance/block/rate/auth/format distinctions, response bounds and cooldowns; Gamer catalogue parameter, payload variants and single-group episodes');
+})().catch(error=>{console.error(error);process.exitCode=1;});
+function automaticHook(number=1){
+ const slots=[],effects=[],requests=[];let cursor=0,dirty=false,stopped=false,hook;
+ const schedule=()=>{if(dirty||stopped)return;dirty=true;queueMicrotask(()=>{dirty=false;if(!stopped)render();});};
+ const react={useState(value){const i=cursor++;if(!(i in slots))slots[i]={value};return [slots[i].value,n=>{const next=typeof n==='function'?n(slots[i].value):n;if(next!==slots[i].value){slots[i].value=next;schedule();}}];},useRef(value){const i=cursor++;return slots[i]||(slots[i]={current:value});},useEffect(fn,deps){const i=cursor++,old=slots[i];if(!old||deps.some((v,j)=>v!==old.deps[j])){slots[i]={deps,cleanup:old?.cleanup};effects.push(()=>{slots[i].cleanup?.();slots[i].cleanup=fn();});}}};
+ const client={anySignal:signals=>AbortSignal.any(signals),timeoutSignal:()=>new AbortController().signal,requestJson:(url,init)=>new Promise((resolve,reject)=>requests.push({url,init,resolve,reject}))};
+ const module=load('components/useDanmaku.ts',{react,'../lib/danmaku':core,'../lib/request-client':client},{localStorage:{getItem:()=>null,setItem(){}}});
+ function render(){cursor=0;hook=module.useDanmaku(400602,number);effects.splice(0).forEach(fn=>fn());}render();
+ return {requests,get hook(){return hook;},stop(){stopped=true;slots.forEach(slot=>slot?.cleanup?.());}};
+}
+async function checkAutomaticFailover(){
+ const sources=[{provider:'bilibili',key:'md21',title:'Same subject'},{provider:'gamer',key:'127137',title:'Same subject'},{provider:'dandan',key:'88',title:'Same subject'}];
+ const h=automaticHook();await tick();h.requests[0].resolve({sources,notices:[]});await tick();assert.match(h.requests.at(-1).url,/provider=dandan/);
+ h.requests.at(-1).resolve({episodes:[{id:'8801',number:1,title:'1'}]});await tick();assert.match(h.requests.at(-1).url,/op=comments/);h.requests.at(-1).reject(Error('Application authorization rejected'));await tick();assert.match(h.requests.at(-1).url,/provider=bilibili/);
+ h.requests.at(-1).reject(Error('BiliBili access rejected (412)'));await tick();assert.match(h.requests.at(-1).url,/provider=gamer/);h.requests.at(-1).resolve({episodes:[{id:'127137',number:1,title:'1'}]});await tick();h.requests.at(-1).resolve({comments:[[3,1,0xffffff,'Healthy exact-episode source','gamer']],total:1,sampled:false});await tick();assert.equal(h.hook.comments[0][4],'gamer');assert.equal(Object.keys(h.hook.failures).length,2);assert.equal(h.requests.length,6,'each automatic source is tried at most once');h.stop();
+ const all=automaticHook();await tick();all.requests[0].resolve({sources,notices:[]});await tick();for(let i=0;i<3;i++){all.requests.at(-1).reject(Error('Unavailable '+i));await tick();}assert.equal(all.requests.length,4,'failed providers cannot loop back to the first source');assert.equal(Object.keys(all.hook.failures).length,3);all.stop();
+ const wrong=automaticHook(2);await tick();wrong.requests[0].resolve({sources:sources.slice(0,2),notices:[]});await tick();wrong.requests.at(-1).resolve({episodes:[{id:'first-only',number:1,title:'1'}]});await tick();assert.match(wrong.requests.at(-1).url,/provider=gamer/);assert.ok(!wrong.requests.some(r=>r.url.includes('op=comments')),'missing episode two cannot fetch comments for episode one');wrong.stop();
+ const manual=automaticHook();await tick();manual.requests[0].resolve({sources:sources.slice(0,2),notices:[]});await tick();manual.hook.manualMatch('cid1339446971');await tick();manual.requests.at(-1).resolve({direct:true,episodes:[{id:'1339446971',title:'Explicit episode'}]});await tick();const count=manual.requests.length;manual.requests.at(-1).reject(Error('Manual source unavailable'));await tick();assert.equal(manual.requests.length,count,'a manual comment URL must not automatically fall through to unrelated sources');assert.equal(manual.hook.selected,'bilibili:cid1339446971');manual.stop();
+ console.log('PASS: exact-subject failover after catalogue/comment failures, bounded all-source failure, no wrong-episode fallback and manual-selection isolation');
+}

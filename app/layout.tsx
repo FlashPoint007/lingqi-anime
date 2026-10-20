@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./anime-theme.css";
 
 export const metadata: Metadata = {
-  title: "零柒番剧 · 让故事随你而行",
+  title: "零柒番剧 · 动画索引与追番",
   description: "发现番剧、管理追番与自定义规则，浏览器中的零柒番剧。",
   icons: {
     icon: "/favicon.svg",

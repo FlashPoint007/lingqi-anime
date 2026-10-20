@@ -12,14 +12,21 @@ export function validateRule(input:unknown):Rule {
   if(!input||typeof input!=='object') throw new Error('规则必须为 JSON 对象');
   const r=input as Rule;
   for(const k of ['name','baseURL']) if(typeof r[k]!=='string'||!(r[k] as string).trim()) throw new Error('规则缺少字段：'+k);
-  if(r.searchMode==='api') {
-    for(const key of ['searchApiConfig','chapterApiConfig']){const c=r[key] as any;if(!c?.request?.url)throw new Error('API 规则缺少 '+key);publicUrl(c.request.url.replace(/@[a-zA-Z]+/g,'test'));}
-  } else {
-    for(const k of ['searchURL','searchList','searchName','searchResult','chapterRoads','chapterResult']) if(typeof r[k]!=='string'||!(r[k] as string).trim()) throw new Error('规则缺少字段：'+k);
+  // Search and chapter formats are independent (API search may lead to HTML chapters).
+  for(const phase of ['search','chapter'] as const){
+    const mode=r[phase+'Mode'];if(mode!==undefined&&mode!=='xpath'&&mode!=='api')throw new Error('不支持的规则模式：'+phase);
+    if(mode==='api'){
+      const key=phase+'ApiConfig',c=r[key] as any;if(typeof c?.request?.url!=='string'||!c.request.url.trim())throw new Error('API 规则缺少 '+key);publicUrl(c.request.url.replace(/@[a-zA-Z]+/g,'test'));
+    }else for(const k of phase==='search'?['searchURL','searchList','searchName','searchResult']:['chapterRoads','chapterResult'])if(typeof r[k]!=='string'||!(r[k] as string).trim())throw new Error('规则缺少字段：'+k);
   }
   if(r.name.length>100) throw new Error('规则名称过长');
   const base=publicUrl(r.baseURL); const search=r.searchMode==='api'?base:publicUrl(r.searchURL.replaceAll('@keyword','test'));
   if(base.origin!==search.origin) throw new Error('搜索地址必须与规则 baseURL 同源');
+  const template=(r.searchApiConfig as any)?.sourceTemplate;
+  if(template!==undefined&&template!==''){
+    if(typeof template!=='string'||!template.includes('@source'))throw new Error('详情页地址模板必须引用 @source');
+    if(r.chapterMode!=='api'&&publicUrl(new URL(template.replaceAll('@source','test'),base).href).origin!==base.origin)throw new Error('详情页地址必须与规则 baseURL 同源');
+  }
   return {...r,version:typeof r.version==='string'||typeof r.version==='number'?String(r.version):undefined,enabled:r.enabled!==false};
 }
 export function parseRules(text:string):Rule[] {

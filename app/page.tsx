@@ -43,7 +43,7 @@ export default function Home(){
  useEffect(()=>{if(!ready)return;let alive=true;const controller=new AbortController();api('/api/subject?id='+HOME_FEATURE.subject.id,{signal:anySignal([controller.signal,timeoutSignal(10000)])}).then(data=>{if(alive&&data.id===HOME_FEATURE.subject.id)setFeatured(data);}).catch(()=>{});return()=>{alive=false;controller.abort();};},[ready]);
  useEffect(()=>{if(personal.ready&&player&&!historyRef.current.some(h=>h.subject.id===player.subject.id))remember(player.subject,{name:player.episode,url:player.sourceUrl,source:player.source,number:player.number},playerProgress.current||player.position,player.ruleName);},[personal.ready,player?.sourceUrl]);
  const availability=useSourceAvailability(player?.subject||selected,rules);
- useEffect(()=>{setRules(mergeSubscribed(cleanRules(stored('kw-rules',[])),initialRules.map(r=>({file:String(r.subscriptionFile),rule:r})),initialRules.map(r=>String(r.subscriptionFile))));setDark(stored<boolean>('kw-dark',false)===true);setDay((new Date().getDay()+6)%7);setReady(true);},[]);
+ useEffect(()=>{setRules(mergeSubscribed(cleanRules(stored('kw-rules',[])),initialRules.map(r=>({file:String(r.subscriptionFile),rule:r}))));setDark(stored<boolean>('kw-dark',false)===true);setDay((new Date().getDay()+6)%7);setReady(true);},[]);
  function persist(key:string,value:unknown){
   if(writeStorage(key,JSON.stringify(value)))storageFailures.current.delete(key);else storageFailures.current.add(key);
   setStorageError(storageFailures.current.size?'浏览器存储不可用或空间不足，本次更改可能无法保留，请导出备份。':'');
@@ -65,7 +65,7 @@ export default function Home(){
  },[ready,personal.account?.id]);
  async function syncRules(force=false){
   if(subscriptionBusy.current)return;subscriptionBusy.current=true;setSyncBusy(true);setSyncStatus('正在读取全站规则数据库…');
-  try{const data=await api('/api/rules'+(force?'?refresh=1':''),{signal:timeoutSignal(35000)});if(!Array.isArray(data.entries)||!data.entries.length)throw new Error('全站规则目录暂不可用');setRules(old=>mergeSubscribed(old,data.entries,data.complete?data.files.map((e:any)=>e.file):undefined));setSyncTime(data.checkedAt||0);setSyncStatus((data.storage==='d1'?'全站规则已保存到数据库':'数据库暂不可用，使用内置规则')+' · '+data.entries.length+' 条'+(data.stale?' · 上游暂不可用，保留已有规则':' · 已与上游同步'));}
+  try{const data=await api('/api/rules'+(force?'?refresh=1':''),{signal:timeoutSignal(35000)});if(!Array.isArray(data.entries)||!data.entries.length)throw new Error('全站规则目录暂不可用');setRules(old=>mergeSubscribed(old,data.entries,data.complete?data.files.map((e:any)=>e.file):undefined));setSyncTime(data.checkedAt||0);setSyncStatus((data.storage==='d1'?'全站规则已保存到数据库':'数据库暂不可用，使用内置规则')+' · '+data.entries.length+' 条'+(data.stale?' · '+(data.syncError||'本次未能完整同步上游')+'，保留已有规则':' · 已与上游有效索引同步'));}
   catch(error){setSyncStatus('全站规则读取失败，保留已有规则：'+(error as Error).message);}finally{subscriptionBusy.current=false;setSyncBusy(false);}
  }
  useEffect(()=>{if(!ready)return;void syncRules();const timer=setInterval(()=>void syncRules(),3600000);const focus=()=>void syncRules();window.addEventListener('focus',focus);return()=>{clearInterval(timer);window.removeEventListener('focus',focus);};},[ready]);

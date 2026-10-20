@@ -11,16 +11,19 @@ export function parseRuleArchive(bytes:Uint8Array):ArchiveEntry[]{
   const header=bytes.subarray(offset,offset+512);const name=decoder.decode(header.subarray(0,100)).split('\0')[0];if(!name)break;
   const rawSize=decoder.decode(header.subarray(124,136)).replace(/\0/g,'').trim();if(!/^[0-7]+$/.test(rawSize))throw new Error('规则仓库归档格式无效');
   const size=parseInt(rawSize,8);if(size>1048576||offset+512+size>bytes.length)throw new Error('规则仓库归档文件过大或不完整');
-  if(name.endsWith('/index.json')){const index=JSON.parse(decoder.decode(bytes.subarray(offset+512,offset+512+size)));if(!Array.isArray(index)||index.some(e=>typeof e.name!=='string'))throw new Error('有效规则索引无效');active=new Set(index.map(e=>e.name));}
+  if(/^KazumiRules-[^/]+\/index\.json$/.test(name)){const index=JSON.parse(decoder.decode(bytes.subarray(offset+512,offset+512+size)));if(active||!Array.isArray(index)||!index.length||index.length>500||index.some(e=>typeof e?.name!=='string'||!e.name.trim())||new Set(index.map(e=>e.name)).size!==index.length)throw new Error('有效规则索引无效');active=new Set(index.map(e=>e.name));}
   else if(/^KazumiRules-[^/]+\/[^/]+\.json$/.test(name)){
    const rule=JSON.parse(decoder.decode(bytes.subarray(offset+512,offset+512+size)));if(typeof rule.name!=='string'||typeof rule.baseURL!=='string')throw new Error('规则文件格式无效');entries.push({file:name.split('/').pop()!,rule});
   }
   offset+=512+Math.ceil(size/512)*512;
  }
- if(!entries.length||entries.length>500||!active?.size)throw new Error('规则仓库内容或有效索引无效');return entries.filter(e=>active!.has(e.rule.name)&&!e.rule.deprecated&&e.rule.baseURL.startsWith('https://')).sort((a,b)=>a.file.localeCompare(b.file));
+ if(!entries.length||entries.length>500||!active?.size)throw new Error('规则仓库内容或有效索引无效');
+ // A partial archive must never become an authoritative deletion list.
+ for(const name of active)if(entries.filter(e=>e.rule.name===name&&e.file===name+'.json').length!==1)throw new Error('有效规则文件缺失或重复：'+name);
+ return entries.filter(e=>active!.has(e.rule.name)&&e.file===e.rule.name+'.json'&&!e.rule.deprecated&&e.rule.baseURL.startsWith('https://')).sort((a,b)=>a.file.localeCompare(b.file));
 }
-export async function archiveRules():Promise<ArchiveEntry[]>{
- if(archiveCache&&Date.now()-archiveCache.at<3600000)return archiveCache.entries;if(pendingArchive)return pendingArchive;
+export async function archiveRules(refresh=false):Promise<ArchiveEntry[]>{
+ if(!refresh&&archiveCache&&Date.now()-archiveCache.at<3600000)return archiveCache.entries;if(pendingArchive)return pendingArchive;
  pendingArchive=(async()=>{
   const response=await fetch('https://codeload.github.com/Predidit/KazumiRules/tar.gz/refs/heads/main',{signal:AbortSignal.timeout(20000)});if(!response.ok||!response.body)throw new Error('规则归档下载失败');
   const reader=response.body.pipeThrough(new DecompressionStream('gzip')).getReader();const chunks:Uint8Array[]=[];let size=0;

@@ -1,7 +1,7 @@
 {
   "repository": "Predidit/KazumiRules",
-  "revision": "fce5e15a2e6b57500912d41b3f1c65bb3eb7d392",
-  "checkedAt": "2026-10-12T03:54:39.113271+00:00",
+  "revision": "ba8e10b35b0c3a56bbb6032a12356b0473844c64",
+  "checkedAt": "2026-10-20T03:43:31.603487+00:00",
   "entries": [
     {
       "file": "7sefun.json",
@@ -24,70 +24,6 @@
       }
     },
     {
-      "file": "AGE.json",
-      "rule": {
-        "api": "1",
-        "type": "anime",
-        "name": "AGE",
-        "version": "1.5",
-        "muliSources": true,
-        "useWebview": true,
-        "useNativePlayer": true,
-        "userAgent": "",
-        "baseURL": "https://www.agedm.io/",
-        "searchURL": "https://www.agedm.io/search?query=@keyword",
-        "searchList": "//div[2]/div/section/div/div/div/div",
-        "searchName": "//div/div[2]/h5/a",
-        "searchResult": "//div/div[2]/h5/a",
-        "chapterRoads": "//div[2]/div/section/div/div[2]/div[2]/div[2]/div",
-        "chapterResult": "//ul/li/a"
-      }
-    },
-    {
-      "file": "DM84.json",
-      "rule": {
-        "api": "5",
-        "type": "anime",
-        "name": "DM84",
-        "version": "1.4",
-        "muliSources": true,
-        "useWebview": true,
-        "useNativePlayer": true,
-        "userAgent": "",
-        "adBlocker": true,
-        "baseURL": "https://dmbus.cc/",
-        "searchURL": "https://dmbus.cc/s----------.html?wd=@keyword",
-        "searchList": "//div/div[3]/ul/li",
-        "searchName": "//div/a[2]",
-        "searchResult": "//div/a[2]",
-        "chapterRoads": "//div/div[4]/div/ul",
-        "chapterResult": "//li/a"
-      }
-    },
-    {
-      "file": "MXdm.json",
-      "rule": {
-        "api": "5",
-        "type": "anime",
-        "name": "MXdm",
-        "version": "2.4",
-        "muliSources": true,
-        "useWebview": true,
-        "useNativePlayer": true,
-        "usePost": false,
-        "useLegacyParser": false,
-        "adBlocker": true,
-        "userAgent": "",
-        "baseURL": "https://www.dcc3.com",
-        "searchURL": "https://www.dcc3.com/search/?wd=@keyword",
-        "searchList": "//div[contains(@class, 'search')]/ul/li",
-        "searchName": "//h3/a",
-        "searchResult": "//h3/a",
-        "chapterRoads": "//div[@class='playlist']/div[@class='row']/ul",
-        "chapterResult": "//li/a"
-      }
-    },
-    {
       "file": "aafun.json",
       "rule": {
         "api": "4",
@@ -105,6 +41,26 @@
         "searchResult": "//div/div/div[2]/div/a",
         "chapterRoads": "//",
         "chapterResult": "//div[2]/div[2]/div[1]/div[1]/div[2]/div[1]/div[1]/div[2]/div[2]/div[1]/div[1]/ul[1]/li/a"
+      }
+    },
+    {
+      "file": "AGE.json",
+      "rule": {
+        "api": "1",
+        "type": "anime",
+        "name": "AGE",
+        "version": "1.5",
+        "muliSources": true,
+        "useWebview": true,
+        "useNativePlayer": true,
+        "userAgent": "",
+        "baseURL": "https://www.agedm.io/",
+        "searchURL": "https://www.agedm.io/search?query=@keyword",
+        "searchList": "//div[2]/div/section/div/div/div/div",
+        "searchName": "//div/div[2]/h5/a",
+        "searchResult": "//div/div[2]/h5/a",
+        "chapterRoads": "//div[2]/div/section/div/div[2]/div[2]/div[2]/div",
+        "chapterResult": "//ul/li/a"
       }
     },
     {
@@ -152,10 +108,10 @@
     {
       "file": "dalvdm.json",
       "rule": {
-        "api": "8",
+        "api": "9",
         "type": "anime",
         "name": "dalvdm",
-        "version": "1.1",
+        "version": "1.2",
         "muliSources": true,
         "useWebview": true,
         "useNativePlayer": true,
@@ -164,25 +120,50 @@
         "adBlocker": true,
         "userAgent": "",
         "baseURL": "https://www.sbdl.cc/",
-        "searchURL": "https://www.sbdl.cc/index.php/vod/search.html?wd=@keyword",
-        "searchMode": "xpath",
+        "searchURL": "",
+        "searchMode": "api",
         "chapterMode": "xpath",
-        "searchList": "//div[contains(@class, 'myui-vodbox-content')]",
-        "searchName": "//div[@class='card-info']//div[@class='title']",
-        "searchResult": "//a[contains(@href, '/index.php/vod/detail/')]",
+        "searchApiConfig": {
+          "request": {
+            "method": "GET",
+            "url": "https://www.sbdl.cc/index.php/ajax/suggest",
+            "query": {
+              "mid": "1",
+              "wd": "@keyword"
+            }
+          },
+          "listPath": "$.list[*]",
+          "namePath": "$.name",
+          "sourcePath": "$.id",
+          "sourceTemplate": "https://www.sbdl.cc/index.php/vod/detail/id/@source.html"
+        },
+        "searchList": "",
+        "searchName": "",
+        "searchResult": "",
         "chapterRoads": "//div[starts-with(@id, 'playlist')][contains(@class, 'lists-box')]",
-        "chapterResult": "//a[contains(@href, '/index.php/vod/play/')]",
-        "referer": "",
-        "antiCrawlerConfig": {
-          "enabled": true,
-          "captchaType": 1,
-          "captchaImage": "//div[contains(@class, 'mac_msg_jump')]//img[contains(@class, 'mac_verify_img')]",
-          "captchaInput": "//div[contains(@class, 'mac_msg_jump')]//input[@name='verify']",
-          "captchaButton": "//div[contains(@class, 'mac_msg_jump')]//input[contains(@class, 'verify_submit')]",
-          "captchaDetectType": 1,
-          "captchaDetectValue": "//div[contains(@class, 'mac_msg_jump')]//input[@name='verify']",
-          "captchaScript": ""
-        }
+        "chapterResult": ".//a[contains(@href, '/index.php/vod/play/')]",
+        "referer": ""
+      }
+    },
+    {
+      "file": "DM84.json",
+      "rule": {
+        "api": "5",
+        "type": "anime",
+        "name": "DM84",
+        "version": "1.4",
+        "muliSources": true,
+        "useWebview": true,
+        "useNativePlayer": true,
+        "userAgent": "",
+        "adBlocker": true,
+        "baseURL": "https://dmbus.cc/",
+        "searchURL": "https://dmbus.cc/s----------.html?wd=@keyword",
+        "searchList": "//div/div[3]/ul/li",
+        "searchName": "//div/a[2]",
+        "searchResult": "//div/a[2]",
+        "chapterRoads": "//div/div[4]/div/ul",
+        "chapterResult": "//li/a"
       }
     },
     {
@@ -217,10 +198,10 @@
     {
       "file": "giriGiriLove.json",
       "rule": {
-        "api": "6",
+        "api": "9",
         "type": "anime",
         "name": "giriGiriLove",
-        "version": "2.4",
+        "version": "2.5",
         "muliSources": true,
         "useWebview": true,
         "useNativePlayer": true,
@@ -229,29 +210,38 @@
         "adBlocker": false,
         "userAgent": "",
         "baseURL": "https://ani.girigirilove.com",
-        "searchURL": "https://ani.girigirilove.com/search/-------------/?wd=@keyword",
-        "searchList": "//div[@class='vod-detail style-detail cor4 search-list']",
-        "searchName": "//div/div[2]/a",
-        "searchResult": "//div/div[2]/a",
+        "searchMode": "api",
+        "chapterMode": "xpath",
+        "searchApiConfig": {
+          "request": {
+            "method": "GET",
+            "url": "https://ani.girigirilove.com/index.php/ajax/suggest",
+            "query": {
+              "mid": "1",
+              "wd": "@keyword"
+            }
+          },
+          "listPath": "$.list[*]",
+          "namePath": "$.name",
+          "sourcePath": "$.id",
+          "sourceTemplate": "https://ani.girigirilove.com/GV@source/"
+        },
+        "searchURL": "",
+        "searchList": "",
+        "searchName": "",
+        "searchResult": "",
         "chapterRoads": "//ul[@class='anthology-list-play size']",
         "chapterResult": "//li/a",
-        "referer": "",
-        "antiCrawlerConfig": {
-          "enabled": true,
-          "captchaType": 1,
-          "captchaImage": "//img[@class='ds-verify-img']",
-          "captchaInput": "//input[@class='input box br cor5 ds-verify r6']",
-          "captchaButton": "//button[@class='button verify-submit top20']"
-        }
+        "referer": ""
       }
     },
     {
-      "file": "mgnacg.json",
+      "file": "LMM.json",
       "rule": {
-        "api": "6",
+        "api": "9",
         "type": "anime",
-        "name": "mgnacg",
-        "version": "1.0",
+        "name": "LMM",
+        "version": "2.3",
         "muliSources": true,
         "useWebview": true,
         "useNativePlayer": true,
@@ -259,30 +249,78 @@
         "useLegacyParser": false,
         "adBlocker": false,
         "userAgent": "",
-        "baseURL": "https://www.mgnacg.com",
-        "searchURL": "https://www.mgnacg.com/search/-------------/?wd=@keyword",
-        "searchList": "//div[@class='public-list-box search-box flex rel']",
-        "searchName": "//div/div[1]/div",
-        "searchResult": "//div/div[2]/a[1]",
+        "baseURL": "https://www.lmm85.com/",
+        "searchURL": "",
+        "searchMode": "api",
+        "chapterMode": "xpath",
+        "searchApiConfig": {
+          "request": {
+            "method": "GET",
+            "url": "https://www.lmm85.com/index.php/ajax/suggest",
+            "query": {
+              "mid": "1",
+              "wd": "@keyword"
+            }
+          },
+          "listPath": "$.list[*]",
+          "namePath": "$.name",
+          "sourcePath": "$.id",
+          "sourceTemplate": "https://www.lmm85.com/index.php/vod/detail/id/@source.html"
+        },
+        "searchList": "",
+        "searchName": "",
+        "searchResult": "",
+        "chapterRoads": "//div[contains(@class, 'module-player-list')]",
+        "chapterResult": ".//a[contains(@href, '/play/')]",
+        "referer": ""
+      }
+    },
+    {
+      "file": "mgnacg.json",
+      "rule": {
+        "api": "9",
+        "type": "anime",
+        "name": "mgnacg",
+        "version": "1.2",
+        "muliSources": true,
+        "useWebview": true,
+        "useNativePlayer": true,
+        "usePost": false,
+        "useLegacyParser": false,
+        "adBlocker": false,
+        "userAgent": "",
+        "baseURL": "https://www.mgnacg.com/media/",
+        "searchURL": "",
+        "searchMode": "api",
+        "chapterMode": "xpath",
+        "searchApiConfig": {
+          "request": {
+            "method": "GET",
+            "url": "https://www.mgnacg.com/index.php/ajax/suggest",
+            "query": {
+              "mid": "1",
+              "wd": "@keyword"
+            }
+          },
+          "listPath": "$.list[*]",
+          "namePath": "$.name",
+          "sourcePath": "$.id"
+        },
+        "searchList": "",
+        "searchName": "",
+        "searchResult": "",
         "chapterRoads": "//ul[@class='anthology-list-play size']",
-        "chapterResult": "//li/a",
-        "referer": "",
-        "antiCrawlerConfig": {
-          "enabled": true,
-          "captchaType": 1,
-          "captchaImage": "//img[@class='ds-verify-img']",
-          "captchaInput": "//div[3]/div[2]/div/div/input",
-          "captchaButton": "//div[3]/div[2]/p/input"
-        }
+        "chapterResult": ".//li/a",
+        "referer": ""
       }
     },
     {
       "file": "moonci.json",
       "rule": {
-        "api": "8",
+        "api": "9",
         "type": "anime",
         "name": "moonci",
-        "version": "1.0",
+        "version": "1.1",
         "muliSources": true,
         "useWebview": true,
         "useNativePlayer": true,
@@ -291,15 +329,29 @@
         "adBlocker": false,
         "userAgent": "",
         "baseURL": "https://www.moonci.com/",
-        "searchURL": "https://www.moonci.com/search/-------------.html?wd=@keyword",
-        "searchList": "//ul[contains(@class, 'hl-one-list')]/li[contains(@class, 'hl-list-item')]",
-        "searchName": ".//div[contains(@class, 'hl-item-title')]/a",
-        "searchResult": ".//div[contains(@class, 'hl-item-title')]/a",
+        "searchMode": "api",
+        "chapterMode": "xpath",
+        "searchApiConfig": {
+          "request": {
+            "method": "GET",
+            "url": "https://www.moonci.com/index.php/ajax/suggest",
+            "query": {
+              "mid": "1",
+              "wd": "@keyword"
+            }
+          },
+          "listPath": "$.list[*]",
+          "namePath": "$.name",
+          "sourcePath": "$.id",
+          "sourceTemplate": "https://www.moonci.com/anime/@source.html"
+        },
+        "searchURL": "",
+        "searchList": "",
+        "searchName": "",
+        "searchResult": "",
         "chapterRoads": "//div[contains(@class, 'hl-play-source')]//ul[contains(@class, 'hl-plays-list')]",
         "chapterResult": ".//a[contains(@href, '/play/')]",
         "referer": "",
-        "searchMode": "xpath",
-        "chapterMode": "xpath",
         "antiCrawlerConfig": {
           "enabled": false,
           "captchaType": 1,
@@ -315,10 +367,10 @@
     {
       "file": "mutefun.json",
       "rule": {
-        "api": "6",
+        "api": "9",
         "type": "anime",
         "name": "mutefun",
-        "version": "1.2",
+        "version": "1.4",
         "muliSources": true,
         "useWebview": true,
         "useNativePlayer": true,
@@ -326,21 +378,52 @@
         "useLegacyParser": false,
         "adBlocker": false,
         "userAgent": "",
-        "baseURL": "https://www.2kdm.com/",
-        "searchURL": "https://www.2kdm.com/vodsearch/-------------.html?wd=@keyword",
-        "searchList": "//div[1]/div[3]/div/div/div[3]/div//div",
-        "searchName": "//div[2]/div[1]/a/strong",
-        "searchResult": "//div[3]/a[2]",
-        "chapterRoads": "//div[1]/div[3]/div/div[3]//div",
-        "chapterResult": "//div/div/a",
-        "referer": "",
-        "antiCrawlerConfig": {
-          "enabled": true,
-          "captchaType": 1,
-          "captchaImage": "//div[4]/div[1]/img",
-          "captchaInput": "//div[4]/div[1]/input",
-          "captchaButton": "//div[4]/div[2]/input"
-        }
+        "baseURL": "https://www.2kdm.com/voddetail/",
+        "searchMode": "api",
+        "chapterMode": "xpath",
+        "searchApiConfig": {
+          "request": {
+            "method": "GET",
+            "url": "https://www.2kdm.com/index.php/ajax/suggest",
+            "query": {
+              "mid": "1",
+              "wd": "@keyword"
+            }
+          },
+          "listPath": "$.list[*]",
+          "namePath": "$.name",
+          "sourcePath": "$.id"
+        },
+        "searchURL": "",
+        "searchList": "",
+        "searchName": "",
+        "searchResult": "",
+        "chapterRoads": "//div[contains(@class,'module-play-list-content')]",
+        "chapterResult": ".//a[contains(@class,'module-play-list-link')]",
+        "referer": ""
+      }
+    },
+    {
+      "file": "MXdm.json",
+      "rule": {
+        "api": "5",
+        "type": "anime",
+        "name": "MXdm",
+        "version": "2.4",
+        "muliSources": true,
+        "useWebview": true,
+        "useNativePlayer": true,
+        "usePost": false,
+        "useLegacyParser": false,
+        "adBlocker": true,
+        "userAgent": "",
+        "baseURL": "https://www.dcc3.com",
+        "searchURL": "https://www.dcc3.com/search/?wd=@keyword",
+        "searchList": "//div[contains(@class, 'search')]/ul/li",
+        "searchName": "//h3/a",
+        "searchResult": "//h3/a",
+        "chapterRoads": "//div[@class='playlist']/div[@class='row']/ul",
+        "chapterResult": "//li/a"
       }
     },
     {
@@ -514,6 +597,5 @@
         }
       }
     }
-  ],
-  "activeIndex": "index.json"
+  ]
 }

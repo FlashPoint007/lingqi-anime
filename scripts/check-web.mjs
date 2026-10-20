@@ -137,24 +137,56 @@ process.env.LINGQI_MEDIA_SECRET='test-only-key-not-used-in-production';
 const subServer=await import(subscriptionServerUrl);
 const {gunzipSync}=await import('node:zlib');
 // Live integration fixture supplied optionally; ordinary checks remain portable.
-if(process.env.RULE_ARCHIVE_FIXTURE){const archive=gunzipSync(readFileSync(process.env.RULE_ARCHIVE_FIXTURE));const entries=subServer.parseRuleArchive(archive);assert.equal(entries.length,16);assert.ok(entries.some(e=>e.file==='xfdmnext.json'));assert.throws(()=>subServer.parseRuleArchive(archive.subarray(0,600)));console.log('PASS: complete real upstream archive and truncated archive rejection');}
+if(process.env.RULE_ARCHIVE_FIXTURE){const archive=gunzipSync(readFileSync(process.env.RULE_ARCHIVE_FIXTURE));const entries=subServer.parseRuleArchive(archive);assert.deepEqual(entries.map(e=>e.file).sort(),JSON.parse(readFileSync('lib/rules-snapshot.json','utf8')).entries.map(e=>e.file).sort());assert.ok(entries.some(e=>e.file==='xfdmnext.json'));assert.throws(()=>subServer.parseRuleArchive(archive.subarray(0,600)));console.log('PASS: complete real upstream archive matches the bundled active rule set');}
+const tar=files=>Buffer.concat([...files.flatMap(([name,value])=>{const body=Buffer.from(JSON.stringify(value)),header=Buffer.alloc(512);header.write('KazumiRules-test/'+name);header.write(body.length.toString(8).padStart(11,'0')+'\0',124);return [header,body,Buffer.alloc((512-body.length%512)%512)];}),Buffer.alloc(1024)]);
+assert.equal(subServer.parseRuleArchive(tar([['index.json',[{name:'Test'}]],['Test.json',valid]] )).length,1);
+assert.throws(()=>subServer.parseRuleArchive(tar([['index.json',[{name:'Test'},{name:'Missing'}]],['Test.json',valid]])),/文件缺失/);
+assert.throws(()=>subServer.parseRuleArchive(tar([['index.json',[{name:'Test'}]],['Test.json',valid],['Test.json',valid]])),/重复/);
+assert.throws(()=>subServer.parseRuleArchive(tar([['index.json',[{name:'Test'},{name:'Test'}]],['Test.json',valid]])),/索引无效/);
 
 const ruleApi=await import(apiUrl);
 assert.deepEqual(ruleApi.selectJson({data:{items:[{n:1},{n:2}]}},'$.data.items[*].n'),[1,2]);
 assert.deepEqual(ruleApi.extractMedia('<video src="/clip.mp4"></video><script>var player_test={"url":"https://media.example/stream.m3u8","encrypt":0}</script>','https://example.com').sort(),['https://example.com/clip.mp4','https://media.example/stream.m3u8']);
 const subSource=readFileSync('lib/subscriptions.ts','utf8').replace("import snapshot from './rules-snapshot.json';",'const snapshot='+readFileSync('lib/rules-snapshot.json','utf8')+';');
 const subscription=await import(mod(compile(subSource.replace("'./web-core'",JSON.stringify(coreUrl)))));
-assert.equal(subscription.initialRules.length,16);
+assert.equal(subscription.initialRules.length,17);
 const a=subscription.initialRules.find(r=>r.enabled);
 const merged=subscription.mergeSubscribed([{...a,enabled:false,userDisabled:true},{...valid,name:'Custom'}],[{file:a.subscriptionFile,rule:{...a,version:'999'}}]);
 assert.equal(merged[0].version,'999');assert.equal(merged[0].enabled,false);assert.equal(merged[1].name,'Custom');
 assert.ok(subscription.initialRules.every(r=>!r.deprecated&&r.enabled));assert.doesNotThrow(()=>subscription.mergeSubscribed([], [{file:'bad.json',rule:{name:'broken'}}]));
 assert.deepEqual(subscription.mergeSubscribed([{...a,deprecated:true},{...valid,name:'Custom'}],[],[]).map(r=>r.name),['Custom']);
 assert.equal(subscription.mergeSubscribed([{...a,enabled:false}],[{file:a.subscriptionFile,rule:a}])[0].enabled,true);
+const later={...valid,name:'New upstream rule',subscription:subscription.RULE_REPOSITORY,subscriptionFile:'new.json'};
+assert.equal(subscription.mergeSubscribed([later],[]).length,1,'fallback snapshots cannot delete newer subscribed rules');
+assert.equal(subscription.mergeSubscribed([later],[],[]).length,0,'only a complete active index confirms an upstream removal');
 const apiRule=JSON.parse(readFileSync('lib/rules-snapshot.json','utf8')).entries.find(e=>e.rule.name==='xfdmnext').rule;
 assert.equal(core.validateRule(apiRule).searchMode,'api');
 const requestSpec=ruleApi.apiRequest(apiRule,'search',{keyword:'a"b',source:'1'});assert.equal(JSON.parse(requestSpec.init.body).search_term,'a"b');
+const mixedRules=subscription.initialRules.filter(r=>r.searchMode==='api'&&r.chapterMode==='xpath');
+assert.deepEqual(mixedRules.map(r=>r.name).sort(),['LMM','dalvdm','giriGiriLove','mgnacg','moonci','mutefun'].sort());
+for(const rule of mixedRules){assert.doesNotThrow(()=>core.validateRule(rule));const results=ruleApi.apiSearch({list:[{name:'番剧',id:123}]},rule.searchApiConfig,rule);const raw=rule.searchApiConfig.sourceTemplate?.replaceAll('@source','123')||'123';assert.equal(results[0].url,new URL(raw,rule.baseURL).href);}
+const mixed=mixedRules.find(r=>r.name==='moonci');
+assert.equal(ruleApi.apiSearch({list:[{name:'番剧',id:'a/b ?'}]},mixed.searchApiConfig,mixed)[0].url,'https://www.moonci.com/anime/a%2Fb%20%3F.html');
+assert.equal(ruleApi.apiSearch({list:[{name:'Unsafe',id:'https://evil.example/'}]},{...mixed.searchApiConfig,sourceTemplate:undefined},mixed).length,0);
+assert.equal(ruleApi.apiSearch({list:[{name:'Raw ID',id:123}]},mixed.searchApiConfig,{...mixed,chapterMode:'api'})[0].url,'https://www.moonci.com/anime/123.html');
+assert.throws(()=>core.validateRule({...mixed,chapterRoads:''}),/chapterRoads/);
+assert.throws(()=>core.validateRule({...mixed,chapterMode:'api'}),/chapterApiConfig/);
+assert.throws(()=>core.validateRule({...mixed,searchMode:'unknown'}),/模式/);
+assert.throws(()=>core.validateRule({...mixed,searchApiConfig:{...mixed.searchApiConfig,request:{url:'https://localhost/search'}}}),/HTTPS/);
+assert.throws(()=>core.validateRule({...mixed,searchApiConfig:{...mixed.searchApiConfig,sourceTemplate:'https://evil.example/@source'}}),/同源/);
+assert.doesNotThrow(()=>core.validateRule({...valid,chapterMode:'api',chapterApiConfig:apiRule.chapterApiConfig,chapterRoads:'',chapterResult:''}));
 const originalFetch=globalThis.fetch;
+const sourcePost=body=>new Request('https://site.example/api/source',{method:'POST',headers:{origin:'https://site.example','Content-Type':'application/json'},body:JSON.stringify(body)});
+let mixedCalls=[];
+globalThis.fetch=async(url,init)=>{mixedCalls.push(String(url));return String(url).includes('/ajax/suggest')?Response.json({list:[{name:'番剧',id:123}]}):new Response('<ul><li><a href="/play/123-1-1.html">第1集</a></li></ul>',{headers:{'Content-Type':'text/html'}});};
+let mixedResponse=await route.POST(sourcePost({rule:mixed,url:mixed.baseURL,operation:'search',keyword:'番剧'}));assert.equal(mixedResponse.status,200);const mixedResults=(await mixedResponse.json()).results;assert.equal(mixedResults[0].url,'https://www.moonci.com/anime/123.html');
+mixedResponse=await route.POST(sourcePost({rule:mixed,url:mixedResults[0].url,source:mixedResults[0].url,operation:'chapters'}));assert.equal(mixedResponse.status,200);assert.match((await mixedResponse.json()).html,/第1集/);assert.equal(mixedCalls[1],mixedResults[0].url,'mixed chapter requests fetch the HTML detail page');
+globalThis.fetch=async()=>Response.json({sources:[{name:'API chapters',code:'AL',episodes:[{id:42586,title:'第1集'}]}]});
+mixedResponse=await route.POST(sourcePost({rule:{...valid,chapterMode:'api',chapterApiConfig:apiRule.chapterApiConfig},url:valid.baseURL,source:'2918',operation:'chapters'}));assert.equal(mixedResponse.status,200);assert.equal((await mixedResponse.json()).roads[0].episodes.length,1,'API chapters also work independently of XPath search');
+mixedCalls=[];globalThis.fetch=async url=>{mixedCalls.push(String(url));return String(url).startsWith(mixed.baseURL)?new Response('<video src="https://media.example/clip.mp4"></video>',{headers:{'Content-Type':'text/html'}}):new Response('bytes',{status:206,headers:{'Content-Type':'video/mp4'}});};
+mixedResponse=await route.POST(sourcePost({rule:mixed,url:'https://www.moonci.com/play/123-1-1.html',source:mixedResults[0].url,operation:'resolve'}));assert.equal(mixedResponse.status,200);assert.equal((await mixedResponse.json()).mode,'video');assert.equal(mixedCalls[0],'https://www.moonci.com/play/123-1-1.html','mixed playback must not request a nonexistent chapter API');
+globalThis.fetch=originalFetch;
+console.log('PASS: all 17 active rules, six mixed-mode rules, source templates, safe detail URLs, HTML chapters and playback');
 const request=(url,rule=valid)=>new Request('https://site.example/api/source',{method:'POST',headers:{origin:'https://site.example','Content-Type':'application/json'},body:JSON.stringify({url,rule})});
 let fetchCalls=0;
 globalThis.fetch=async()=>{fetchCalls++;return new Response('<ul><li><a href="/ep/1">Episode 1</a></li></ul>',{headers:{'Content-Type':'text/html; charset=utf-8'}});};

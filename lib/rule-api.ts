@@ -14,7 +14,15 @@ export function apiRequest(rule:Rule,kind:'search'|'chapters',vars:Record<string
  let body:string|undefined;if(request.body){const replace=(v:any):any=>typeof v==='string'?substitute(v,vars):Array.isArray(v)?v.map(replace):v&&typeof v==='object'?Object.fromEntries(Object.entries(v).map(([k,x])=>[k,replace(x)])):v;body=JSON.stringify(replace(request.body));headers['Content-Type']='application/json';}
  return {url:url.href,config,init:{method:request.method==='POST'?'POST':'GET',headers,...(request.method==='POST'&&body?{body}:{})}};
 }
-export function apiSearch(data:any,c:any){return selectJson(data,c.listPath).map(n=>({name:String(selectJson(n,c.namePath)[0]??''),url:String(selectJson(n,c.sourcePath)[0]??'')})).filter(n=>n.name&&n.url);}
+export function apiSearch(data:any,c:any,rule?:Rule){
+ return selectJson(data,c.listPath).flatMap(n=>{
+  const name=String(selectJson(n,c.namePath)[0]??'').trim(),source=String(selectJson(n,c.sourcePath)[0]??'').trim();if(!name||!source)return [];
+  let url=c.sourceTemplate?String(c.sourceTemplate).replaceAll('@source',encodeURIComponent(source)):source;
+  // API chapters consume raw IDs; XPath chapters need a same-origin page URL.
+  if(rule&&rule.chapterMode!=='api')try{const base=publicUrl(rule.baseURL),target=new URL(url,base);if(target.protocol==='http:'&&target.host===base.host)target.protocol=base.protocol;url=publicUrl(target.href).href;if(new URL(url).origin!==base.origin)return [];}catch{return [];}
+  return [{name,url}];
+ });
+}
 export function apiChapters(data:any,c:any,source:string){
  const vars:Record<string,string>={source};for(const [k,path] of Object.entries(c.variables||{}))vars[k]=String(selectJson(data,String(path))[0]??'');
  return selectJson(data,c.roadsPath||'$').map((road,i)=>({name:String(selectJson(road,c.roadNamePath)[0]??'线路 '+(i+1)),episodes:selectJson(road,c.episodesPath||'$.episodes[*]').map((ep,j)=>{const v={...vars,roadIndex:String(i),episodeIndex:String(j),episodeUrl:String(selectJson(ep,c.episodeUrlPath)[0]??'')};const url=publicUrl(substitute(c.episodePage.url,v,true));for(const [k,value] of Object.entries(c.episodePage.query||{}))url.searchParams.set(k,substitute(String(value),v));if(url.hostname==='next.xifanacg.com'&&typeof road.code==='string')url.searchParams.set('source',road.code);return {name:String(selectJson(ep,c.episodeNamePath)[0]??'第 '+(j+1)+' 集'),url:url.href,number:Number.isFinite(ep.episode_number)?ep.episode_number:undefined,mediaUrl:declaredMedia(ep)[0]};})})).filter(r=>r.episodes.length);

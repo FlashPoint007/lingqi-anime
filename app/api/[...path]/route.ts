@@ -1,4 +1,5 @@
 import {siteRules} from '../../../lib/site-rules';
+import {subjectCover} from '../../../lib/subject-cover';
 import {emailAuthResponse} from '../../../lib/email-auth';
 import {cachedJson} from '../../../lib/server-cache';
 import {libraryResponse} from '../../../lib/library-server';
@@ -21,6 +22,7 @@ export async function GET(req:Request) {
  try {
   if(kind==='library')return await libraryResponse(req);
   if(kind==='media')return proxyMedia(req);
+  if(kind==='cover')return await subjectCover(u.searchParams.get('id')||'',req.signal);
   if(kind==='catalog') {
    const params=new URLSearchParams();for(const key of ['mode','year','quarter','q','tag','cat','page','offset'])if(u.searchParams.has(key))params.set(key,u.searchParams.get(key)!);params.sort();
    return await cachedJson('catalog',(u.searchParams.get('mode')==='calendar'?'calendar-v2:':'browse-v3:')+params.toString(),()=>u.searchParams.get('mode')==='calendar'?seasonCatalog(u.searchParams,upstream):browseCatalog(u.searchParams,upstream),{background:true,ttl:u.searchParams.get('mode')==='calendar'?3600000:300000,stale:u.searchParams.get('mode')==='calendar'?7*86400000:86400000,refresh:u.searchParams.get('refresh')==='1'});

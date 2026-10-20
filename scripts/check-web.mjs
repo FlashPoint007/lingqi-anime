@@ -132,6 +132,8 @@ assert.deepEqual(personal.syncHistory([record],[]),[]);
 const savedStorage=Object.getOwnPropertyDescriptor(globalThis,'localStorage');Object.defineProperty(globalThis,'localStorage',{configurable:true,get(){throw new Error('storage disabled');}});
 assert.equal(personal.readStorage('x'),null);assert.equal(personal.writeStorage('x','value'),false);
 if(savedStorage)Object.defineProperty(globalThis,'localStorage',savedStorage);else delete globalThis.localStorage;
+const coverServerUrl=mod(compile(readFileSync('lib/subject-cover.ts','utf8')));
+source=source.replace("'../../../lib/subject-cover'",JSON.stringify(coverServerUrl));
 const route=await import(mod(compile(source)));
 process.env.LINGQI_MEDIA_SECRET='test-only-key-not-used-in-production';
 const subServer=await import(subscriptionServerUrl);

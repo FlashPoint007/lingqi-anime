@@ -84,10 +84,13 @@ function gamerPayload(result:any,operation:'episodes'|'comments'){
  const error=result?.error||result?.errors,code=result?.errorCode??error?.code??result?.code;
  const raw=typeof error==='string'?error:typeof error?.message==='string'?error.message:result?.errorMessage||result?.message||result?.msg;
  const message=typeof raw==='string'?raw.replace(/[\u0000-\u001f]/g,' ').slice(0,180):'';
- const reason=/系[统統][维維][护護修]|维护|維護|maintenance/i.test(message)?'UPSTREAM_MAINTENANCE':/地区|地區|region|country/i.test(message)?'UPSTREAM_REGION':/login|登入|登录|unauthor|認證|认证/i.test(message)?'UPSTREAM_AUTH':'UPSTREAM_FORMAT';
+ const reason=/系[统統][维維][护護修]|维护|維護|maintenance/i.test(message)?'UPSTREAM_MAINTENANCE':/地区|地區|region|country/i.test(message)?'UPSTREAM_REGION':/login|登入|登录|unauthor|認證|认证|验证|驗證/i.test(message)?'UPSTREAM_AUTH':'UPSTREAM_FORMAT';
  const codeText=typeof code==='number'||typeof code==='string'&&/^-?[\da-z_]{1,24}$/i.test(code)?String(code):'';
- console.warn('danmaku-provider-response',{provider:'gamer',operation,code:codeText,reason,fields:result&&typeof result==='object'?Object.keys(result).slice(0,12):[],dataFields:result?.data&&typeof result.data==='object'?Object.keys(result.data).slice(0,12):[]});
- const failure=new DanmakuError('Gamer '+(reason==='UPSTREAM_MAINTENANCE'?'服务正在维护':reason==='UPSTREAM_REGION'?'当前地区不可用':reason==='UPSTREAM_AUTH'?'要求来源站认证':'接口未返回有效'+(operation==='episodes'?'分集目录':'弹幕数据'))+(codeText?'（'+codeText+'）':''),502,reason,200,reason==='UPSTREAM_MAINTENANCE'?60:0);pauseOrigin('api.gamer.com.tw',failure);throw failure;
+ // These anonymous Gamer requests send only public IDs, never site/user credentials.
+ // Keep a bounded plain-text reason, not the response body or comment author data.
+ const hint=message.replace(/<[^>]*>/g,'').slice(0,180);
+ console.warn('danmaku-provider-response',{provider:'gamer',operation,code:codeText,reason,message:hint,fields:result&&typeof result==='object'?Object.keys(result).slice(0,12):[],dataFields:result?.data&&typeof result.data==='object'?Object.keys(result.data).slice(0,12):[]});
+ const failure=new DanmakuError('Gamer '+(reason==='UPSTREAM_MAINTENANCE'?'服务正在维护':reason==='UPSTREAM_REGION'?'当前地区不可用':reason==='UPSTREAM_AUTH'?'要求来源站认证':'接口未返回有效'+(operation==='episodes'?'分集目录':'弹幕数据'))+(codeText?'（'+codeText+'）':'')+(hint?'：'+hint:''),502,reason,200,reason==='UPSTREAM_MAINTENANCE'?60:0);pauseOrigin('api.gamer.com.tw',failure);throw failure;
 }
 async function gamerEpisodes(key:string){
  const result=await remote('https://api.gamer.com.tw/anime/v1/video.php?videoSn='+key),anime=gamerPayload(result,'episodes').anime;

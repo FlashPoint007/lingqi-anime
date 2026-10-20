@@ -10,7 +10,7 @@ export function useDanmaku(subjectId:number,number:number|undefined){
  const [catalogue,setCatalogue]=useState<{key:string;title:string;episodes:DanmakuEpisode[];direct?:boolean}>(),[manualEpisode,setManualEpisode]=useState<{key:string;id:string}>(),[episodeStatus,setEpisodeStatus]=useState('');
  const [loaded,setLoaded]=useState<{key:string;data:CommentData}>(),[commentStatus,setCommentStatus]=useState(''),[loading,setLoading]=useState(false),[local,setLocal]=useState<CommentData>(),[fileStatus,setFileStatus]=useState('');
  const [automatic,setAutomatic]=useState(true),[failures,setFailures]=useState<Record<string,string>>({});
- const fileGeneration=useRef(0),mounted=useRef(true),manualMatches=useRef<DanmakuMatch[]>([]),automaticMatches=useRef<DanmakuMatch[]>([]),attempted=useRef(new Set<string>());
+ const fileGeneration=useRef(0),mounted=useRef(true),manualMatches=useRef<DanmakuMatch[]>([]),automaticMatches=useRef<DanmakuMatch[]>([]),attempted=useRef(new Set<string>()),automaticMode=useRef(true);automaticMode.current=automatic;
  const matchKey=(m:DanmakuMatch)=>m.provider+':'+m.key;
  const ranked=(sources:DanmakuMatch[])=>[...sources].sort((a,b)=>(a.provider==='dandan'?-1:a.provider==='bilibili'?0:1)-(b.provider==='dandan'?-1:b.provider==='bilibili'?0:1));
  useEffect(()=>{mounted.current=true;try{setSettings(danmakuSettings(JSON.parse(localStorage.getItem(settingsKey)||'null')));}catch{}setHydrated(true);return()=>{mounted.current=false;fileGeneration.current++;};},[]);
@@ -31,7 +31,7 @@ export function useDanmaku(subjectId:number,number:number|undefined){
   setFailures(current=>({...current,[selected]:message}));attempted.current.add(selected);
   // Only exact subject matches participate in automatic failover. A user's manual
   // URL/episode choice must never fall through to comments from a different title.
-  const next=automatic?automaticMatches.current.find(m=>!attempted.current.has(matchKey(m))):undefined;
+  const next=automaticMode.current?automaticMatches.current.find(m=>!attempted.current.has(matchKey(m))):undefined;
   if(!next)return false;
   setSelected(matchKey(next));setCatalogue(undefined);setManualEpisode(undefined);setLoaded(undefined);setEpisodeStatus('');setCommentStatus('');return true;
  };
@@ -40,12 +40,12 @@ export function useDanmaku(subjectId:number,number:number|undefined){
   const controller=new AbortController();let live=true;setEpisodeStatus('正在读取弹幕分集…');
   requestJson('/api/danmaku?'+new URLSearchParams({op:'episodes',provider:source.provider,key:source.key,...(revision?{refresh:'1'}:{})}),{signal:anySignal([controller.signal,timeoutSignal(16000)])}).then(data=>{
    if(!live)return;const list:DanmakuEpisode[]=Array.isArray(data.episodes)?data.episodes:[];
-   const unavailable=!list.length?'当前来源没有可用分集':automatic&&number!==undefined&&!data.direct&&!exactDanmakuEpisode(list,number)?'来源没有唯一匹配的第 '+number+' 集':'';
+   const unavailable=!list.length?'当前来源没有可用分集':automaticMode.current&&number!==undefined&&!data.direct&&!exactDanmakuEpisode(list,number)?'来源没有唯一匹配的第 '+number+' 集':'';
    if(unavailable&&failSource(unavailable))return;
    setCatalogue({key:selected,title:data.title||source.title,episodes:list,direct:data.direct===true});setEpisodeStatus(unavailable);
   }).catch(error=>{if(live){const message=error.message||'弹幕分集读取失败';if(!failSource(message)){setCatalogue(undefined);setEpisodeStatus(message);}}});
   return()=>{live=false;controller.abort();};
- },[selected,source?.provider,source?.key,revision,settings.enabled,hydrated,!!local,automatic]);
+ },[selected,source?.provider,source?.key,revision,settings.enabled,hydrated,!!local]);
  const episodeKey=source&&episode?source.provider+':'+episode.id:'';
  useEffect(()=>{
   if(!source||!episode||!settings.enabled||!hydrated||local){setLoading(false);return;}
@@ -55,9 +55,9 @@ export function useDanmaku(subjectId:number,number:number|undefined){
    if(!Array.isArray(data.comments))throw Error('弹幕数据格式不正确');if(!data.comments.length&&failSource('这一集暂时没有弹幕'))return;setLoaded({key:episodeKey,data});setCommentStatus(data.comments.length?'':'这一集暂时没有弹幕');
   }).catch(error=>{if(live){const message=error.message||'弹幕抓取失败，请重试';if(!failSource(message)){setLoaded(undefined);setCommentStatus(message);}}}).finally(()=>{if(live)setLoading(false);});
   return()=>{live=false;controller.abort();};
- },[episodeKey,selected,revision,settings.enabled,hydrated,!!local,automatic]);
+ },[episodeKey,selected,revision,settings.enabled,hydrated,!!local]);
  const data=local||(loaded?.key===episodeKey?loaded.data:undefined);
- const choose=(key:string)=>{fileGeneration.current++;setAutomatic(false);setLocal(undefined);setFileStatus('');setSelected(key);setLoaded(undefined);setManualEpisode(undefined);setEpisodeStatus('');setCommentStatus('');};
+ const choose=(key:string)=>{fileGeneration.current++;automaticMode.current=false;setAutomatic(false);setLocal(undefined);setFileStatus('');setSelected(key);setLoaded(undefined);setManualEpisode(undefined);setEpisodeStatus('');setCommentStatus('');};
  const manualMatch=(raw:string)=>{
   const target=parseDanmakuLink(raw);if(!target){setFileStatus('请粘贴 BiliBili 番剧链接（md / ss / ep），或 Gamer 动画链接');return false;}
   const match={...target,title:target.provider==='bilibili'?'手动匹配 · '+target.key:target.provider==='gamer'?'手动匹配 · Gamer':'手动匹配 · 弹弹play'};
@@ -69,7 +69,7 @@ export function useDanmaku(subjectId:number,number:number|undefined){
    const result=importDanmaku(text);if(!result.comments.length)throw Error('文件中没有可显示的弹幕');setLocal(result);setFileStatus('已导入 '+file.name.slice(0,100));setSettings(current=>({...current,enabled:true}));
   }catch(error){if(mounted.current&&generation===fileGeneration.current)setFileStatus(error instanceof Error?error.message:'弹幕文件读取失败');}
  };
- return {settings,setSettings,matches,notices,selected,choose,automatic,failures,autoSelect:()=>{fileGeneration.current++;attempted.current.clear();setFailures({});setAutomatic(true);setLocal(undefined);setFileStatus('');setSelected(automaticMatches.current.map(matchKey)[0]||'');setCatalogue(undefined);setLoaded(undefined);setManualEpisode(undefined);setRevision(n=>n+1);},episodes,episode,chooseEpisode:(id:string)=>{fileGeneration.current++;setAutomatic(false);setLocal(undefined);setFileStatus('');setManualEpisode({key:selected,id});setLoaded(undefined);setEpisodeStatus('');setCommentStatus('');},title:catalogue?.key===selected?catalogue.title:source?.title,
+ return {settings,setSettings,matches,notices,selected,choose,automatic,failures,autoSelect:()=>{fileGeneration.current++;attempted.current.clear();setFailures({});automaticMode.current=true;setAutomatic(true);setLocal(undefined);setFileStatus('');setSelected(automaticMatches.current.map(matchKey)[0]||'');setCatalogue(undefined);setLoaded(undefined);setManualEpisode(undefined);setRevision(n=>n+1);},episodes,episode,chooseEpisode:(id:string)=>{fileGeneration.current++;automaticMode.current=false;setAutomatic(false);setLocal(undefined);setFileStatus('');setManualEpisode({key:selected,id});setLoaded(undefined);setEpisodeStatus('');setCommentStatus('');},title:catalogue?.key===selected?catalogue.title:source?.title,
   comments:data?.comments||[],total:data?.total||0,sampled:data?.sampled||false,loading,isLocal:!!local,importFile,clearImport:()=>{fileGeneration.current++;setLocal(undefined);setFileStatus('');},fileStatus,
   status:!settings.enabled?'弹幕已关闭':local?'本地弹幕已加载 · '+local.comments.length.toLocaleString()+' 条':!hydrated?'准备弹幕…':episodeStatus||(!source?(subjectId>0?matchStatus:'测试视频可手动匹配或导入弹幕'):!episode?'请选择与视频对应的弹幕分集':commentStatus),manualMatch,reload:()=>{attempted.current.clear();setFailures({});setLoaded(undefined);setCatalogue(undefined);setEpisodeStatus('');setCommentStatus('');setRevision(n=>n+1);}};
 }

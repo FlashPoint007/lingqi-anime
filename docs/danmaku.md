@@ -32,3 +32,7 @@ Dandanplay setup requires an external approval step:
 Suggested application description (adjust it to actual use before submitting): “零柒番剧是免费的网页番剧索引与播放器。计划在用户选择番剧分集并播放时，按需获取并显示该集弹幕；不批量抓取弹幕库，不提供弹幕付费下载。服务端保管应用凭证，缓存公开弹幕并限制请求频率。”
 
 Reference: [official Dandanplay access and signature documentation](https://doc.dandanplay.com/open/). Application approval/terms and assigned quotas are managed by that service. Ordinary site visitors do not need their own developer account. No account was registered or application submitted on the owner's behalf.
+
+## Gamer identifier correction
+
+The `gamer` ID in bangumi-data identifies `acg.gamer.com.tw/acgDetail.php?s=...`, not an episode. These namespaces must never be interchanged. The matcher now searches the official Gamer catalogue using the indexed Traditional Chinese/original title, joins **exactly** on `acg_sn`, and takes the returned `video_sn` to request the episode directory. An explicit indexed `video_sn` can be used directly. A same-title search result with another ACG ID is rejected. If the join fails, the UI explains the conversion/source error; it never sends the ACG ID as `videoSn`. The shared match cache namespace was changed to invalidate old incorrect matches.

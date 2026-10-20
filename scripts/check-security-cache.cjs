@@ -58,6 +58,8 @@ const secret='test-key-with-more-than-thirty-two-bytes';
  guard=load('lib/request-guard.ts');for(let i=0;i<300;i++){allowed=await guard.guardRequest(req('/'),undefined,secret);assert.equal(allowed.response,undefined);allowed.release();}assert.equal((await guard.guardRequest(req('/'),undefined,secret)).response.status,429,'local fallback cannot refill forever');
  guard=load('lib/request-guard.ts');const active=[];for(let i=0;i<8;i++){allowed=await guard.guardRequest(req('/api/source'),rateDb,secret);assert.equal(allowed.response,undefined);active.push(allowed.release);}assert.equal((await guard.guardRequest(req('/api/source'),rateDb,secret)).response.status,429);active.forEach(release=>{release();release();});allowed=await guard.guardRequest(req('/api/source'),rateDb,secret);assert.equal(allowed.response,undefined);allowed.release();
  assert.equal((await guard.guardRequest(req('/api/nope'),rateDb,secret)).response.status,404);
+ allowed=await guard.guardRequest(req('/api/cover?id=400602'),rateDb,secret);assert.equal(allowed.response,undefined,'cover downloads must reach the guarded handler');allowed.release();
+ assert.equal((await guard.guardRequest(req('/api/cover?id=400602','203.0.113.1',{method:'POST'}),rateDb,secret)).response.status,405,'cover download endpoints remain read-only');
  assert.equal((await guard.guardRequest(req('/asset.js','203.0.113.1',{method:'POST'}),rateDb,secret)).response.status,405);
  assert.equal((await guard.guardRequest(req('/api/catalog?q='+'x'.repeat(4096)),rateDb,secret)).response.status,414);
  assert.equal((await guard.guardRequest(req('/api/source','203.0.113.1',{method:'POST',headers:{origin:'https://evil.example','content-type':'application/json'},body:'{}'}),rateDb,secret)).response.status,403);

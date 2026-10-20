@@ -49,7 +49,7 @@ export async function guardRequest(req:Request,db?:DB,secret?:string,override?:'
 
  const url=new URL(req.url),api=url.pathname.startsWith('/api/');const noop=()=>{};
  if(req.url.length>(url.pathname==='/api/media'?16000:4096))return {response:reject('请求地址过长',414),release:noop};
- if(api&&!['/api/catalog','/api/subject','/api/episodes','/api/rules','/api/source','/api/media','/api/library','/api/auth'].includes(url.pathname))return {response:reject('接口不存在',404),release:noop};
+ if(api&&!['/api/catalog','/api/subject','/api/episodes','/api/cover','/api/rules','/api/source','/api/media','/api/library','/api/auth'].includes(url.pathname))return {response:reject('接口不存在',404),release:noop};
  if(!['GET','HEAD'].includes(req.method)&&!(req.method==='POST'&&['/api/source','/api/library','/api/auth'].includes(url.pathname)))return {response:reject('请求方法不支持',405),release:noop};
  if(!api&&/\.(?:js|css|svg|png|jpg|jpeg|webp|ico|woff2?)$/i.test(url.pathname))return {release:noop};
  if(req.method==='POST'){

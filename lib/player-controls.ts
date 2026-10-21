@@ -7,6 +7,16 @@ export function playbackTime(seconds:number){
 export function progressTime(x:number,left:number,width:number,duration:number){
  return width>0&&Number.isFinite(duration)&&duration>0?Math.max(0,Math.min(1,(x-left)/width))*duration:0;
 }
+// MP4 metadata may be at the end of the file. Receiving bytes is progress,
+// even before loadeddata; retain a separate hard deadline against slow trickles.
+export function createStartupGuard(onTimeout:()=>void){
+ let closed=false,idle:ReturnType<typeof setTimeout>|undefined,hard:ReturnType<typeof setTimeout>|undefined;
+ const stop=()=>{closed=true;clearTimeout(idle);clearTimeout(hard);};
+ const expire=()=>{if(closed)return;stop();onTimeout();};
+ const progress=()=>{if(closed)return;clearTimeout(idle);idle=setTimeout(expire,12000);};
+ hard=setTimeout(expire,45000);progress();
+ return {progress,stop};
+}
 type Media=Pick<HTMLMediaElement,'currentTime'|'duration'|'readyState'|'seeking'|'addEventListener'|'removeEventListener'>;
 export function createSeekController(media:Media,onSettled:(time:number)=>void,onError:()=>void){
  let queued:number|undefined,active:number|undefined,desired:number|undefined,closed=false,timer:ReturnType<typeof setTimeout>|undefined;

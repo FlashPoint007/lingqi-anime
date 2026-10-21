@@ -1,0 +1,154 @@
+/* A quiet cinema palette: warm charcoal, mist blue and muted mauve. */
+.watch-page {
+  --watch-bg: #222329;
+  --watch-screen: #191a1f;
+  --watch-surface: #2b2c32;
+  --watch-raised: #36363f;
+  --watch-hover: #41414c;
+  --watch-line: #4b4954;
+  --watch-text: #f1ece5;
+  --watch-muted: #b7b0b3;
+  --watch-blue: #aab6c8;
+  --watch-mauve: #afa0b2;
+  --watch-selected: #6b6376;
+  --watch-primary: #626d7d;
+  --bg: var(--watch-bg);
+  --paper: var(--watch-surface);
+  --ink: var(--watch-text);
+  --muted: var(--watch-muted);
+  --border: var(--watch-line);
+  --purple: var(--watch-mauve);
+  --tint: var(--watch-raised);
+  --accent: var(--watch-blue);
+  background: var(--watch-bg);
+  color: var(--watch-text);
+  color-scheme: dark;
+}
+.watch-page .watch-header,
+.watch-page .watch-sidebar,
+.watch-page .player-toolbar,
+.watch-page .player-options,
+.watch-page .player-transport { background: var(--watch-surface); border-color: var(--watch-line); }
+.watch-page .watch-main,
+.watch-page .watch-stage { background: var(--watch-bg); }
+.watch-page .watch-title p,
+.watch-page .watch-section-heading span,
+.watch-page .watch-source-label,
+.watch-page .watch-hint,
+.watch-page .watch-preferences,
+.watch-page .watch-preferences > span,
+.watch-page .episode-tools > span { color: var(--watch-muted); }
+.watch-page .watch-header button,
+.watch-page .watch-search summary,
+.watch-page .watch-results button { color: var(--watch-text); }
+.watch-page .watch-next,
+.watch-page .watch-panel-toggle,
+.watch-page .watch-roads button,
+.watch-page .watch-episodes button,
+.watch-page .watch-results button { background: var(--watch-raised); border-color: var(--watch-line); border-radius: 5px; }
+.watch-page .watch-back:hover,
+.watch-page .watch-next:hover:not(:disabled),
+.watch-page .watch-panel-toggle:hover,
+.watch-page .watch-roads button:hover:not(:disabled),
+.watch-page .watch-episodes button:hover:not(:disabled),
+.watch-page .watch-results button:hover { background: var(--watch-hover); }
+.watch-page .watch-roads button.active,
+.watch-page .watch-episodes button.active { background: var(--watch-selected); border-color: var(--watch-mauve); color: var(--watch-text); }
+.watch-page .watch-episodes .episode-number { color: var(--watch-muted); }
+.watch-page .watch-episodes button.active .episode-number { color: var(--watch-text); }
+.watch-page .watch-source-label select,
+.watch-page .watch-search input,
+.watch-page .episode-tools input,
+.watch-page .episode-tools button,
+.watch-page .watch-sleep select { background: var(--watch-bg); border-color: var(--watch-line); color: var(--watch-text); border-radius: 5px; }
+.watch-page .watch-search { border-color: var(--watch-line); }
+.watch-page .watch-search form button { background: var(--watch-primary); color: #f4eee8; border-radius: 5px; }
+.watch-page .watch-hint button { color: var(--watch-blue); }
+.watch-page .watch-sleep { background: var(--watch-surface); border-color: var(--watch-line); border-radius: 5px; }
+.watch-page .watch-sleep p { color: var(--watch-muted); }
+.watch-page .watch-sleep > button { color: var(--watch-blue); }
+.watch-page .watch-sidebar .library-sync { background: transparent; color: var(--watch-muted); border-color: var(--watch-line); }
+.watch-page .watch-sidebar .library-sync b { color: var(--watch-text); }
+.watch-page .watch-sidebar .library-sync p { color: var(--watch-muted); }
+.watch-page .watch-sidebar .library-sync .secondary { background: var(--watch-raised); border-color: var(--watch-line); color: var(--watch-text); }
+.watch-page .watch-sidebar .source-availability { background: var(--watch-bg); border-color: var(--watch-line); border-radius: 6px; }
+.watch-page .watch-sidebar .source-check { background: var(--watch-surface); border-color: var(--watch-line); color: var(--watch-text); border-radius: 5px; }
+.watch-page .watch-sidebar .source-check.selected { border-color: var(--watch-mauve); box-shadow: inset 0 0 0 1px var(--watch-mauve); }
+.watch-page .watch-sidebar .source-check:hover:not(:disabled) { background: var(--watch-hover); }
+.watch-page .watch-sidebar .source-check-heading > button { color: var(--watch-blue); }
+.watch-page .watch-sidebar .source-check-note,
+.watch-page .watch-sidebar .source-check-status,
+.watch-page .watch-sidebar .source-check small { color: var(--watch-muted); }
+.watch-page .watch-sidebar .source-check.found .source-check-status,
+.watch-page .watch-sidebar .source-check.playing .source-check-status { color: #b6c7b9; }
+.watch-page .source-check.found i,
+.watch-page .source-check.playing i { background: #a1b4a5; }
+.watch-page .source-check.possible i { background: #c4ae8b; }
+.watch-page .source-check.error i,
+.watch-page .source-check.episode-error i { background: #c298a2; }
+.watch-page .source-check.checking i { background: var(--watch-mauve); }
+.watch-page .watch-sidebar .source-check-filters button { color: var(--watch-muted); border-color: var(--watch-line); border-radius: 4px; }
+.watch-page .watch-sidebar .source-check-filters button[aria-pressed=true] { background: var(--watch-selected); color: var(--watch-text); border-color: var(--watch-mauve); }
+.watch-page .watch-stage > .advanced-player { background: var(--watch-screen); border-color: var(--watch-line); border-radius: 7px; box-shadow: none; }
+.watch-page .watch-stage > .advanced-player .video-surface { background: var(--watch-screen); border-radius: 6px 6px 0 0; }
+.watch-page .playback-placeholder { color: var(--watch-muted); }
+.watch-page .playback-placeholder > svg { color: var(--watch-blue); }
+.watch-page .playback-placeholder h2 { color: var(--watch-text); }
+.watch-page .playback-placeholder .secondary,
+.watch-page .playback-recovery button { background: var(--watch-raised); border-color: var(--watch-line); color: var(--watch-text); border-radius: 5px; }
+.watch-page .playback-recovery button:first-child { background: var(--watch-primary); color: #f4eee8; }
+.watch-page .playback-recovery button:hover { border-color: var(--watch-mauve); }
+.watch-page .player-feedback { background: #191a1faa; color: var(--watch-text); }
+.watch-page .player-feedback button { background: var(--watch-primary); border-color: var(--watch-blue); color: #f4eee8; box-shadow: none; }
+.watch-page .player-indicator { color: var(--watch-muted); }
+.watch-page .player-indicator i { background: var(--watch-blue); box-shadow: none; }
+.watch-page .player-toolbar button,
+.watch-page .player-options select,
+.watch-page .player-options button,
+.watch-page .subtitle-upload { background: var(--watch-raised); border-color: var(--watch-line); color: var(--watch-text); border-radius: 5px; }
+.watch-page .player-toolbar button:hover,
+.watch-page .player-options button:hover { background: var(--watch-hover); }
+.watch-page .player-toolbar .player-fullscreen { background: var(--watch-selected); border-color: var(--watch-mauve); }
+.watch-page .player-options summary,
+.watch-page .player-options .playback-actions label { color: var(--watch-text); }
+.watch-page .player-options summary span,
+.watch-page .player-options .footnote { color: var(--watch-muted); }
+.watch-page .player-options .playback-actions { border-color: var(--watch-line); }
+.watch-page .player-status { color: var(--watch-blue) !important; background: var(--watch-surface); }
+.watch-page .player-transport { color: var(--watch-text); }
+.watch-page .player-transport button:hover { background: var(--watch-hover); }
+.watch-page .player-volume,
+.watch-page .watch-preferences input { accent-color: var(--watch-blue); }
+.watch-page .progress-played { background: var(--watch-blue); }
+.watch-page .progress-thumb { background: #d1dae5; box-shadow: 0 0 0 3px #aab6c822; }
+.watch-page .player-progress:focus-visible .progress-thumb { box-shadow: 0 0 0 5px #aab6c855; }
+.watch-page .progress-preview { background: #e4dbd2; border-color: #b4aab1; color: #34313a; box-shadow: 0 3px 12px #0003; }
+.watch-page .watch-error { background: #493c43; color: #e1c6cb; border-top: 1px solid #70545c; }
+.watch-page .watch-source-error { color: #dfb9c1; border-color: #70545c; }
+.watch-page .danmaku-switches button { background: #24252cdd; border-color: var(--watch-line); color: var(--watch-text); }
+.watch-page .danmaku-switches button[aria-pressed=true],
+.watch-page .danmaku-switches small { color: var(--watch-blue); }
+.watch-page .video-surface .danmaku-panel { background: #2b2c32fa; border-color: var(--watch-line); color: var(--watch-text); border-radius: 7px; box-shadow: 0 8px 24px #0005; }
+.watch-page .danmaku-panel .danmaku-status,
+.watch-page .danmaku-ranges output,
+.watch-page .danmaku-manual summary,
+.watch-page .danmaku-credit a { color: var(--watch-blue); }
+.watch-page .danmaku-panel .danmaku-caption,
+.watch-page .danmaku-field,
+.watch-page .danmaku-source-filters small,
+.watch-page .danmaku-panel .danmaku-credit { color: var(--watch-muted); }
+.watch-page .danmaku-panel select,
+.watch-page .danmaku-panel textarea,
+.watch-page .danmaku-panel input:not([type=checkbox]):not([type=range]):not([type=file]) { background: var(--watch-bg); border-color: var(--watch-line); color: var(--watch-text); }
+.watch-page .danmaku-source-filters input,
+.watch-page .danmaku-ranges input { accent-color: var(--watch-blue); }
+.watch-page .danmaku-panel .danmaku-manual { border-color: var(--watch-line); }
+.watch-page .danmaku-manual form button,
+.watch-page .danmaku-manual > button,
+.watch-page .danmaku-import,
+.watch-page .danmaku-reload { background: var(--watch-raised); border-color: var(--watch-line); color: var(--watch-text); }
+.watch-page :focus-visible { outline: 2px solid var(--watch-blue); outline-offset: 3px; }
+@media(max-width:850px) {
+  .watch-page .watch-stage > .advanced-player,
+  .watch-page .watch-stage > .advanced-player .video-surface { border-radius: 0; }
+}

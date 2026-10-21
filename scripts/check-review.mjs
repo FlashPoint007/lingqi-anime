@@ -40,6 +40,15 @@ try{
   const signedBefore=total;globalThis.fetch=async()=>new Response('#EXTM3U\n'+'seg.ts\n'.repeat(4097));
   const huge=await playback.proxyMedia(new Request('https://site.example'+playlist));assert.equal(huge.status,502);assert.match(await huge.text(),/播放列表过大/);assert.equal(total,signedBefore,'oversized list rejected before signing');
  }finally{Object.defineProperty(globalThis,'crypto',savedCrypto);}
+ // An existing catalogue with a deleted media file is not a direct fallback.
+ const sourceRule={baseURL:'https://source.example'},sourcePage='https://source.example/play';
+ globalThis.fetch=async url=>String(url).includes('media.example')?new Response('gone',{status:404}):new Response('<video src="https://media.example/missing.mp4"></video>');
+ const gone=await playback.resolvePlayback(sourceRule,sourcePage,'https://media.example/missing.mp4');assert.equal(gone.media,'');assert.match(gone.reason,/HTTP 404/);
+ const unicodeGone=await playback.resolvePlayback(sourceRule,sourcePage,'https://media.example/剧集.mp4');assert.equal(unicodeGone.media,'','failure keys use the same URL normalization as candidates');
+ globalThis.fetch=async url=>String(url).includes('good.mp4')?new Response('video',{status:206,headers:{'content-type':'video/mp4'}}):String(url).includes('media.example')?new Response('gone',{status:410}):new Response('<video src="https://media.example/missing.mp4"></video><source src="https://media.example/good.mp4">');
+ const replacement=await playback.resolvePlayback(sourceRule,sourcePage,'https://media.example/missing.mp4');assert.equal(replacement.media,'https://media.example/good.mp4');assert.equal(replacement.verified,true,'a missing first file cannot hide a healthy second declaration');
+ globalThis.fetch=async url=>String(url).includes('media.example')?new Response('denied',{status:403}):new Response('<video src="https://media.example/restricted.mp4"></video>');
+ const denied=await playback.resolvePlayback(sourceRule,sourcePage,'https://media.example/restricted.mp4');assert.equal(denied.media,'https://media.example/restricted.mp4','server access rejection remains eligible for ordinary browser access');assert.equal(denied.verified,false);assert.match(denied.reason,/HTTP 403/);
  const controller=new AbortController();let resolveCalls=0;
  globalThis.fetch=async(_url,init)=>{resolveCalls++;return await new Promise((_,reject)=>{init.signal.throwIfAborted();init.signal.addEventListener('abort',()=>reject(init.signal.reason),{once:true});});};
  const resolving=playback.resolvePlayback({baseURL:'https://source.example'},'https://source.example/play',undefined,controller.signal);setTimeout(()=>controller.abort(),20);

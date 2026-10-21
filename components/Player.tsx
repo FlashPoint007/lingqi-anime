@@ -5,7 +5,7 @@ import {Maximize2,Minimize2,PictureInPicture2,Settings2,RefreshCw,Play,Pause,Vol
 import PlayerProgress from './PlayerProgress';
 import DanmakuLayer from './DanmakuLayer';
 import {subtitleVtt,captureVideoFrame} from '../lib/player-extras';
-import {createSeekController} from '../lib/player-controls';
+import {createSeekController,createStartupGuard} from '../lib/player-controls';
 import {createUpscaler} from '../lib/anime4k';
 import {loadCast,castVideo} from '../lib/casting';
 type Props={mediaRef?:RefObject<HTMLVideoElement|null>;mayPlay?:()=>boolean;playbackBlocked?:boolean;onPlayIntent?:()=>void;url:string;fallbackUrl?:string;mediaType?:'hls'|'video';castUrl?:string;subjectId?:number;episodeNumber?:number;onTime:(n:number,flush?:boolean)=>void;position:number;onError:(s:string)=>void;onEnded?:()=>void;onReady?:()=>void};
@@ -39,14 +39,15 @@ export default function Player({mediaRef,mayPlay,playbackBlocked,onPlayIntent,ur
  useEffect(()=>{
   const v=video.current!;let h:Hls|undefined,cancelled=false;attempt.current++;failureHandled.current=false;clearBuffer();clearFrame();confirmed.current=false;restoring.current=currentPosition.current>0;setLoading(true);setHasFrame(false);setNeedsPlay(false);setDuration(0);setBuffered(0);setPaused(true);
   const controller=createSeekController(v,time=>{if(cancelled)return;restoring.current=false;currentPosition.current=time;setTimeline(time);commit();},()=>setStatus('进度跳转失败，请重试'));seeks.current=controller;
-  const seek=()=>{setDuration(Number.isFinite(v.duration)?v.duration:0);restoring.current=currentPosition.current>0&&Number.isFinite(v.duration)&&currentPosition.current<v.duration;if(restoring.current)controller.seek(currentPosition.current);v.playbackRate=speedRef.current;};
-  const ready=()=>{clearTimeout(timer);setLoading(false);setHasFrame(v.videoWidth>0&&v.videoHeight>0);if(!pauseAfterReload.current)play();};
+  const seek=()=>{startup.progress();setDuration(Number.isFinite(v.duration)?v.duration:0);restoring.current=currentPosition.current>0&&Number.isFinite(v.duration)&&currentPosition.current<v.duration;if(restoring.current)controller.seek(currentPosition.current);v.playbackRate=speedRef.current;};
+  const ready=()=>{startup.stop();setLoading(false);setHasFrame(v.videoWidth>0&&v.videoHeight>0);if(!pauseAfterReload.current)play();};
   v.addEventListener('loadedmetadata',seek,{once:true});v.addEventListener('loadeddata',ready,{once:true});
-  const timer=setTimeout(()=>{if(!cancelled&&v.readyState<2)fail('视频连接等待过久，请重试或更换视频源');},12000);
+  const startup=createStartupGuard(()=>{if(!cancelled&&v.readyState<2)fail('视频初始化等待过久，源站连接或文件索引读取缓慢，请更换线路或视频源');});
+  const reportProgress=()=>{if(!cancelled)startup.progress();};v.addEventListener('progress',reportProgress);
   if((mediaType==='hls'||/\.m3u8(?:[?#]|$)/i.test(activeUrl))&&!v.canPlayType('application/vnd.apple.mpegurl')){
    import('hls.js').then(({default:Hls})=>{if(cancelled)return;if(!Hls.isSupported()){fail('当前浏览器不支持 HLS');return;}h=new Hls();h.loadSource(activeUrl);h.attachMedia(v);h.on(Hls.Events.ERROR,(_,d)=>{if(d.fatal&&!cancelled)fail(d.details==='manifestIncompatibleCodecsError'?'当前浏览器不支持该 HLS 线路的编码，请切换视频源':d.type==='networkError'?'HLS 播放列表或视频分片请求失败，请更换线路或视频源':'HLS 视频加载或解码失败，请更换线路或视频源');});}).catch(()=>{if(!cancelled)fail('播放器加载失败，请重试');});
   }else v.src=activeUrl;
-  return()=>{cancelled=true;controller.destroy();clearTimeout(surfaceClick.current);if(seeks.current===controller)seeks.current=undefined;attempt.current++;clearBuffer();clearFrame();clearTimeout(timer);if(confirmed.current&&!restoring.current&&v.readyState>=1)callbacks.current.onTime(v.currentTime,true);v.removeEventListener('loadedmetadata',seek);v.removeEventListener('loadeddata',ready);h?.destroy();v.pause();v.removeAttribute('src');v.load();};
+  return()=>{cancelled=true;controller.destroy();clearTimeout(surfaceClick.current);if(seeks.current===controller)seeks.current=undefined;attempt.current++;clearBuffer();clearFrame();startup.stop();v.removeEventListener('progress',reportProgress);if(confirmed.current&&!restoring.current&&v.readyState>=1)callbacks.current.onTime(v.currentTime,true);v.removeEventListener('loadedmetadata',seek);v.removeEventListener('loadeddata',ready);h?.destroy();v.pause();v.removeAttribute('src');v.load();};
  },[activeUrl,cors,mediaType]);
  useEffect(()=>{try{const n=Number(localStorage.getItem('kw-player-speed'));if(n>=0.5&&n<=2){setSpeed(n);video.current!.playbackRate=n;}}catch{}},[]);
  useEffect(()=>{const save=()=>{if(document.visibilityState==='hidden')commit();};document.addEventListener('visibilitychange',save);window.addEventListener('pagehide',commit);return()=>{document.removeEventListener('visibilitychange',save);window.removeEventListener('pagehide',commit);};},[]);

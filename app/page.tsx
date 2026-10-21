@@ -190,7 +190,7 @@ export default function Home(){
  function handlePlaybackError(message:string){
   if(!player||!isCurrentPlayback(player,{sourceUrl:activePlayerUrl.current,url:activeMediaUrl.current}))return;
   const number=player.number??knownEpisodeNumber({name:player.episode}),identity={subjectId:player.subject.id,number};
-  saveProgress(playerProgress.current,true);recovery.current.record(identity,player.ruleName||'',player.sourceUrl);playbackReport('episode-error',message);
+  saveProgress(playerProgress.current,true);recovery.current.record(identity,player.ruleName||'',player.sourceUrl);recovery.current.recordMedia(identity,player.mediaUrl);playbackReport('episode-error',message);
   if(player.ruleName&&number!==undefined&&recovery.current.claim(identity)){void playEpisode(player.subject,number,true);return;}
   setPlayMode('unavailable');setPlayError(message+'。自动恢复已停止，可重新解析或手动选择其他线路。');
  }
@@ -208,26 +208,31 @@ export default function Home(){
   const position=resumeEpisodePosition(player?{subjectId:player.subject.id,number:player.number??knownEpisodeNumber({name:player.episode})}:undefined,{subjectId:s.id,number},playerProgress.current);saveProgress(playerProgress.current,true);const {id,controller}=beginPlayback();stopSource();playerProgress.current=position;setPlayError(automatic?'上一条线路播放失败，正在尝试同集的其他线路。':'');setPlayMode('resolving');setPlayer({subject:s,episode:'第 '+number+' 集',url:'',sourceUrl:'',position,number});
   const candidates=rules.map((rule,index)=>({rule,index})).filter(e=>e.rule.enabled!==false&&!ruleCompatibility(e.rule)).sort((a,b)=>{const preferred=readStorage('kw-last-good-source')||'xfdmnext';const rank=(e:typeof a)=>{const state=availability.checks[e.rule.name]?.state;return state==='playing'?-5:state==='found'?-4:state==='episode-error'||state==='error'?5:e.index===ruleIdx?-2:e.rule.name===preferred?-1:e.rule.name==='xfdmnext'?0:1;};const preference=(e:typeof a)=>e.index===ruleIdx?0:e.rule.name===preferred?1:e.rule.name==='xfdmnext'?2:3;return rank(a)-rank(b)||preference(a)-preference(b);});const deadline=Date.now()+recovery.current.remaining();
   const sourceRequest=(body:unknown,checkSignal=controller.signal)=>api('/api/source',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:anySignal([controller.signal,checkSignal,timeoutSignal(Math.max(1,Math.min((body as any).operation==='resolve'?35000:12000,deadline-Date.now())))])});
-  let directFallback:{data:any;episode:Episode;index:number;results:any[];lines:Road[];road:number;source:string}|undefined;const failures:string[]=[];
+  let directFallback:{data:any;episode:Episode;index:number;results:any[];lines:Road[];road:number;source:string}|undefined;const failures:string[]=[],catalogues=new Map<string,SourceAvailability>();
+  // Try one road per source before spending time on sibling roads.
+  for(let pass=0;pass<3&&Date.now()<deadline;pass++){
   for(const {rule,index} of candidates){
    if(Date.now()>=deadline)break;
    if(id!==playbackId.current)return;
    try{
     setResolveStatus('正在检查 '+rule.name+' 的番剧资源…');
-    const cached=availability.checks[rule.name];const checked=cached?.source&&cached.roads&&cached.checkedAt&&Date.now()-cached.checkedAt<600000?cached:await checkSource(rule,[title(s),s.name],controller.signal,sourceRequest);if(id!==playbackId.current)return;
-    if(checked!==cached)availability.report(rule,checked);const results=checked.results,lines=alignEpisodeNumbers(checked.roads||[],selected?.id===s.id?episodes.map(e=>e.sort):[]),found={url:checked.source||''};if(!found.url||!lines.length){failures.push(rule.name+'：'+checked.message);continue;}
-    for(let road=0;road<Math.min(lines.length,3);road++){
+    const cached=availability.checks[rule.name],previous=catalogues.get(rule.name);const checked=previous||(cached?.source&&cached.roads&&cached.checkedAt&&Date.now()-cached.checkedAt<600000?cached:await checkSource(rule,[title(s),s.name],controller.signal,sourceRequest));if(id!==playbackId.current)return;
+    if(!previous){catalogues.set(rule.name,checked);if(checked!==cached)availability.report(rule,checked);}const results=checked.results,lines=alignEpisodeNumbers(checked.roads||[],selected?.id===s.id?episodes.map(e=>e.sort):[]),found={url:checked.source||''};if(!found.url||!lines.length){failures.push(rule.name+'：'+checked.message);continue;}
+    const eligible=lines.map((_,road)=>road).filter(road=>!!episodeAtNumber(lines[road].episodes,number)).slice(0,3);
+    for(const road of eligible.slice(pass,pass+1)){
      if(Date.now()>=deadline)break;
      const line=lines[road];const candidate=episodeAtNumber(line.episodes,number);const episode=candidate?{...candidate,number}:undefined;if(!episode||recovery.current.failed(rule.name,episode.url))continue;
      try{setResolveStatus(rule.name+' · 正在解析第 '+number+' 集');const data=await sourceRequest({rule,url:episode.url,operation:'resolve',source:found.url});if(id!==playbackId.current)return;
+     if(data.mode==='video'&&recovery.current.failedMedia(data.mediaUrl)){recovery.current.record(identity,rule.name,episode.url);failures.push(rule.name+'：该线路与本集已失败的媒体文件相同，已跳过');continue;}
      if(data.mode==='video'&&(data.verified||data.preferDirect)){
       setRuleIdx(index);setSourceResults(results);setRoads(lines);setActiveRoad(road);setChapterSource(found.url);setPlayer({subject:s,episode:episode.name,url:data.url,sourceUrl:episode.url,source:found.url,position,number,ruleName:rule.name,preferDirect:data.preferDirect,mediaUrl:data.mediaUrl,mediaType:data.mediaType});setPlayMode('video');setPlayError('');lastProgress.current=0;remember(s,{...episode,source:found.url},position,rule.name);return;
      }
-     if(data.mode!=='video')recovery.current.record(identity,rule.name,episode.url);
+     if(data.mode!=='video'){recovery.current.record(identity,rule.name,episode.url);const message=data.message||'当前线路未解析到有效视频';failures.push(rule.name+'：'+message);availability.report(rule,{state:'episode-error',message});}
      if(data.mode==='video'&&!directFallback)directFallback={data,episode:{...episode,source:found.url},index,results,lines,road,source:found.url};
      }catch(error){if(id!==playbackId.current||controller.signal.aborted)return;recovery.current.record(identity,rule.name,episode.url);failures.push(rule.name+' · '+line.name+'：'+(error as Error).message);}
     }
    }catch(error){failures.push((error as Error).message);}
+  }
   }
   if(id!==playbackId.current)return;
   if(directFallback){const {data,episode,index,results,lines,road,source}=directFallback;setRuleIdx(index);setSourceResults(results);setRoads(lines);setActiveRoad(road);setChapterSource(source);setPlayer({subject:s,episode:episode.name,url:data.url,sourceUrl:episode.url,source,position,number,ruleName:rules[index].name,preferDirect:data.preferDirect,mediaUrl:data.mediaUrl,mediaType:data.mediaType});setPlayMode('video');setPlayError('此线路暂未通过本站连接检查；播放器会尝试当前浏览器直连，仍失败时请更换源。');remember(s,episode,position,rules[index].name);}

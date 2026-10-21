@@ -8,7 +8,7 @@ const query='SELECT kind,subject_id,value_json,version,updated_at,sort_at FROM p
 function parseChange(value:any):LibraryChange{
  if(!value||!['collection','history'].includes(value.kind)||!Number.isSafeInteger(value.id)||value.id<0||value.id>9999999999||!Number.isSafeInteger(value.expectedVersion)||value.expectedVersion<0||typeof value.mutationId!=='string'||!/^[-\w]{16,80}$/.test(value.mutationId))throw new Error('同步操作格式不正确');
  const clean=libraryValue(value.kind,value.value);if(clean!==null&&(value.kind==='collection'?(clean as any).id:(clean as any).subject.id)!==value.id)throw new Error('记录与番剧 ID 不一致');
- if(new TextEncoder().encode(JSON.stringify(clean)).length>8192)throw new RequestLimitError('单条记录过大',413);
+ if(new TextEncoder().encode(JSON.stringify(clean)).length>32768)throw new RequestLimitError('单条记录过大',413);
  return {kind:value.kind,id:value.id,value:clean,expectedVersion:value.expectedVersion,mutationId:value.mutationId};
 }
 async function entries(db:D1Database,userId:string):Promise<LibraryEntry[]>{

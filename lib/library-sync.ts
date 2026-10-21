@@ -1,6 +1,7 @@
 import {entryKey,libraryValue,parseLibrarySnapshot,sameValue,visibleEntries,type LibraryChange,type LibraryEntry,type LibrarySnapshot,type LibraryValue} from './library-model';
 import type {Subject} from './catalog';
 import type {WatchRecord} from './personal-data';
+import {mergeHistory} from './personal-data';
 export type SyncPhase='saved'|'pending'|'saving'|'error';
 type Options={request:(changes?:LibraryChange[])=>Promise<LibrarySnapshot>;apply:(collection:Subject[],history:WatchRecord[])=>void;persist:(pending:LibraryChange[],snapshot:LibrarySnapshot)=>void;status:(phase:SyncPhase,message?:string)=>void;accountChanged:(snapshot:LibrarySnapshot)=>void};
 export function restoreChanges(value:unknown):LibraryChange[]{
@@ -57,7 +58,11 @@ export class LibrarySync{
     if(confirmed.length!==batch.length||new Set(confirmed).size!==batch.length||confirmed.some(id=>!ids.has(id)))throw new Error('同步确认不完整，待上传记录已保留，请重试');
     const received=new Map(next.entries.map(entry=>[entryKey(entry),entry]));for(const sent of batch)if(next.accepted?.includes(sent.mutationId)&&(received.get(entryKey(sent))?.version||0)<=sent.expectedVersion)throw new Error('同步结果缺少已保存记录，待上传记录已保留，请重试');
     this.replace(next);const accepted=new Set(next.accepted||[]),limited=new Set(next.limited||[]);
-    for(const sent of batch){if(limited.has(sent.mutationId))continue;const key=entryKey(sent),current=this.pending.get(key);if(!current)continue;if(current.mutationId===sent.mutationId)this.pending.delete(key);else if(accepted.has(sent.mutationId))current.expectedVersion=this.entries.get(key)?.version||0;else this.pending.delete(key);}
+    for(const sent of batch){if(limited.has(sent.mutationId))continue;const key=entryKey(sent),current=this.pending.get(key);if(!current)continue;
+     const remote=this.entries.get(key);if(next.conflicts?.includes(sent.mutationId)&&current.kind==='history'&&current.value&&remote?.value){
+      const merged=mergeHistory([current.value],[remote.value])[0];if(!sameValue(merged,remote.value)){this.pending.set(key,{...current,value:merged,expectedVersion:remote.version,mutationId:mutationId()});continue;}
+     }
+     if(current.mutationId===sent.mutationId)this.pending.delete(key);else if(accepted.has(sent.mutationId))current.expectedVersion=this.entries.get(key)?.version||0;else this.pending.delete(key);}
     this.render();this.persist();if(limited.size){this.options.status('error','追番已达 1000 条上限；待上传条目已保留，可导出备份或移除部分追番后重试');return;}else if(next.conflicts?.length)this.options.status('saved','部分记录版本已更新，已保留数据库中的最新记录');
    }
   }catch(error){if(!this.stopped){this.options.persist([...this.pending.values()],this.snapshot);this.options.status('error',(error as Error).message||'同步失败，待上传记录已保留');}}

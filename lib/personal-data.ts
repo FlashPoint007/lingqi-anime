@@ -1,8 +1,9 @@
 import type {Subject} from './catalog';
 import {collectionState} from './collection-state';
+import {cleanProgresses,mergeProgresses,withEpisodeProgress,type EpisodeProgresses} from './episode-progress';
 import {validateRule,type Rule} from './web-core';
 
-export type WatchRecord={subject:Subject;episode:string;url:string;time:number;position:number;source?:string;number?:number;ruleName?:string};
+export type WatchRecord={subject:Subject;episode:string;url:string;time:number;position:number;source?:string;number?:number;ruleName?:string;progresses?:EpisodeProgresses};
 const text=(value:unknown)=>typeof value==='string'?value:undefined;
 const finite=(value:unknown)=>typeof value==='number'&&Number.isFinite(value)?value:undefined;
 function subject(value:any):Subject|undefined {
@@ -22,12 +23,14 @@ export function cleanHistory(value:unknown):WatchRecord[]{
  return value.flatMap(item=>{
   const s=subject(item?.subject);if(!s||typeof item.url!=='string'||typeof item.episode!=='string'||finite(item.time)===undefined||finite(item.position)===undefined)return [];
   try{if(new URL(item.url).protocol!=='https:')return [];}catch{return [];}
-  return [{subject:s,episode:item.episode,url:item.url,time:item.time,position:Math.max(0,item.position),source:text(item.source),number:finite(item.number),ruleName:text(item.ruleName)}];
+  const record:WatchRecord={subject:s,episode:item.episode,url:item.url,time:item.time,position:Math.max(0,item.position),source:text(item.source),number:finite(item.number),ruleName:text(item.ruleName)};
+  const progresses=cleanProgresses(item.progresses);if(Object.keys(progresses).length)record.progresses=progresses;
+  return [withEpisodeProgress(record)];
  });
 }
 // Backups may be older than the local progress; equal timestamps keep the local copy.
 export function mergeHistory(current:unknown,incoming:unknown):WatchRecord[]{
- const records=new Map<number,WatchRecord>();for(const item of [...cleanHistory(current),...cleanHistory(incoming)]){const old=records.get(item.subject.id);if(!old||item.time>old.time)records.set(item.subject.id,item);}
+ const records=new Map<number,WatchRecord>();for(const item of [...cleanHistory(current),...cleanHistory(incoming)]){const old=records.get(item.subject.id);records.set(item.subject.id,old?{...(item.time>old.time?item:old),progresses:mergeProgresses(old.progresses,item.progresses)}:item);}
  return [...records.values()].sort((a,b)=>b.time-a.time).slice(0,100);
 }
 // A storage event is a remote snapshot: respect removals, retain newer local progress.

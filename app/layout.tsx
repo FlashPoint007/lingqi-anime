@@ -3,6 +3,7 @@ import "./globals.css";
 import "./anime-theme.css";
 import "./watch-theme.css";
 import "./feature-theme.css";
+import "./watch-features.css";
 
 export const metadata: Metadata = {
   title: "零柒番剧 · 动画索引与追番",

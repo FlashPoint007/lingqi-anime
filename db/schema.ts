@@ -1,4 +1,4 @@
-import {integer,sqliteTable,text,index,primaryKey} from 'drizzle-orm/sqlite-core';
+import {integer,sqliteTable,text,index,primaryKey,uniqueIndex} from 'drizzle-orm/sqlite-core';
 // Shared public metadata and source directories. No user history or video bytes.
 export const sharedCache=sqliteTable('shared_cache',{
  key:text('key').primaryKey(),kind:text('kind').notNull(),valueJson:text('value_json').notNull(),
@@ -25,3 +25,8 @@ export const emailAttempts=sqliteTable('email_attempts',{
 export const siteRuleSets=sqliteTable('site_rule_sets',{
  key:text('key').primaryKey(),valueJson:text('value_json').notNull(),updatedAt:integer('updated_at').notNull(),checkedAt:integer('checked_at').notNull(),
 });
+export const discussionPosts=sqliteTable('discussion_posts',{
+ id:text('id').primaryKey(),subjectId:integer('subject_id').notNull(),scope:text('scope').notNull(),parentId:text('parent_id'),
+ userId:text('user_id').notNull(),alias:text('alias').notNull(),body:text('body').notNull(),
+ createdAt:integer('created_at').notNull(),deletedAt:integer('deleted_at'),mutationId:text('mutation_id').notNull(),
+},table=>[index('discussion_scope_created').on(table.subjectId,table.scope,table.createdAt),index('discussion_user_created').on(table.userId,table.createdAt),index('discussion_parent').on(table.parentId),uniqueIndex('discussion_mutation').on(table.userId,table.mutationId)]);

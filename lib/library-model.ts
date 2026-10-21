@@ -17,7 +17,7 @@ export function libraryValue(kind:LibraryKind,value:unknown):LibraryValue{
  if(value===null)return null;
  if(kind==='collection'){const s=librarySubject(value);if(!s)throw new Error('追番条目格式不正确');return s;}
  const h=cleanHistory([value])[0],subject=h&&librarySubject(h.subject),url=h&&https(h.url);if(!h||!subject||!url)throw new Error('观看记录格式不正确');
- return {subject,url,episode:h.episode.slice(0,200),time:Math.max(0,h.time),position:Math.min(7*86400,h.position),source:https(h.source),number:h.number,ruleName:clip(h.ruleName,100)};
+ return {subject,url,episode:h.episode.slice(0,200),time:Math.max(0,h.time),position:Math.min(7*86400,h.position),source:https(h.source),number:h.number,ruleName:clip(h.ruleName,100),...(h.progresses?{progresses:h.progresses}:{})};
 }
 export function visibleEntries(collection:Subject[],history:WatchRecord[]){
  const map=new Map<string,LibraryValue>();for(const value of collection){const s=librarySubject(value);if(s)map.set('collection:'+s.id,s);}for(const value of history){try{const h=libraryValue('history',value) as WatchRecord;map.set('history:'+h.subject.id,h);}catch{}}

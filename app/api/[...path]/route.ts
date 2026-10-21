@@ -1,4 +1,6 @@
 import {parseSearchFilters,searchFilterKeys} from '../../../lib/search-filters';
+import {discussionResponse} from '../../../lib/discussion-server';
+import {publicComments,discussionScope} from '../../../lib/discussions';
 import {loadSubjectPeople} from '../../../lib/subject-people';
 import {danmakuResponse} from '../../../lib/danmaku-server';
 import {siteRules} from '../../../lib/site-rules';
@@ -25,6 +27,17 @@ export async function GET(req:Request) {
  try {
   if(kind==='danmaku')return await danmakuResponse(u.searchParams);
   if(kind==='library')return await libraryResponse(req);
+  if(kind==='discussions'){
+   if(u.searchParams.get('provider')!=='bangumi')return await discussionResponse(req);
+   const id=u.searchParams.get('subject')||'',episode=u.searchParams.get('episodeId')||'',page=Math.max(1,Math.min(500,Math.floor(Number(u.searchParams.get('page'))||1)));
+   if(!/^[1-9]\d{0,9}$/.test(id)||episode&&!/^[1-9]\d{0,9}$/.test(episode))return json({error:'讨论条目无效'},400);discussionScope(u.searchParams.get('episode'));
+   if(u.searchParams.get('episode')&&!episode)return json({error:'尚未找到这一集的 Bangumi 讨论编号'},400);
+   return await cachedJson('bangumi-discussion',id+':'+episode+':'+page,async()=>{
+    if(episode){const detail=await upstream('https://api.bgm.tv/v0/episodes/'+episode);if(detail.subject_id!==Number(id))throw new Error('讨论剧集与番剧不一致');}
+    const raw=await upstream(episode?'https://next.bgm.tv/p1/episodes/'+episode+'/comments':'https://next.bgm.tv/p1/subjects/'+id+'/comments?limit=20&offset='+((page-1)*20));
+    return {...publicComments(raw,!!episode,(page-1)*20),page,authenticated:false};
+   },{ttl:300000,stale:3600000,background:true});
+  }
   if(kind==='media')return proxyMedia(req);
   if(kind==='cover')return await subjectCover(u.searchParams.get('id')||'',req.signal);
   if(kind==='catalog') {
@@ -52,6 +65,7 @@ export async function GET(req:Request) {
  }catch(e){return json({error:e instanceof Error?e.message:'请求失败，请稍后重试'},502);}
 }
 export async function POST(req:Request) {
+ if(new URL(req.url).pathname==='/api/discussions')return discussionResponse(req);
  if(new URL(req.url).pathname==='/api/auth')return emailAuthResponse(req);
  if(new URL(req.url).pathname==='/api/library')return libraryResponse(req);
  if(!new URL(req.url).pathname.endsWith('/source')) return json({error:'接口不存在'},404);

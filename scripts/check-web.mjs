@@ -3,6 +3,8 @@ import ts from 'typescript';
 import {readFileSync} from 'node:fs';
 const mod=s=>'data:text/javascript;base64,'+Buffer.from(s).toString('base64');
 const compile=s=>ts.transpileModule(s,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
+const discussionsUrl=mod(compile(readFileSync('lib/discussions.ts','utf8')));
+const episodeUrl=mod(compile(readFileSync('lib/episode-progress.ts','utf8')));
 const collectionUrl=mod(compile(readFileSync('lib/collection-state.ts','utf8')));
 const coreUrl=mod(compile(readFileSync('lib/web-core.ts','utf8')));
 const core=await import(coreUrl);
@@ -83,6 +85,7 @@ const seasonNow=catalog.currentSeason(),parallelCalls=[];const quick=await catal
 let activeSeason=0,maxSeason=0;const bounded=await catalogServer.seasonCatalog(new URLSearchParams('year=2023&quarter=2'),async url=>{if(url.includes('kazumi.fyi'))throw Error('unavailable');activeSeason++;maxSeason=Math.max(maxSeason,activeSeason);await new Promise(resolve=>setTimeout(resolve,2));activeSeason--;const offset=Number(new URL(url).searchParams.get('offset'));return {total:350,data:Array.from({length:Math.min(20,350-offset)},(_,i)=>({id:offset+i+1,name:'Season '+(offset+i),date:'2023-04-03'}))};});assert.equal(maxSeason,3);assert.equal(bounded.calendar[0].items.length,350);assert.equal(bounded.complete,true);
 const peopleUrl=mod(compile(readFileSync('lib/subject-people.ts','utf8')));
 let source=readFileSync('app/api/[...path]/route.ts','utf8').replace("import {emailAuthResponse} from '../../../lib/email-auth';","const emailAuthResponse=async()=>Response.json({error:'test'}, {status:401});").replace("import {siteRules} from '../../../lib/site-rules';","const siteRules=async()=>({entries:[],files:[],checkedAt:0});").replace("'../../../lib/web-core'",JSON.stringify(coreUrl)).replace("'../../../lib/catalog-server'",JSON.stringify(catalogServerUrl)).replace("'../../../lib/search-filters'",JSON.stringify(filterUrl)).replace("'../../../lib/subject-people'",JSON.stringify(peopleUrl));
+source=source.replace("import {discussionResponse} from '../../../lib/discussion-server';","const discussionResponse=async()=>Response.json({posts:[],total:0,authenticated:false});").replace("'../../../lib/discussions'",JSON.stringify(discussionsUrl));
 source=source.replace("import {libraryResponse} from '../../../lib/library-server';","const libraryResponse=async()=>Response.json({authenticated:false,entries:[]});");
 const guardUrl=mod(compile(readFileSync('lib/request-guard.ts','utf8')));
 const cacheUrl=mod(compile(readFileSync('lib/server-cache.ts','utf8').replace("import {env,waitUntil} from 'cloudflare:workers';",'const env={};const waitUntil=()=>{};')));
@@ -122,7 +125,7 @@ assert.equal(client.episodeNeighbors(gap,'https://example.com/3',3,[],3).next,un
 assert.equal(client.episodeNeighbors([], '',undefined).next,undefined);
 assert.equal(client.episodeNeighbors([{name:'第12.5话',url:'special'}],'special',12.5,[12,12.5,13]).next.number,13);
 const sameDomainRules=[{...valid,name:'moonci'},{...valid,name:'aafun'}];assert.equal(client.ruleForPlayback(sameDomainRules,'https://example.com/play/1','aafun').name,'aafun');assert.equal(client.ruleForPlayback([{...sameDomainRules[1],enabled:false},sameDomainRules[0]],'https://example.com/play/1','aafun').name,'moonci');assert.equal(client.ruleForPlayback(sameDomainRules,'https://other.example/play/1','aafun'),undefined);
-const personal=await import(mod(compile(readFileSync('lib/personal-data.ts','utf8').replace("'./web-core'",JSON.stringify(coreUrl)).replace("'./collection-state'",JSON.stringify(collectionUrl)))));
+const personal=await import(mod(compile(readFileSync('lib/personal-data.ts','utf8').replace("'./web-core'",JSON.stringify(coreUrl)).replace("'./collection-state'",JSON.stringify(collectionUrl)).replace("'./episode-progress'",JSON.stringify(episodeUrl)))));
 const record={subject:{id:1,name:'Example'},episode:'First',url:'https://example.com/1',time:200,position:48};
 assert.equal(personal.mergeHistory([record],[{...record,time:100,position:0}])[0].position,48);
 assert.equal(personal.mergeHistory([record],[{...record,position:0}])[0].position,48);

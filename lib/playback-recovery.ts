@@ -1,0 +1,27 @@
+type Identity={subjectId:number;number?:number};
+// Keep failures local to one anime/episode. A catalogue match is not proof of
+// browser playback, and must never clear a failed episode's connection.
+export function createPlaybackRecovery(now=Date.now){
+ let scope='',retries=0,deadline=0,cancelled=false;
+ const failed=new Set<string>(),identity=(target:Identity)=>target.subjectId+':'+target.number;
+ const begin=(target:Identity,manual=false,clear=false)=>{
+  const next=identity(target);
+  if(next!==scope||clear){scope=next;failed.clear();retries=0;deadline=0;}
+  if(manual){cancelled=false;retries=0;deadline=0;}
+ };
+ return {
+  begin,
+  failed(rule:string,url:string){return failed.has(rule+'\0'+url);},
+  record(target:Identity,rule:string,url:string){begin(target);if(!url)return;failed.add(rule+'\0'+url);while(failed.size>128)failed.delete(failed.values().next().value!);},
+  claim(target:Identity){
+   begin(target);
+   if(cancelled||target.subjectId<=0||!Number.isFinite(target.number))return false;
+   if(!deadline)deadline=now()+90000;
+   if(retries>=3||now()>=deadline)return false;
+   retries++;return true;
+  },
+  remaining(){return cancelled?0:deadline?Math.max(0,deadline-now()):90000;},
+  confirmed(){retries=0;deadline=0;},
+  cancel(){cancelled=true;},
+ };
+}

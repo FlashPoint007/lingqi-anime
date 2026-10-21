@@ -1,0 +1,17 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),ts=require('typescript');
+const context={exports:{}};
+vm.runInNewContext(ts.transpileModule(fs.readFileSync('lib/playback-recovery.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,context);
+let now=1000;
+const recovery=context.exports.createPlaybackRecovery(()=>now),first={subjectId:7,number:29},other={subjectId:7,number:30};
+recovery.begin(first,true);recovery.record(first,'A','https://example.com/29');
+assert.equal(recovery.failed('A','https://example.com/29'),true);
+assert.equal(recovery.failed('B','https://example.com/29'),false);
+assert.equal(recovery.claim(first),true);assert.equal(recovery.claim(first),true);assert.equal(recovery.claim(first),true);assert.equal(recovery.claim(first),false,'only three automatic replacements per failure chain');
+recovery.begin(first,true);assert.equal(recovery.failed('A','https://example.com/29'),true,'find another source retains this episode\'s failed pages');
+assert.equal(recovery.claim(first),true);now+=90001;assert.equal(recovery.claim(first),false,'one total deadline covers the whole recovery chain');assert.equal(recovery.remaining(),0);
+recovery.begin(first,true,true);assert.equal(recovery.failed('A','https://example.com/29'),false,'explicit retry can retry a failed page');assert.equal(recovery.claim(first),true);
+recovery.confirmed();now+=100000;assert.equal(recovery.claim(first),true,'a later playback stall gets a fresh bounded recovery window');
+recovery.cancel();assert.equal(recovery.claim(first),false);assert.equal(recovery.remaining(),0);
+recovery.begin(other,true);assert.equal(recovery.claim(other),true);assert.equal(recovery.failed('A','https://example.com/29'),false,'failures never leak across episodes');
+assert.equal(recovery.claim({subjectId:0,number:1}),false,'custom videos cannot trigger unrelated catalogue searches');assert.equal(recovery.claim({subjectId:7}),false,'unknown episode identity cannot be guessed');
+console.log('PASS: scoped failed pages, bounded retries/deadline, explicit retry, confirmed playback, cancel and unknown-episode guards');

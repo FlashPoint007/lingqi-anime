@@ -46,12 +46,13 @@ export type EpisodeTarget={number:number;episode?:Episode};
 export function episodeNeighbors(episodes:Episode[],sourceUrl:string,current?:number,known:number[]=[],total?:number):{previous?:EpisodeTarget;next?:EpisodeTarget}{
  const index=episodes.findIndex(episode=>episode.url===sourceUrl),number=Number.isFinite(current)?current:index>=0?episodeNumber(episodes[index],index):undefined;
  if(number===undefined)return {};
- const numbers=new Set([...episodes.map(episodeNumber),...known].filter(n=>Number.isFinite(n)&&n>=0));
+ const trusted=index>=0&&Number.isFinite(current)&&episodeNumber(episodes[index],index)!==current?[]:episodes;
+ const numbers=new Set([...trusted.map(episodeNumber),...known].filter(n=>Number.isFinite(n)&&n>=0));
  if(Number.isInteger(number)&&number>=1&&Number.isInteger(total)){
   if(number>1&&number<=total!)numbers.add(number-1);if(number<total!)numbers.add(number+1);
  }
  const sorted=[...numbers].sort((a,b)=>a-b),before=sorted.filter(n=>n<number).at(-1),after=sorted.find(n=>n>number);
- const target=(n:number|undefined)=>n===undefined?undefined:{number:n,episode:episodeAtNumber(episodes,n)};
+ const target=(n:number|undefined)=>n===undefined?undefined:{number:n,episode:episodeAtNumber(trusted,n)};
  return {previous:target(before),next:target(after)};
 }
 export function playbackUrls(player:{url:string;mediaUrl?:string;preferDirect?:boolean}){

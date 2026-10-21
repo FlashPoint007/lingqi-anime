@@ -1,3 +1,5 @@
+import {parseSearchFilters,searchFilterKeys} from '../../../lib/search-filters';
+import {loadSubjectPeople} from '../../../lib/subject-people';
 import {danmakuResponse} from '../../../lib/danmaku-server';
 import {siteRules} from '../../../lib/site-rules';
 import {subjectCover} from '../../../lib/subject-cover';
@@ -26,9 +28,11 @@ export async function GET(req:Request) {
   if(kind==='media')return proxyMedia(req);
   if(kind==='cover')return await subjectCover(u.searchParams.get('id')||'',req.signal);
   if(kind==='catalog') {
-   const params=new URLSearchParams();for(const key of ['mode','year','quarter','q','tag','cat','page','offset'])if(u.searchParams.has(key))params.set(key,u.searchParams.get(key)!);params.sort();
-   return await cachedJson('catalog',(u.searchParams.get('mode')==='calendar'?'calendar-v2:':'browse-v4:')+params.toString(),()=>u.searchParams.get('mode')==='calendar'?seasonCatalog(u.searchParams,upstream):browseCatalog(u.searchParams,upstream),{background:true,ttl:u.searchParams.get('mode')==='calendar'?3600000:300000,stale:u.searchParams.get('mode')==='calendar'?7*86400000:86400000,refresh:u.searchParams.get('refresh')==='1'});
+   const params=new URLSearchParams();for(const key of ['mode','year','quarter','q','tag','cat','page','offset',...searchFilterKeys])if(u.searchParams.has(key))params.set(key,u.searchParams.get(key)!);params.sort();
+   try{parseSearchFilters(params);}catch(e){return json({error:e instanceof Error?e.message:'筛选条件无效'},400);}
+   return await cachedJson('catalog',(u.searchParams.get('mode')==='calendar'?'calendar-v2:':'browse-v5:')+params.toString(),()=>u.searchParams.get('mode')==='calendar'?seasonCatalog(u.searchParams,upstream):browseCatalog(u.searchParams,upstream),{background:true,ttl:u.searchParams.get('mode')==='calendar'?3600000:300000,stale:u.searchParams.get('mode')==='calendar'?7*86400000:86400000,refresh:u.searchParams.get('refresh')==='1'});
   }
+  if(kind==='people'){const id=u.searchParams.get('id')||'';if(!/^\d{1,10}$/.test(id))return json({error:'无效条目 ID'},400);return await cachedJson('people','v2:'+id,()=>loadSubjectPeople(id,upstream),{background:true,ttl:21600000,stale:86400000,refresh:u.searchParams.get('refresh')==='1'});}
   if(kind==='subject'||kind==='episodes'||kind==='related') {
    const id=u.searchParams.get('id')||''; if(!/^\d{1,10}$/.test(id)) return json({error:'无效条目 ID'},400);
    const offset=Math.floor(Math.min(10000,Math.max(0,Number(u.searchParams.get('offset'))||0)));

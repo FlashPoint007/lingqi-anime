@@ -3,6 +3,7 @@ import ts from 'typescript';
 import {readFileSync} from 'node:fs';
 const mod=s=>'data:text/javascript;base64,'+Buffer.from(s).toString('base64');
 const compile=s=>ts.transpileModule(s,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
+const collectionUrl=mod(compile(readFileSync('lib/collection-state.ts','utf8')));
 const coreUrl=mod(compile(readFileSync('lib/web-core.ts','utf8')));
 const core=await import(coreUrl);
 const valid={name:'Test',baseURL:'https://example.com/',searchURL:'https://example.com/search?q=@keyword',searchList:'//li',searchName:'//a',searchResult:'//a',chapterRoads:'//ul',chapterResult:'//a'};
@@ -46,7 +47,8 @@ const catalog=await import(catalogUrl);
 assert.deepEqual(catalog.seasonRange(2026,1),{start:'2025-12-01',end:'2026-03-01'});
 assert.deepEqual(catalog.seasonRange(2026,4),{start:'2026-09-01',end:'2026-12-01'});
 assert.deepEqual(catalog.pageNumbers(8,30),[1,6,7,8,9,10,30]);
-const catalogServerUrl=mod(compile(readFileSync('lib/catalog-server.ts','utf8').replace("import snapshot from './catalog-snapshot.json';",'const snapshot='+readFileSync('lib/catalog-snapshot.json','utf8')+';').replace("'./catalog'",JSON.stringify(catalogUrl))));
+const filterUrl=mod(compile(readFileSync('lib/search-filters.ts','utf8')));
+const catalogServerUrl=mod(compile(readFileSync('lib/catalog-server.ts','utf8').replace("import snapshot from './catalog-snapshot.json';",'const snapshot='+readFileSync('lib/catalog-snapshot.json','utf8')+';').replace("'./catalog'",JSON.stringify(catalogUrl)).replace("'./search-filters'",JSON.stringify(filterUrl))));
 const catalogServer=await import(catalogServerUrl);
 let requested='';
 const pageResult=await catalogServer.browseCatalog(new URLSearchParams('mode=date&page=52&cat=1&year=2024'),async url=>{requested=url;return {data:[{id:123,name:'Example',date:'2024-04-01'}],total:1234};});
@@ -79,7 +81,8 @@ await assert.rejects(catalogServer.seasonCatalog(new URLSearchParams('year=2023&
 // The healthy seasonal service can win without waiting for a hung current-week service.
 const seasonNow=catalog.currentSeason(),parallelCalls=[];const quick=await catalogServer.seasonCatalog(new URLSearchParams('year='+seasonNow.year+'&quarter='+seasonNow.quarter),async(url,init)=>{parallelCalls.push(url);if(url==='https://api.bgm.tv/calendar')return new Promise((_,reject)=>init.signal.addEventListener('abort',()=>reject(Error('cancelled')),{once:true}));return Object.fromEntries(Array.from({length:7},(_,i)=>[String(i+1),[]]));});assert.equal(quick.basis,'premiere');assert.equal(parallelCalls.length,2);
 let activeSeason=0,maxSeason=0;const bounded=await catalogServer.seasonCatalog(new URLSearchParams('year=2023&quarter=2'),async url=>{if(url.includes('kazumi.fyi'))throw Error('unavailable');activeSeason++;maxSeason=Math.max(maxSeason,activeSeason);await new Promise(resolve=>setTimeout(resolve,2));activeSeason--;const offset=Number(new URL(url).searchParams.get('offset'));return {total:350,data:Array.from({length:Math.min(20,350-offset)},(_,i)=>({id:offset+i+1,name:'Season '+(offset+i),date:'2023-04-03'}))};});assert.equal(maxSeason,3);assert.equal(bounded.calendar[0].items.length,350);assert.equal(bounded.complete,true);
-let source=readFileSync('app/api/[...path]/route.ts','utf8').replace("import {emailAuthResponse} from '../../../lib/email-auth';","const emailAuthResponse=async()=>Response.json({error:'test'}, {status:401});").replace("import {siteRules} from '../../../lib/site-rules';","const siteRules=async()=>({entries:[],files:[],checkedAt:0});").replace("'../../../lib/web-core'",JSON.stringify(coreUrl)).replace("'../../../lib/catalog-server'",JSON.stringify(catalogServerUrl));
+const peopleUrl=mod(compile(readFileSync('lib/subject-people.ts','utf8')));
+let source=readFileSync('app/api/[...path]/route.ts','utf8').replace("import {emailAuthResponse} from '../../../lib/email-auth';","const emailAuthResponse=async()=>Response.json({error:'test'}, {status:401});").replace("import {siteRules} from '../../../lib/site-rules';","const siteRules=async()=>({entries:[],files:[],checkedAt:0});").replace("'../../../lib/web-core'",JSON.stringify(coreUrl)).replace("'../../../lib/catalog-server'",JSON.stringify(catalogServerUrl)).replace("'../../../lib/search-filters'",JSON.stringify(filterUrl)).replace("'../../../lib/subject-people'",JSON.stringify(peopleUrl));
 source=source.replace("import {libraryResponse} from '../../../lib/library-server';","const libraryResponse=async()=>Response.json({authenticated:false,entries:[]});");
 const guardUrl=mod(compile(readFileSync('lib/request-guard.ts','utf8')));
 const cacheUrl=mod(compile(readFileSync('lib/server-cache.ts','utf8').replace("import {env,waitUntil} from 'cloudflare:workers';",'const env={};const waitUntil=()=>{};')));
@@ -119,7 +122,7 @@ assert.equal(client.episodeNeighbors(gap,'https://example.com/3',3,[],3).next,un
 assert.equal(client.episodeNeighbors([], '',undefined).next,undefined);
 assert.equal(client.episodeNeighbors([{name:'第12.5话',url:'special'}],'special',12.5,[12,12.5,13]).next.number,13);
 const sameDomainRules=[{...valid,name:'moonci'},{...valid,name:'aafun'}];assert.equal(client.ruleForPlayback(sameDomainRules,'https://example.com/play/1','aafun').name,'aafun');assert.equal(client.ruleForPlayback([{...sameDomainRules[1],enabled:false},sameDomainRules[0]],'https://example.com/play/1','aafun').name,'moonci');assert.equal(client.ruleForPlayback(sameDomainRules,'https://other.example/play/1','aafun'),undefined);
-const personal=await import(mod(compile(readFileSync('lib/personal-data.ts','utf8').replace("'./web-core'",JSON.stringify(coreUrl)))));
+const personal=await import(mod(compile(readFileSync('lib/personal-data.ts','utf8').replace("'./web-core'",JSON.stringify(coreUrl)).replace("'./collection-state'",JSON.stringify(collectionUrl)))));
 const record={subject:{id:1,name:'Example'},episode:'First',url:'https://example.com/1',time:200,position:48};
 assert.equal(personal.mergeHistory([record],[{...record,time:100,position:0}])[0].position,48);
 assert.equal(personal.mergeHistory([record],[{...record,position:0}])[0].position,48);
@@ -204,6 +207,9 @@ globalThis.fetch=async()=>new Response('x'.repeat(2097153),{headers:{'Content-Ty
 globalThis.fetch=async()=>{throw new Error('network unavailable');};r=await route.GET(new Request('https://site.example/api/catalog'));const cache=await r.json();assert.equal(cache.offline,true);assert.ok(cache.data.length);
 r=await route.GET(new Request('https://site.example/api/catalog?q=no-result'));assert.equal(r.status,502);
 r=await route.GET(new Request('https://site.example/api/catalog?page=2'));assert.equal(r.status,502);
+let filteredRequests=0;globalThis.fetch=async(_url,init)=>{filteredRequests++;const body=JSON.parse(init.body);assert.ok(body.filter.rating);return Response.json({data:[{id:901,name:'Filter test'}],total:41});};
+for(const minimum of ['7','8']){const filteredResponse=await route.GET(new Request('https://site.example/api/catalog?q=Filtercheck&scoreMin='+minimum+'&page=2'));assert.equal(filteredResponse.status,200);assert.equal((await filteredResponse.json()).page,2);}assert.equal(filteredRequests,2,'both advanced filter variants reach the endpoint when D1 is unavailable');
+const beforeInvalidFilter=filteredRequests;const badFilter=await route.GET(new Request('https://site.example/api/catalog?scoreMin=11'));assert.equal(badFilter.status,400);assert.equal(filteredRequests,beforeInvalidFilter,'invalid filters fail before cache or upstream');assert.equal((await route.GET(new Request('https://site.example/api/people?id=../secret'))).status,400);
 r=await route.GET(new Request('https://site.example/api/subject?id=oops'));assert.equal(r.status,400);
 globalThis.fetch=async()=>Response.json({error:'bad data'});r=await route.GET(new Request('https://site.example/api/subject?id=1'));assert.equal(r.status,502);assert.equal(r.headers.get('cache-control'),'no-store');
 globalThis.fetch=async()=>Response.json({data:[null]});r=await route.GET(new Request('https://site.example/api/episodes?id=1'));assert.equal(r.status,502);

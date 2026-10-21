@@ -11,7 +11,7 @@ function https(value:unknown,max=2048){if(typeof value!=='string'||value.length>
 export function librarySubject(value:unknown):Subject|undefined{
  const s=cleanCollection([value])[0];if(!s||!Number.isSafeInteger(s.id)||s.id>9999999999)return;
  const image=https(s.images?.large||s.images?.common,1024);
- return {id:s.id,name:s.name.slice(0,200),name_cn:clip(s.name_cn,200),date:clip(s.date,32),air_date:clip(s.air_date,32),eps:s.eps,score:s.score,rank:s.rank,platform:clip(s.platform,60),...(image?{images:{large:image}}:{}),...(s.rating?{rating:s.rating}:{})};
+ return {id:s.id,...(s.collectionStatus?{collectionStatus:s.collectionStatus}:{}),name:s.name.slice(0,200),name_cn:clip(s.name_cn,200),date:clip(s.date,32),air_date:clip(s.air_date,32),eps:s.eps,score:s.score,rank:s.rank,platform:clip(s.platform,60),...(image?{images:{large:image}}:{}),...(s.rating?{rating:s.rating}:{})};
 }
 export function libraryValue(kind:LibraryKind,value:unknown):LibraryValue{
  if(value===null)return null;

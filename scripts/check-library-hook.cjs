@@ -1,7 +1,7 @@
 const fs=require('node:fs'),vm=require('node:vm'),ts=require('typescript'),assert=require('node:assert/strict'),{webcrypto}=require('node:crypto');
 function load(file,deps={},globals={}){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,require:name=>deps[name],URL,Request,Response,Headers,AbortController,DOMException,TextEncoder,TextDecoder,Date,crypto:webcrypto,setTimeout,clearTimeout,setInterval,clearInterval,console,...globals});return exports;}
 const storage=new Map(),localStorage={getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,value)};
-const core=load('lib/web-core.ts'),personal=load('lib/personal-data.ts',{'./web-core':core},{localStorage}),model=load('lib/library-model.ts',{'./personal-data':personal}),sync=load('lib/library-sync.ts',{'./library-model':model});
+const core=load('lib/web-core.ts'),personal=load('lib/personal-data.ts',{'./web-core':core,'./collection-state':load('lib/collection-state.ts')},{localStorage}),model=load('lib/library-model.ts',{'./personal-data':personal}),sync=load('lib/library-sync.ts',{'./library-model':model});
 const subject=id=>({id,name:'Anime '+id}),record=(id,position)=>({subject:subject(id),episode:'First',url:'https://source.example/play/'+id,time:Date.now(),position});
 let account='a',offline=false;const accounts=new Map();
 function snap(){return {authenticated:!!account,...(account?{account:{id:account,displayName:'Account '+account}}:{}),entries:[...(accounts.get(account)||new Map()).values()]};}

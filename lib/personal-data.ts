@@ -1,4 +1,5 @@
 import type {Subject} from './catalog';
+import {collectionState} from './collection-state';
 import {validateRule,type Rule} from './web-core';
 
 export type WatchRecord={subject:Subject;episode:string;url:string;time:number;position:number;source?:string;number?:number;ruleName?:string};
@@ -6,7 +7,7 @@ const text=(value:unknown)=>typeof value==='string'?value:undefined;
 const finite=(value:unknown)=>typeof value==='number'&&Number.isFinite(value)?value:undefined;
 function subject(value:any):Subject|undefined {
  if(!value||!Number.isInteger(value.id)||value.id<0||typeof value.name!=='string'||!value.name.trim())return;
- return {id:value.id,name:value.name,name_cn:text(value.name_cn),summary:text(value.summary),date:text(value.date),air_date:text(value.air_date),eps:finite(value.eps),score:finite(value.score),rank:finite(value.rank),platform:text(value.platform),
+ return {id:value.id,...(value.collectionStatus!==undefined?{collectionStatus:collectionState(value.collectionStatus)}:{}),name:value.name,name_cn:text(value.name_cn),summary:text(value.summary),date:text(value.date),air_date:text(value.air_date),eps:finite(value.eps),score:finite(value.score),rank:finite(value.rank),platform:text(value.platform),
   images:value.images?{large:text(value.images.large),common:text(value.images.common)}:undefined,
   rating:finite(value.rating?.score)!==undefined?{score:value.rating.score,rank:finite(value.rating.rank),total:finite(value.rating.total)}:undefined};
 }

@@ -1,4 +1,5 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),ts=require('typescript');
+const filterContext={exports:{},URLSearchParams};vm.runInNewContext(ts.transpileModule(fs.readFileSync('lib/search-filters.ts','utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText,filterContext);const filters=filterContext.exports;
 const compile=source=>ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText;
 (async()=>{
  // Exercise browsers without the newer static AbortSignal methods.
@@ -29,7 +30,7 @@ const compile=source=>ts.transpileModule(source,{compilerOptions:{target:ts.Scri
  // Verify a failed new search cannot leave pagination from a previous result.
  let catalogueEffect;const walkEffects=node=>{if(ts.isCallExpression(node)&&['useEffect','useLayoutEffect'].includes(node.expression.getText(source))&&node.arguments[0]?.getText(source).includes("setItems([])"))catalogueEffect=node.arguments[0].getText(source);ts.forEachChild(node,walkEffects);};walkEffects(source);assert.ok(catalogueEffect);
  const catalogueState={total:2000,cached:true,searchLimited:true,items:[{id:1}],loading:false,error:'',catalogUpdating:false};let rejectSearch;
- const catalogueContext={AbortController,URLSearchParams,anySignal:signals=>AbortSignal.any(signals),timeoutSignal:ms=>AbortSignal.timeout(ms),view:'discover',sort:'date',activeQuery:'Missing',tag:'',category:'',catalogYear:'',offset:0,PAGE_SIZE:20,forceCatalogReload:{current:false},readBrowseCache:()=>undefined,browseCacheFresh:()=>false,api:()=>new Promise((_,reject)=>rejectSearch=reject)};
+ const catalogueContext={...filters,advanced:filters.emptySearchFilters,AbortController,URLSearchParams,anySignal:signals=>AbortSignal.any(signals),timeoutSignal:ms=>AbortSignal.timeout(ms),view:'discover',sort:'date',activeQuery:'Missing',tag:'',category:'',catalogYear:'',offset:0,PAGE_SIZE:20,forceCatalogReload:{current:false},readBrowseCache:()=>undefined,browseCacheFresh:()=>false,api:()=>new Promise((_,reject)=>rejectSearch=reject)};
  for(const name of Object.keys(catalogueState))catalogueContext['set'+name[0].toUpperCase()+name.slice(1)]=value=>catalogueState[name]=value;
  vm.createContext(catalogueContext);vm.runInContext(compile('this.load='+catalogueEffect),catalogueContext);catalogueContext.load();assert.equal(catalogueState.total,0);assert.equal(catalogueState.cached,false);assert.equal(catalogueState.searchLimited,false);rejectSearch(Error('network failed'));await new Promise(resolve=>setImmediate(resolve));assert.equal(catalogueState.total,0);assert.equal(catalogueState.loading,false);assert.equal(catalogueState.error,'network failed');
  // Returning to a fresh search page performs no request and retains its own page count.
@@ -41,9 +42,9 @@ const compile=source=>ts.transpileModule(source,{compilerOptions:{target:ts.Scri
  // Cancelling a previous query prevents its late response from replacing the new list.
  let finishOld;catalogueContext.activeQuery='Old';catalogueContext.api=()=>new Promise(resolve=>finishOld=resolve);const cancelOld=catalogueContext.load();cancelOld();catalogueState.items=[{id:10,name:'New query'}];finishOld({data:[{id:11,name:'Old response'}]});await new Promise(resolve=>setImmediate(resolve));assert.equal(catalogueState.items[0].id,10);
  // The global search starts a fresh search across years, even from another view.
- const searchState={catalogYear:'2024',offset:48,sort:'rank',activeQuery:'Old',tag:'日常',category:'1',view:'collection',reload:0};const searchContext={query:'  New anime  '};
+ const searchState={catalogYear:'2024',offset:48,sort:'rank',activeQuery:'Old',tag:'日常',category:'1',view:'collection',reload:0};const searchContext={...filters,privatePlaybackRef:{current:false},recentSearches:[],searchHistoryKey:'kw-search-history:anonymous',persist(){},setQuery(){},setRecentSearches(){},setAdvanced(){},query:'  New anime  '};
  for(const name of Object.keys(searchState))searchContext['set'+name[0].toUpperCase()+name.slice(1)]=value=>searchState[name]=typeof value==='function'?value(searchState[name]):value;
- vm.createContext(searchContext);vm.runInContext(handler('search'),searchContext);searchContext.search({preventDefault(){}});assert.equal(searchState.catalogYear,'','global search must not inherit a hidden year filter');assert.equal(searchState.activeQuery,'New anime');assert.equal(searchState.offset,0);assert.equal(searchState.view,'discover');
+ vm.createContext(searchContext);vm.runInContext(handler('runSearch')+handler('search'),searchContext);searchContext.search({preventDefault(){}});assert.equal(searchState.catalogYear,'','global search must not inherit a hidden year filter');assert.equal(searchState.activeQuery,'New anime');assert.equal(searchState.offset,0);assert.equal(searchState.view,'discover');
  // Closing or changing the detail dialog wins even before effect cleanup runs.
  let detailEffect;const findDetail=node=>{if(ts.isCallExpression(node)&&node.expression.getText(source)==='useEffect'&&node.arguments[0]?.getText(source).includes('Promise.allSettled'))detailEffect=node.arguments[0].getText(source);ts.forEachChild(node,findDetail);};findDetail(source);assert.ok(detailEffect);
  for(const replacement of [null,{id:8,name:'New selection'}]){

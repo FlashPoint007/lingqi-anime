@@ -272,6 +272,14 @@
 .watch-page.watch-theater .watch-layout { grid-template-columns: minmax(0,1fr); max-width: 1500px; }
 .watch-page .advanced-player:fullscreen,.watch-page .advanced-player.player-window-fullscreen { background: #050909; border: 0; border-radius: 0; box-shadow: none; }
 .watch-page .advanced-player:fullscreen .video-surface,.watch-page .advanced-player.player-window-fullscreen .video-surface { border-radius: 0; }
+/* Keep transport and utility controls in view on short desktop windows. */
+@media(min-width:851px) {
+  .watch-page .watch-stage { display: flex; justify-content: center; }
+  .watch-page .watch-stage > .advanced-player:not(:fullscreen):not(.player-window-fullscreen) { max-width: min(100%,max(320px,calc((100dvh - 370px)*16/9))); }
+  .watch-page .watch-now { width: 100%; max-width: min(100%,max(320px,calc((100dvh - 370px)*16/9))); margin: 0 auto; }
+  .watch-page.watch-theater .watch-stage > .advanced-player:not(:fullscreen):not(.player-window-fullscreen) { max-width: min(100%,max(320px,calc((100dvh - 290px)*16/9))); }
+  .watch-page.watch-theater .watch-now { display: none; }
+}
 @media(min-width:1600px) { .watch-page .watch-layout { gap: 30px; grid-template-columns: minmax(0,1fr) 360px; } }
 @media(max-width:1100px) {
   .watch-page .watch-header { padding: 0 22px; gap: 20px; }

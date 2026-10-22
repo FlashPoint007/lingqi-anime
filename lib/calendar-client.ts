@@ -1,9 +1,10 @@
 import {currentSeason,normalizeCalendar} from './catalog';
 import {readStorage,writeStorage} from './personal-data';
-const KEY='kw-season-cache-v1',memory=new Map<string,any>();
-function valid(value:any,year:number,quarter:number){try{if(!value||value.year!==year||value.quarter!==quarter||!Number.isFinite(value.savedAt)||value.savedAt>Date.now()+60000||Date.now()-value.savedAt>7*86400000||!['current','premiere'].includes(value.basis))return;if(value.basis==='current'&&(year!==currentSeason().year||quarter!==currentSeason().quarter))return;return {...value,calendar:normalizeCalendar(value.calendar)};}catch{return;}}
+// Invalidate calendars cached before current-week and premiere feeds were split.
+const KEY='kw-season-cache-v2',memory=new Map<string,any>();
+function valid(value:any,year:number,quarter:number){try{if(!value||value.year!==year||value.quarter!==quarter||!Number.isFinite(value.savedAt)||value.savedAt>Date.now()+60000||Date.now()-value.savedAt>7*86400000||!['current','premiere'].includes(value.basis))return;const now=currentSeason();if((value.basis==='current')!==(year===now.year&&quarter===now.quarter))return;return {...value,calendar:normalizeCalendar(value.calendar)};}catch{return;}}
 export function readSeasonCache(year:number,quarter:number){const key=year+':'+quarter;const cached=valid(memory.get(key),year,quarter);if(cached)return cached;try{return valid(JSON.parse(readStorage(KEY)||'{}')[key],year,quarter);}catch{return;}}
-export function seasonCacheFresh(value:any){return !!value&&!value.cacheStale&&Date.now()-value.savedAt<300000;}
+export function seasonCacheFresh(value:any){return !!value&&!value.cacheStale&&!value.offline&&Date.now()-value.savedAt<300000;}
 export function seasonData(data:any,year:number,quarter:number){if(data?.year!==year||data?.quarter!==quarter)throw Error('放送时间表季度不匹配，请重试');const value=valid({...data,savedAt:Date.now()},year,quarter);if(!value)throw Error('放送时间表格式不正确，请重试');return value;}
 export function saveSeasonCache(year:number,quarter:number,data:any){
  const value=valid({...data,year,quarter,savedAt:Date.now()},year,quarter);if(!value)return;

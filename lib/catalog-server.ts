@@ -14,16 +14,28 @@ export async function seasonCatalog(params:URLSearchParams,upstream:Upstream){
  const signal=AbortSignal.timeout(35000);
  const services=new AbortController();
  const read:Upstream=async(url,init={})=>{try{signal.throwIfAborted();return await upstream(url,{...init,signal:AbortSignal.any([signal,...(init.signal?[init.signal]:[]),AbortSignal.timeout(6000)])});}catch(error){if(signal.aborted)throw new Error('放送时间表加载超时，请重试');throw error;}};
- const kazumi=async()=>{
-  const data=await read('https://api.kazumi.fyi/kazumi/v1/calendar/season?'+new URLSearchParams(range),{signal:services.signal});
+ const groupedCalendar=async(url:string)=>{
+  const data=await read(url,{signal:services.signal});
   if(!Array.from({length:7},(_,i)=>data[String(i+1)]).every(Array.isArray))throw new Error('季度数据格式不正确');
-  const calendar=Array.from({length:7},(_,i)=>({weekday:{id:i+1},items:normalizeSubjects(data[String(i+1)].map((e:any)=>e?.subject||e))}));
-  return {calendar,year,quarter,basis:'premiere',complete:true};
+  return Array.from({length:7},(_,i)=>({weekday:{id:i+1},items:normalizeSubjects(data[String(i+1)].map((e:any)=>e?.subject||e))}));
  };
+ // Kazumi uses /p1/calendar for the current season, including continuing shows.
+ // A premiere search is a different catalogue and must never race this feed.
+ if(year===now.year&&quarter===now.quarter){
+  try{
+   const current=async(url:string)=>{const calendar=await groupedCalendar(url);if(!calendar.some(day=>day.items.length))throw Error('本周放送列表为空');return {calendar,year,quarter,basis:'current',complete:true};};
+   // Only equivalent official/mirror feeds may race each other.
+   return await Promise.any([current('https://next.bgm.tv/p1/calendar'),current('https://api.kazumi.fyi/p1/calendar')]);
+  }catch{
+   // Keep a weekly fallback available, but do not cache it as Kazumi's exact feed.
+   const calendar=normalizeCalendar(await read('https://api.bgm.tv/calendar'));
+   if(!calendar.some(day=>day.items.length))throw Error('本周放送列表为空，请稍后重试');
+   return {calendar,year,quarter,basis:'current',complete:true,offline:true,notice:'当前使用备用放送接口，收录可能与 Kazumi 略有差异'};
+  }finally{services.abort();}
+ }
  try{
-  const candidates=[kazumi()];
-  if(year===now.year&&quarter===now.quarter)candidates.push((async()=>{const calendar=normalizeCalendar(await read('https://api.bgm.tv/calendar',{signal:services.signal}));return {calendar,year,quarter,basis:'current',complete:true};})());
-  const result=await Promise.any(candidates);services.abort();return result;
+  const calendar=await groupedCalendar('https://api.kazumi.fyi/kazumi/v1/calendar/season?'+new URLSearchParams(range));
+  services.abort();return {calendar,year,quarter,basis:'premiere',complete:true};
  }catch{
   services.abort();
   const page=async(offset:number)=>{

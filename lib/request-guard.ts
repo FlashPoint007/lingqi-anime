@@ -1,6 +1,6 @@
 type DB=Pick<D1Database,'prepare'>;
-type Group='page'|'metadata'|'source'|'resolve'|'media'|'rules'|'personal'|'auth';
-const limits:Record<Group,{limit:number;block:number;parallel:number;clientParallel:number}>={auth:{limit:10,block:1,parallel:4,clientParallel:1},page:{limit:300,block:10,parallel:48,clientParallel:16},metadata:{limit:180,block:10,parallel:48,clientParallel:16},source:{limit:180,block:10,parallel:24,clientParallel:8},resolve:{limit:30,block:3,parallel:8,clientParallel:3},media:{limit:1200,block:30,parallel:80,clientParallel:20},rules:{limit:40,block:5,parallel:16,clientParallel:8},personal:{limit:120,block:5,parallel:16,clientParallel:4}};
+type Group='page'|'metadata'|'source'|'resolve'|'media'|'download'|'rules'|'personal'|'auth';
+const limits:Record<Group,{limit:number;block:number;parallel:number;clientParallel:number}>={download:{limit:20,block:1,parallel:12,clientParallel:2},auth:{limit:10,block:1,parallel:4,clientParallel:1},page:{limit:300,block:10,parallel:48,clientParallel:16},metadata:{limit:180,block:10,parallel:48,clientParallel:16},source:{limit:180,block:10,parallel:24,clientParallel:8},resolve:{limit:30,block:3,parallel:8,clientParallel:3},media:{limit:1200,block:30,parallel:80,clientParallel:20},rules:{limit:40,block:5,parallel:16,clientParallel:8},personal:{limit:120,block:5,parallel:16,clientParallel:4}};
 type Bucket={window:number;remaining:number;blocked:boolean;localAllocated?:boolean};
 const locks=new Map<string,Promise<void>>();
 const buckets=new Map<string,Bucket>(),active=new Map<string,number>(),globalActive=new Map<Group,number>();let cleanupAt=0;
@@ -12,7 +12,7 @@ export async function readRequestText(req:Request,max=65536){
  finally{clearTimeout(timer);void reader.cancel().catch(()=>{});}
 }
 function reject(message:string,status:number,retry=0){return Response.json({error:message},{status,headers:{'Cache-Control':'no-store',...(retry?{'Retry-After':String(retry)}:{})}});}
-function group(req:Request):Group{const path=new URL(req.url).pathname;if(path==='/api/auth')return 'auth';if(path==='/api/library'||path==='/api/discussions'&&req.method==='POST')return 'personal';if(path==='/api/media')return 'media';if(path==='/api/source')return 'source';if(path==='/api/rules')return 'rules';return path.startsWith('/api/')?'metadata':'page';}
+function group(req:Request):Group{const path=new URL(req.url).pathname;if(path==='/api/auth')return 'auth';if(path==='/api/library'||path==='/api/discussions'&&req.method==='POST')return 'personal';if(path==='/api/download')return req.method==='POST'?'resolve':'download';if(path==='/api/media')return 'media';if(path==='/api/source')return 'source';if(path==='/api/rules')return 'rules';return path.startsWith('/api/')?'metadata':'page';}
 async function identity(req:Request,secret?:string,trustedEdge=false,accountBound=false){
  // Dispatch can reconstruct Request and omit `cf`. Only the Cloudflare Worker
  // entrypoint may opt into trusting the edge-provided connecting-IP header.
@@ -48,9 +48,9 @@ async function reserve(key:string,g:Group,shared:boolean,db?:DB){
 export async function guardRequest(req:Request,db?:DB,secret?:string,override?:'resolve',trustedEdge=false){
 
  const url=new URL(req.url),api=url.pathname.startsWith('/api/');const noop=()=>{};
- if(req.url.length>(url.pathname==='/api/media'?16000:4096))return {response:reject('请求地址过长',414),release:noop};
- if(api&&!['/api/catalog','/api/subject','/api/episodes','/api/related','/api/people','/api/cover','/api/danmaku','/api/rules','/api/source','/api/media','/api/library','/api/auth','/api/discussions'].includes(url.pathname))return {response:reject('接口不存在',404),release:noop};
- if(!['GET','HEAD'].includes(req.method)&&!(req.method==='POST'&&['/api/source','/api/library','/api/auth','/api/discussions'].includes(url.pathname)))return {response:reject('请求方法不支持',405),release:noop};
+ if(req.url.length>(['/api/media','/api/download'].includes(url.pathname)?16000:4096))return {response:reject('请求地址过长',414),release:noop};
+ if(api&&!['/api/catalog','/api/subject','/api/episodes','/api/related','/api/people','/api/cover','/api/danmaku','/api/rules','/api/source','/api/media','/api/download','/api/library','/api/auth','/api/discussions'].includes(url.pathname))return {response:reject('接口不存在',404),release:noop};
+ if(!['GET','HEAD'].includes(req.method)&&!(req.method==='POST'&&['/api/source','/api/download','/api/library','/api/auth','/api/discussions'].includes(url.pathname)))return {response:reject('请求方法不支持',405),release:noop};
  if(!api&&/\.(?:js|css|svg|png|jpg|jpeg|webp|ico|woff2?)$/i.test(url.pathname))return {release:noop};
  if(req.method==='POST'){
   const origin=req.headers.get('origin');if(origin&&origin!==url.origin||req.headers.get('sec-fetch-site')==='cross-site')return {response:reject('跨站请求被拒绝',403),release:noop};
@@ -71,5 +71,10 @@ export function secureResponse(response:Response,release:()=>void=()=>{}){
  if(response.status>=400)headers.set('Cache-Control','no-store');
  if(!response.body){release();return new Response(null,{status:response.status,statusText:response.statusText,headers});}
  const reader=response.body.getReader();const body=new ReadableStream<Uint8Array>({async pull(controller){try{const {value,done}=await reader.read();if(done){release();controller.close();}else controller.enqueue(value);}catch(error){release();controller.error(error);}},async cancel(reason){release();await reader.cancel(reason);}});
+ // Workers ignores manually set Content-Length on a generic ReadableStream.
+ // Keep native downloads measurable/resumable without buffering the file.
+ const length=headers.get('content-length');if(/^attachment(?:;|$)/i.test(headers.get('content-disposition')||'')&&length&&/^\d+$/.test(length)&&Number.isSafeInteger(Number(length))&&typeof FixedLengthStream!=='undefined'){
+  const fixed=new FixedLengthStream(Number(length));void body.pipeTo(fixed.writable).catch(()=>{});return new Response(fixed.readable,{status:response.status,statusText:response.statusText,headers});
+ }
  return new Response(body,{status:response.status,statusText:response.statusText,headers});
 }

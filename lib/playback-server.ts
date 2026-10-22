@@ -13,7 +13,7 @@ export async function boundedText(response:Response,max=2*1024*1024,timeout=1000
  })(),new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new Error('源站响应读取超时，请更换线路或重试')),timeout);})]);}
  finally{clearTimeout(timer);void reader.cancel().catch(()=>{});}
 }
-async function fetchPublic(url:string,init:RequestInit={},stream=false){
+export async function fetchPublic(url:string,init:RequestInit={},stream=false){
  let target=mediaUrl(url);for(let i=0;i<4;i++){
   // Streaming video must not be cut off by the connection/header timeout.
   const controller=stream?new AbortController():undefined;const timer=controller?setTimeout(()=>controller.abort(),12000):undefined;
@@ -22,7 +22,7 @@ async function fetchPublic(url:string,init:RequestInit={},stream=false){
   if(res.status>=300&&res.status<400){const location=res.headers.get('location');discard(res);if(!location)throw new Error('源站重定向无地址');target=mediaUrl(location,target.href);continue;}return {res,url:target.href};
  }throw new Error('源站重定向过多');
 }
-function mediaReferer(referer:string):Record<string,string>{return new URL(referer).hostname==='next.xifanacg.com'?{}:{Referer:referer};}
+export function mediaReferer(referer:string):Record<string,string>{return new URL(referer).hostname==='next.xifanacg.com'?{}:{Referer:referer};}
 type MediaFailure={message:string;gone:boolean};
 async function reachableMedia(url:string,referer:string,signal?:AbortSignal,failures?:Map<string,MediaFailure>){
  try{const {res}=await fetchPublic(url,{signal:signal?AbortSignal.any([signal,AbortSignal.timeout(5000)]):AbortSignal.timeout(5000),headers:{'User-Agent':UA,...mediaReferer(referer),...(/\.m3u8(?:[?#]|$)/i.test(url)?{}:{Range:'bytes=0-4095'}),Accept:'*/*'}});if(!res.ok){failures?.set(mediaUrl(url).href,{message:'源站视频文件响应 HTTP '+res.status+(res.status===404||res.status===410?'，该文件已失效':'，当前服务器无法读取'),gone:res.status===404||res.status===410});discard(res);return false;}
@@ -80,7 +80,7 @@ export async function resolvePlayback(rule:Rule,page:string,declared?:string,par
  return {media:failure?.gone?'':directCandidate,verified:false,referer:candidateReferer,reason:signal.aborted?'播放解析超时或已取消，请重试或切换视频源':failure?.message||errors[0]||'此线路未解析到可播放的视频地址，请切换线路或视频源'};
 }
 
-type Ticket={url:string;referer:string;expires:number};
+export type Ticket={url:string;referer:string;expires:number};
 function secret(){const value=process.env.LINGQI_MEDIA_SECRET;if(!value)throw new Error('站内媒体服务未配置');return value;}
 function base64url(bytes:Uint8Array){return btoa(String.fromCharCode(...bytes)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}
 function unbase64(value:string){if(!/^[A-Za-z0-9_-]+$/.test(value))throw new Error('无效媒体授权');return Uint8Array.from(atob(value.replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0));}
@@ -91,7 +91,7 @@ export async function signedMediaUrl(url:string,referer:string,expires=Date.now(
  const signature=base64url(new Uint8Array(await crypto.subtle.sign('HMAC',await key(),new TextEncoder().encode(payload))));
  return '/api/media?ticket='+payload+'.'+signature;
 }
-async function readTicket(raw:string):Promise<Ticket>{
+export async function readTicket(raw:string):Promise<Ticket>{
  if(raw.length>14000)throw new Error('媒体授权过长');const parts=raw.split('.');if(parts.length!==2)throw new Error('无效媒体授权');
  if(!await crypto.subtle.verify('HMAC',await key(),unbase64(parts[1]),new TextEncoder().encode(parts[0])))throw new Error('媒体授权不匹配');
  const data=JSON.parse(new TextDecoder().decode(unbase64(parts[0]))) as Ticket;

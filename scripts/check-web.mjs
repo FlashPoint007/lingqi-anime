@@ -96,6 +96,9 @@ const subscriptionServerUrl=mod(compile(readFileSync('lib/rule-subscription-serv
 source=source.replace("'../../../lib/rule-api'",JSON.stringify(apiUrl)).replace("'../../../lib/rule-subscription-server'",JSON.stringify(subscriptionServerUrl));
 const playbackUrl=mod(compile(readFileSync('lib/playback-server.ts','utf8').replace("'./rule-api'",JSON.stringify(apiUrl)).replace("'./web-core'",JSON.stringify(coreUrl))));
 source=source.replace("'../../../lib/playback-server'",JSON.stringify(playbackUrl));
+const offlineHlsUrl=mod(compile(readFileSync('lib/offline-hls.ts','utf8'))),downloadZipUrl=mod(compile(readFileSync('lib/download-zip.ts','utf8')));
+const browserDownloadUrl=mod(compile(readFileSync('lib/browser-download-server.ts','utf8').replace("'./playback-server'",JSON.stringify(playbackUrl)).replace("'./rule-api'",JSON.stringify(apiUrl)).replace("'./offline-hls'",JSON.stringify(offlineHlsUrl)).replace("'./request-guard'",JSON.stringify(guardUrl)).replace("'./download-zip'",JSON.stringify(downloadZipUrl))));
+source=source.replace("'../../../lib/browser-download-server'",JSON.stringify(browserDownloadUrl));
 const danmakuUrl=mod(compile(readFileSync('lib/danmaku.ts','utf8')));
 const danmakuServerUrl=mod(compile(readFileSync('lib/danmaku-server.ts','utf8').replace("'./danmaku'",JSON.stringify(danmakuUrl)).replace("'./playback-server'",JSON.stringify(playbackUrl)).replace("'./server-cache'",JSON.stringify(cacheUrl))));
 source=source.replace("'../../../lib/danmaku-server'",JSON.stringify(danmakuServerUrl));

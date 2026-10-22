@@ -1,3 +1,4 @@
+import {browserDownload,prepareBrowserDownload} from '../../../lib/browser-download-server';
 import {parseSearchFilters,searchFilterKeys} from '../../../lib/search-filters';
 import {discussionResponse} from '../../../lib/discussion-server';
 import {publicComments,discussionScope} from '../../../lib/discussions';
@@ -39,6 +40,7 @@ export async function GET(req:Request) {
    },{ttl:300000,stale:3600000,background:true});
   }
   if(kind==='media')return proxyMedia(req);
+  if(kind==='download')return browserDownload(req);
   if(kind==='cover')return await subjectCover(u.searchParams.get('id')||'',req.signal);
   if(kind==='catalog') {
    const params=new URLSearchParams();for(const key of ['mode','year','quarter','q','tag','cat','page','offset',...searchFilterKeys])if(u.searchParams.has(key))params.set(key,u.searchParams.get(key)!);params.sort();
@@ -65,6 +67,7 @@ export async function GET(req:Request) {
  }catch(e){return json({error:e instanceof Error?e.message:'请求失败，请稍后重试'},502);}
 }
 export async function POST(req:Request) {
+ if(new URL(req.url).pathname==='/api/download')return prepareBrowserDownload(req);
  if(new URL(req.url).pathname==='/api/discussions')return discussionResponse(req);
  if(new URL(req.url).pathname==='/api/auth')return emailAuthResponse(req);
  if(new URL(req.url).pathname==='/api/library')return libraryResponse(req);

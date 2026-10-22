@@ -64,7 +64,7 @@ export default function WatchPage(p:Props){
       </div>
      </div>}
     </div>
-    {p.mode==='video'&&<DownloadEpisode key={p.player.sourceUrl} owner={p.viewerKey||'anonymous'} subject={p.player.subject} episode={p.player.episode} number={currentNumber} url={urls.url} sourceUrl={p.player.sourceUrl} source={p.player.source} ruleName={p.player.ruleName} mediaType={p.player.mediaType}/>}
+    {p.mode==='video'&&<DownloadEpisode key={p.player.sourceUrl} owner={p.viewerKey||'anonymous'} subject={p.player.subject} episode={p.player.episode} number={currentNumber} nativeUrl={p.player.url} url={urls.url} sourceUrl={p.player.sourceUrl} source={p.player.source} ruleName={p.player.ruleName} mediaType={p.player.mediaType}/>}
     <Discussions key={p.viewerKey||'anonymous'} subjectId={p.player.subject.id} episodeNumber={currentNumber} episodeId={p.episodes.find(e=>e.sort===currentNumber)?.id}/>
     {p.error&&<div className="watch-error" role="alert" data-source-url={p.player.sourceUrl}>{p.error}</div>}
     <div className="watch-now">

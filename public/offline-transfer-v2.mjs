@@ -1,0 +1,7 @@
+// New URL prevents an already-installed v1 worker from serving the old module.
+import {openOfflineDB} from './offline-db.mjs';
+export * from './offline-db.mjs';
+export async function listOfflineAssets(id){const db=await openOfflineDB();return new Promise((resolve,reject)=>{const req=db.transaction('assets').objectStore('assets').index('download').getAll(id);req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});}
+// A committed chunk and its resume offset must become visible together.
+export async function checkpointOffline(chunk,asset){const db=await openOfflineDB();return new Promise((resolve,reject)=>{const tx=db.transaction(['assets','chunks'],'readwrite');tx.objectStore('chunks').put(chunk);tx.objectStore('assets').put(asset);tx.oncomplete=()=>resolve();tx.onabort=()=>reject(tx.error||Error('离线分片保存失败'));tx.onerror=()=>reject(tx.error);});}
+export async function removeOfflineAsset(download,id){const db=await openOfflineDB();return new Promise((resolve,reject)=>{const tx=db.transaction(['assets','chunks'],'readwrite');tx.objectStore('assets').delete([download,id]);const req=tx.objectStore('chunks').openKeyCursor(IDBKeyRange.bound([download,id,0],[download,id,Number.MAX_SAFE_INTEGER]));req.onsuccess=()=>{const cursor=req.result;if(cursor){tx.objectStore('chunks').delete(cursor.primaryKey);cursor.continue();}};tx.oncomplete=()=>resolve();tx.onabort=()=>reject(tx.error);tx.onerror=()=>reject(tx.error);});}

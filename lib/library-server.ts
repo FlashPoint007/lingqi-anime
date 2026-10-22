@@ -2,17 +2,18 @@ import {env} from 'cloudflare:workers';
 import {getSiteUser} from './email-auth';
 import {readRequestText,RequestLimitError} from './request-guard';
 import {valueSubjectId,libraryValue,entryKey,type LibraryChange,type LibraryEntry} from './library-model';
-type Row={kind:'collection'|'history'|'aliases';subject_id:number;value_json:string|null;version:number;updated_at:number;sort_at:number};
+type Row={kind:'collection'|'history'|'aliases'|'danmaku';subject_id:number;value_json:string|null;version:number;updated_at:number;sort_at:number};
 const response=(value:unknown,status=200)=>Response.json(value,{status,headers:{'Cache-Control':'private, no-store','Vary':'Cookie','Pragma':'no-cache'}});
 const query='SELECT kind,subject_id,value_json,version,updated_at,sort_at FROM personal_items WHERE user_id = ? ORDER BY sort_at DESC,subject_id DESC';
 function parseChange(value:any):LibraryChange{
- if(!value||!['collection','history','aliases'].includes(value.kind)||!Number.isSafeInteger(value.id)||value.id<0||value.id>9999999999||!Number.isSafeInteger(value.expectedVersion)||value.expectedVersion<0||typeof value.mutationId!=='string'||!/^[-\w]{16,80}$/.test(value.mutationId))throw new Error('同步操作格式不正确');
+ if(!value||!['collection','history','aliases','danmaku'].includes(value.kind)||!Number.isSafeInteger(value.id)||value.id<0||value.id>9999999999||!Number.isSafeInteger(value.expectedVersion)||value.expectedVersion<0||typeof value.mutationId!=='string'||!/^[-\w]{16,80}$/.test(value.mutationId))throw new Error('同步操作格式不正确');
+ if(value.kind==='danmaku'&&value.id!==0)throw new Error('弹幕偏好编号格式不正确');
  const clean=libraryValue(value.kind,value.value);if(clean!==null&&valueSubjectId(value.kind,clean)!==value.id)throw new Error('记录与番剧 ID 不一致');
  if(new TextEncoder().encode(JSON.stringify(clean)).length>32768)throw new RequestLimitError('单条记录过大',413);
  return {kind:value.kind,id:value.id,value:clean,expectedVersion:value.expectedVersion,mutationId:value.mutationId};
 }
-async function entries(db:D1Database,userId:string,extended=false):Promise<LibraryEntry[]>{
- const rows=await db.prepare(query).bind(userId).all<Row>();return rows.results.filter(row=>extended||row.kind!=='aliases').map(row=>({kind:row.kind,id:row.subject_id,value:row.value_json===null?null:JSON.parse(row.value_json),version:row.version,updatedAt:row.updated_at,sortAt:row.sort_at}));
+async function entries(db:D1Database,userId:string,extended=1):Promise<LibraryEntry[]>{
+ const rows=await db.prepare(query).bind(userId).all<Row>();return rows.results.filter(row=>row.kind!=='danmaku'&&(extended>=2||row.kind!=='aliases')||extended>=3).map(row=>({kind:row.kind,id:row.subject_id,value:row.value_json===null?null:JSON.parse(row.value_json),version:row.version,updatedAt:row.updated_at,sortAt:row.sort_at}));
 }
 // Both the insert and update check the caller's last observed version. Tombstones
 // retain that version so old devices and repeat migrations cannot revive deletions.
@@ -29,7 +30,7 @@ const write=`INSERT INTO personal_items(user_id,kind,subject_id,value_json,versi
  mutation_id=excluded.mutation_id WHERE personal_items.version=? OR personal_items.mutation_id=? RETURNING kind,subject_id,version`;
 export async function libraryResponse(req:Request){
  try{
-  const extended=new URL(req.url).searchParams.get('version')==='2';const user=await getSiteUser(req);if(!user)return response({authenticated:false,entries:[],...(req.method==='POST'?{error:'请先登录，再同步追番和观看记录'}:{})},req.method==='POST'?401:200);
+  const extended=['2','3'].includes(new URL(req.url).searchParams.get('version')||'')?Number(new URL(req.url).searchParams.get('version')):1;const user=await getSiteUser(req);if(!user)return response({authenticated:false,entries:[],...(req.method==='POST'?{error:'请先登录，再同步追番和观看记录'}:{})},req.method==='POST'?401:200);
   const db=env.DB;if(!db)return response({error:'个人数据库暂不可用，请稍后重试'},503);
   const account={id:user.userId,displayName:user.displayName,provider:user.provider};
   if(req.method!=='POST')return response({authenticated:true,account,entries:await entries(db,user.userId,extended)});
@@ -37,7 +38,7 @@ export async function libraryResponse(req:Request){
   if(!/^application\/json(?:;|$)/i.test(req.headers.get('content-type')||''))return response({error:'请使用 JSON 请求'},415);
   const body=JSON.parse(await readRequestText(req,262144));if(body?.accountId!==user.userId)return response({error:'登录账号已变化，请刷新后同步'},409);
   if(!Array.isArray(body?.changes)||body.changes.length<1||body.changes.length>50)throw new Error('每次同步需包含 1 至 50 项操作');
-  const changes:LibraryChange[]=body.changes.map(parseChange);if(!extended&&changes.some(change=>change.kind==='aliases'))throw new Error('别名同步需要新版接口');if(new Set(changes.map(entryKey)).size!==changes.length)throw new Error('同步操作包含重复条目');
+  const changes:LibraryChange[]=body.changes.map(parseChange);if(changes.some(change=>extended<3&&change.kind==='danmaku'||extended<2&&change.kind==='aliases'))throw new Error('别名同步需要新版接口');if(new Set(changes.map(entryKey)).size!==changes.length)throw new Error('同步操作包含重复条目');
   const now=Date.now();
   const statements=changes.map(change=>{
    const value=change.value;if(change.kind==='history'&&value)(value as any).time=Math.min(now+60000,(value as any).time);

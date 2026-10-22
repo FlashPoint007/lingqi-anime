@@ -1,8 +1,10 @@
+import {danmakuSettings,type DanmakuSettings} from './danmaku';
 import {cleanAliases,cleanSubjectAliases,type SubjectAliases,type AliasRecord} from './subject-aliases';
 import {cleanCollection,cleanHistory,type WatchRecord} from './personal-data';
 import type {Subject} from './catalog';
-export type LibraryKind='collection'|'history'|'aliases';
-export type LibraryValue=Subject|WatchRecord|AliasRecord|null;
+export type DanmakuRecord={subjectId:0;settings:DanmakuSettings};
+export type LibraryKind='collection'|'history'|'aliases'|'danmaku';
+export type LibraryValue=Subject|WatchRecord|AliasRecord|DanmakuRecord|null;
 export type LibraryEntry={kind:LibraryKind;id:number;value:LibraryValue;version:number;updatedAt:number;sortAt:number};
 export type LibraryChange={kind:LibraryKind;id:number;value:LibraryValue;expectedVersion:number;mutationId:string};
 export type LibrarySnapshot={authenticated:boolean;account?:{id:string;displayName:string;provider?:'email'|'chatgpt'};entries:LibraryEntry[];accepted?:string[];conflicts?:string[];limited?:string[]};
@@ -14,16 +16,18 @@ export function librarySubject(value:unknown):Subject|undefined{
  const image=https(s.images?.large||s.images?.common,1024);
  return {id:s.id,...(s.collectionStatus?{collectionStatus:s.collectionStatus}:{}),name:s.name.slice(0,200),name_cn:clip(s.name_cn,200),date:clip(s.date,32),air_date:clip(s.air_date,32),eps:s.eps,score:s.score,rank:s.rank,platform:clip(s.platform,60),...(image?{images:{large:image}}:{}),...(s.rating?{rating:s.rating}:{})};
 }
-export function valueSubjectId(kind:LibraryKind,value:LibraryValue){return value===null?undefined:kind==='collection'?(value as Subject).id:kind==='aliases'?(value as AliasRecord).subjectId:(value as WatchRecord).subject.id;}
+export function valueSubjectId(kind:LibraryKind,value:LibraryValue){return value===null?undefined:kind==='collection'?(value as Subject).id:kind==='danmaku'?0:kind==='aliases'?(value as AliasRecord).subjectId:(value as WatchRecord).subject.id;}
 export function libraryValue(kind:LibraryKind,value:unknown):LibraryValue{
  if(value===null)return null;
+ if(kind==='danmaku'){const v=value as DanmakuRecord;if(!v||v.subjectId!==0||!v.settings||typeof v.settings!=='object'||Array.isArray(v.settings)||typeof v.settings.regexPatterns==='string'&&v.settings.regexPatterns.length>4096||typeof v.settings.keywords==='string'&&v.settings.keywords.length>2000)throw new Error('弹幕偏好同步格式不正确');return {subjectId:0,settings:danmakuSettings(v.settings)};}
  if(kind==='aliases'){const v=value as AliasRecord;if(!v||!Number.isSafeInteger(v.subjectId)||v.subjectId<=0||v.subjectId>9999999999||!Array.isArray(v.aliases)||v.aliases.length>16||v.aliases.some(alias=>typeof alias!=='string'||alias.length>120))throw new Error('别名同步格式不正确');return {subjectId:v.subjectId,aliases:cleanAliases(v.aliases)};}
  if(kind==='collection'){const s=librarySubject(value);if(!s)throw new Error('追番条目格式不正确');return s;}
  const h=cleanHistory([value])[0],subject=h&&librarySubject(h.subject),url=h&&https(h.url);if(!h||!subject||!url)throw new Error('观看记录格式不正确');
  return {subject,url,episode:h.episode.slice(0,200),time:Math.max(0,h.time),position:Math.min(7*86400,h.position),source:https(h.source),number:h.number,ruleName:clip(h.ruleName,100),...(h.progresses?{progresses:h.progresses}:{})};
 }
-export function visibleEntries(collection:Subject[],history:WatchRecord[],aliases:SubjectAliases={}){
+export function visibleEntries(collection:Subject[],history:WatchRecord[],aliases:SubjectAliases={},settings?:DanmakuSettings){
  const map=new Map<string,LibraryValue>();for(const value of collection){const s=librarySubject(value);if(s)map.set('collection:'+s.id,s);}for(const value of history){try{const h=libraryValue('history',value) as WatchRecord;map.set('history:'+h.subject.id,h);}catch{}}
+ if(settings)map.set('danmaku:0',{subjectId:0,settings:danmakuSettings(settings)});
  for(const [id,names] of Object.entries(cleanSubjectAliases(aliases)))map.set('aliases:'+id,{subjectId:Number(id),aliases:names});return map;
 }
 export const sameValue=(a:unknown,b:unknown)=>JSON.stringify(a)===JSON.stringify(b);
@@ -34,7 +38,8 @@ export function parseLibrarySnapshot(value:any):LibrarySnapshot{
  if(!value.authenticated){if(value.entries.length)throw new Error('匿名同步数据格式不正确');return {authenticated:false,entries:[]};}
  if(!value.account||typeof value.account.id!=='string'||!value.account.id||value.account.id.length>512||typeof value.account.displayName!=='string'||value.account.displayName.length>1024)throw new Error('个人同步账号格式不正确');
  const keys=new Set<string>();const entries:LibraryEntry[]=value.entries.map((entry:any)=>{
-  if(!entry||!['collection','history','aliases'].includes(entry.kind)||!Number.isSafeInteger(entry.id)||entry.id<0||entry.id>9999999999||!Number.isSafeInteger(entry.version)||entry.version<1||!Number.isFinite(entry.updatedAt)||entry.updatedAt<0||!Number.isFinite(entry.sortAt)||entry.sortAt<0)throw new Error('个人同步条目格式不正确');
+  if(!entry||!['collection','history','aliases','danmaku'].includes(entry.kind)||!Number.isSafeInteger(entry.id)||entry.id<0||entry.id>9999999999||!Number.isSafeInteger(entry.version)||entry.version<1||!Number.isFinite(entry.updatedAt)||entry.updatedAt<0||!Number.isFinite(entry.sortAt)||entry.sortAt<0)throw new Error('个人同步条目格式不正确');
+  if(entry.kind==='danmaku'&&entry.id!==0)throw new Error('弹幕偏好编号不正确');
   const clean=libraryValue(entry.kind,entry.value),id=valueSubjectId(entry.kind,clean);
   if(clean!==null&&id!==entry.id)throw new Error('个人同步条目 ID 不一致');const key=entryKey(entry);if(keys.has(key))throw new Error('个人同步条目重复');keys.add(key);
   return {kind:entry.kind,id:entry.id,value:clean,version:entry.version,updatedAt:entry.updatedAt,sortAt:entry.sortAt};

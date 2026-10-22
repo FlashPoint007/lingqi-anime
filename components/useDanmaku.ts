@@ -4,8 +4,9 @@ import {requestJson,anySignal,timeoutSignal} from '../lib/request-client';
 import {danmakuSettings,defaultDanmakuSettings,exactDanmakuEpisode,parseDanmakuLink,importDanmaku,type DanmakuSettings,type DanmakuComment,type DanmakuMatch,type DanmakuEpisode,type DanmakuNotice} from '../lib/danmaku';
 type CommentData={comments:DanmakuComment[];total:number;sampled:boolean};
 const settingsKey='kw-danmaku-settings-v1';
-export function useDanmaku(subjectId:number,number:number|undefined){
- const [settings,setSettings]=useState<DanmakuSettings>(defaultDanmakuSettings),[hydrated,setHydrated]=useState(false),[revision,setRevision]=useState(0);
+export function useDanmaku(subjectId:number,number:number|undefined,controlled?:DanmakuSettings,onChange?:(settings:DanmakuSettings)=>void){
+ const [localSettings,setLocalSettings]=useState<DanmakuSettings>(defaultDanmakuSettings),[hydrated,setHydrated]=useState(false),[revision,setRevision]=useState(0);
+ const settings=controlled||localSettings,settingsRef=useRef(settings);settingsRef.current=settings;const setSettings=(change:DanmakuSettings|((current:DanmakuSettings)=>DanmakuSettings))=>{const next=danmakuSettings(typeof change==='function'?change(settingsRef.current):change);settingsRef.current=next;if(controlled&&onChange)onChange(next);else setLocalSettings(next);};
  const [matches,setMatches]=useState<DanmakuMatch[]>([]),[notices,setNotices]=useState<DanmakuNotice[]>([]),[selected,setSelected]=useState(''),[matchStatus,setMatchStatus]=useState('');
  const [catalogue,setCatalogue]=useState<{key:string;title:string;episodes:DanmakuEpisode[];direct?:boolean}>(),[manualEpisode,setManualEpisode]=useState<{key:string;id:string}>(),[episodeStatus,setEpisodeStatus]=useState('');
  const [loaded,setLoaded]=useState<{key:string;data:CommentData}>(),[commentStatus,setCommentStatus]=useState(''),[loading,setLoading]=useState(false),[local,setLocal]=useState<CommentData>(),[fileStatus,setFileStatus]=useState('');
@@ -13,8 +14,8 @@ export function useDanmaku(subjectId:number,number:number|undefined){
  const fileGeneration=useRef(0),mounted=useRef(true),manualMatches=useRef<DanmakuMatch[]>([]),automaticMatches=useRef<DanmakuMatch[]>([]),attempted=useRef(new Set<string>()),automaticMode=useRef(true);automaticMode.current=automatic;
  const matchKey=(m:DanmakuMatch)=>m.provider+':'+m.key;
  const ranked=(sources:DanmakuMatch[])=>[...sources].sort((a,b)=>(a.provider==='dandan'?-1:a.provider==='bilibili'?0:1)-(b.provider==='dandan'?-1:b.provider==='bilibili'?0:1));
- useEffect(()=>{mounted.current=true;try{setSettings(danmakuSettings(JSON.parse(localStorage.getItem(settingsKey)||'null')));}catch{}setHydrated(true);return()=>{mounted.current=false;fileGeneration.current++;};},[]);
- useEffect(()=>{if(hydrated)try{localStorage.setItem(settingsKey,JSON.stringify(settings));}catch{}},[settings,hydrated]);
+ useEffect(()=>{mounted.current=true;try{if(!controlled)setLocalSettings(danmakuSettings(JSON.parse(localStorage.getItem(settingsKey)||'null')));}catch{}setHydrated(true);return()=>{mounted.current=false;fileGeneration.current++;};},[]);
+ useEffect(()=>{if(hydrated&&!controlled)try{localStorage.setItem(settingsKey,JSON.stringify(settings));}catch{}},[settings,hydrated,!!controlled]);
  useEffect(()=>{
   if(!hydrated||!settings.enabled||subjectId<=0)return;
   const controller=new AbortController();let live=true;setMatchStatus('正在匹配番剧弹幕…');

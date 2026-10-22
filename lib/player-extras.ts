@@ -32,6 +32,7 @@ export function createPlaybackTimer(onExpire:()=>void,clock:()=>number=Date.now)
 }
 
 export async function captureVideoFrame(video:HTMLVideoElement){
+ if(video.seeking)throw Error('画面正在跳转，请等待完成后再截图');
  if(video.readyState<2||!video.videoWidth||!video.videoHeight)throw Error('视频画面加载完成后才能截图');
  const scale=Math.min(1,3840/video.videoWidth,2160/video.videoHeight),canvas=document.createElement('canvas');
  canvas.width=Math.max(1,Math.round(video.videoWidth*scale));canvas.height=Math.max(1,Math.round(video.videoHeight*scale));

@@ -1,4 +1,8 @@
 'use client';
+import type {DanmakuSettings} from '../lib/danmaku';
+import ShareButton from './ShareButton';
+import {subjectHash} from '../lib/share-links';
+import {useScreenshotCandidates} from './ScreenshotCandidates';
 import {BatchDownloadPicker} from './DownloadQueue';
 import SubjectAliases from './SubjectAliases';
 import {useEffect,useMemo,useRef,useState,type ReactNode} from 'react';
@@ -15,8 +19,9 @@ import type {Subject} from '../lib/catalog';
 import type {Rule} from '../lib/web-core';
 import {knownEpisodeNumber,episodeLabel,episodeNumber,episodeNeighbors,visibleEpisodes,playbackUrls,type Episode,type EpisodeTarget,type Road} from '../lib/playback-client';
 type Playback={subject:Subject;episode:string;url:string;sourceUrl:string;source?:string;position:number;mediaUrl?:string;mediaType?:'hls'|'video';preferDirect?:boolean;number?:number;ruleName?:string};
-type Props={sourceContext?:string;aliases?:string[];onAliases?:(names:string[])=>void;viewerKey?:string;progresses?:EpisodeProgresses;privatePlayback?:boolean;onPrivacy?:(value:boolean)=>void;dataSync?:ReactNode;player:Playback;mode:string;error:string;status:string;rules:Rule[];ruleIdx:number;query:string;busy:boolean;sourceError:string;results:{name:string;url:string}[];roads:Road[];road:number;episodes:{id:number;sort:number;name:string;name_cn?:string}[];checks:Record<string,SourceAvailability>;onCheckRefresh:()=>void;onCheckSelect:(index:number,check:SourceAvailability)=>void;onBack:()=>void;onRetry:()=>void;onCancel:()=>void;onReady:()=>void;onError:(s:string)=>void;onTime:(n:number,flush?:boolean,duration?:number,ended?:boolean)=>void;onRule:(n:number)=>void;onQuery:(s:string)=>void;onSearch:()=>void;onStopSource:()=>void;onResult:(url:string)=>void;onRoad:(n:number)=>void;onPlay:(e:Episode)=>void;onAuto:(n:number)=>void};
+type Props={danmakuPreferences?:DanmakuSettings;onDanmakuPreferences?:(settings:DanmakuSettings)=>void;danmakuSync?:string;sourceContext?:string;aliases?:string[];onAliases?:(names:string[])=>void;viewerKey?:string;progresses?:EpisodeProgresses;privatePlayback?:boolean;onPrivacy?:(value:boolean)=>void;dataSync?:ReactNode;player:Playback;mode:string;error:string;status:string;rules:Rule[];ruleIdx:number;query:string;busy:boolean;sourceError:string;results:{name:string;url:string}[];roads:Road[];road:number;episodes:{id:number;sort:number;name:string;name_cn?:string}[];checks:Record<string,SourceAvailability>;onCheckRefresh:()=>void;onCheckSelect:(index:number,check:SourceAvailability)=>void;onBack:()=>void;onRetry:()=>void;onCancel:()=>void;onReady:()=>void;onError:(s:string)=>void;onTime:(n:number,flush?:boolean,duration?:number,ended?:boolean)=>void;onRule:(n:number)=>void;onQuery:(s:string)=>void;onSearch:()=>void;onStopSource:()=>void;onResult:(url:string)=>void;onRoad:(n:number)=>void;onPlay:(e:Episode)=>void;onAuto:(n:number)=>void};
 export default function WatchPage(p:Props){
+ const screenshots=useScreenshotCandidates((p.viewerKey||'anonymous')+':'+p.player.subject.id);
  const [panel,setPanel]=useState(true),[autoNext,setAutoNext]=useState(false),[episodeQuery,setEpisodeQuery]=useState(''),[descending,setDescending]=useState(false);
  useEffect(()=>setEpisodeQuery(''),[p.player.subject.id,p.ruleIdx]);
  useEffect(()=>{try{setAutoNext(localStorage.getItem('kw-auto-next')==='true');}catch{}},[]);
@@ -45,7 +50,7 @@ export default function WatchPage(p:Props){
   <header className="watch-header">
    <button className="watch-back" aria-label="返回番剧" title="返回番剧" onClick={p.onBack}><span className="watch-brand-mark" aria-hidden="true">07</span><span className="watch-brand-copy"><b>零柒番剧</b><small>放映室 / WATCH</small></span><ArrowLeft size={16}/></button>
    <div className="watch-title">{p.privatePlayback&&<span className="private-playback-badge" role="status">隐身观看 · 不保存本站记录</span>}<h1>{p.player.subject.name_cn||p.player.subject.name}</h1><p>{episodeLabel(p.player.episode,currentNumber)} · {p.mode==='resolving'?'正在寻找播放线路':p.mode==='video'?'本站播放':'当前线路'}</p></div>
-   <div className="watch-header-actions">
+   <div className="watch-header-actions">{p.player.subject.id>0&&<ShareButton hash={subjectHash(p.player.subject.id)} label="分享番剧"/>}
     <button className="watch-next watch-previous" disabled={!previous||p.mode==='resolving'} onClick={()=>go(previous)}><ChevronLeft size={16}/><span>上一集</span></button>
     <button className="watch-next" disabled={!next||p.mode==='resolving'} onClick={()=>go(next)}>下一集 <ChevronRight size={16}/></button>
     <button className="watch-panel-toggle" aria-label={panel?'收起选集面板':'展开选集面板'} aria-expanded={panel} onClick={()=>setPanel(!panel)}>{panel?<PanelRightClose size={19}/>:<PanelRightOpen size={19}/>}</button>
@@ -54,7 +59,7 @@ export default function WatchPage(p:Props){
   <div className="watch-layout">
    <main className="watch-main" aria-label="站内播放器">
     <div className="watch-stage">
-     {p.mode==='video'?<Player mediaRef={media} mayPlay={()=>sleep.current!.mayPlay()} playbackBlocked={sleepExpired} onPlayIntent={resumeSleep} key={p.player.url} {...urls} mediaType={p.player.mediaType} castUrl={p.player.mediaUrl} subjectId={p.player.subject.id} episodeNumber={currentNumber} position={p.player.position} onTime={p.onTime} onNext={()=>go(next)} onPrevious={()=>go(previous)} onReady={p.onReady} onError={p.onError} onEnded={()=>{if(sleep.current!.mayPlay(true)&&autoNext&&next)go(next);}}/>:<div className="playback-placeholder">
+     {p.mode==='video'?<Player onScreenshot={(blob,time)=>screenshots.add(blob,p.player.subject.name_cn||p.player.subject.name,p.player.episode,time)} danmakuPreferences={p.danmakuPreferences} onDanmakuPreferences={p.onDanmakuPreferences} danmakuSync={p.danmakuSync} mediaRef={media} mayPlay={()=>sleep.current!.mayPlay()} playbackBlocked={sleepExpired} onPlayIntent={resumeSleep} key={(p.viewerKey||'anonymous')+p.player.url} {...urls} mediaType={p.player.mediaType} castUrl={p.player.mediaUrl} subjectId={p.player.subject.id} episodeNumber={currentNumber} position={p.player.position} onTime={p.onTime} onNext={()=>go(next)} onPrevious={()=>go(previous)} onReady={p.onReady} onError={p.onError} onEnded={()=>{if(sleep.current!.mayPlay(true)&&autoNext&&next)go(next);}}/>:<div className="playback-placeholder">
       <AnimeCover className="watch-loading-art" src={p.player.subject.images?.large||p.player.subject.images?.common} alt=""/>
       <div className="watch-preparing-copy">
        <span className="watch-loading-symbol" aria-hidden="true">07</span>
@@ -66,6 +71,7 @@ export default function WatchPage(p:Props){
       </div>
      </div>}
     </div>
+    {screenshots.panel}
     <BatchDownloadPicker owner={p.viewerKey||'anonymous'} subject={p.player.subject} episodes={p.roads[p.road]?.episodes||[]} rule={p.rules[p.ruleIdx]} source={p.sourceContext||p.player.source}/>
     {p.mode==='video'&&<DownloadEpisode key={p.player.sourceUrl} owner={p.viewerKey||'anonymous'} subject={p.player.subject} episode={p.player.episode} number={currentNumber} nativeUrl={p.player.url} url={urls.url} sourceUrl={p.player.sourceUrl} source={p.player.source} ruleName={p.player.ruleName} mediaType={p.player.mediaType}/>}
     <Discussions key={p.viewerKey||'anonymous'} subjectId={p.player.subject.id} episodeNumber={currentNumber} episodeId={p.episodes.find(e=>e.sort===currentNumber)?.id}/>

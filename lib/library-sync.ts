@@ -1,15 +1,17 @@
+import {defaultDanmakuSettings,type DanmakuSettings} from './danmaku';
 import {type SubjectAliases,type AliasRecord} from './subject-aliases';
-import {valueSubjectId,entryKey,libraryValue,parseLibrarySnapshot,sameValue,visibleEntries,type LibraryChange,type LibraryEntry,type LibrarySnapshot,type LibraryValue} from './library-model';
+import {valueSubjectId,entryKey,libraryValue,parseLibrarySnapshot,sameValue,visibleEntries,type LibraryChange,type LibraryEntry,type LibrarySnapshot,type LibraryValue,type DanmakuRecord} from './library-model';
 import type {Subject} from './catalog';
 import type {WatchRecord} from './personal-data';
 import {mergeHistory} from './personal-data';
 export type SyncPhase='saved'|'pending'|'saving'|'error';
-type Options={request:(changes?:LibraryChange[])=>Promise<LibrarySnapshot>;apply:(collection:Subject[],history:WatchRecord[],aliases:SubjectAliases)=>void;persist:(pending:LibraryChange[],snapshot:LibrarySnapshot)=>void;status:(phase:SyncPhase,message?:string)=>void;accountChanged:(snapshot:LibrarySnapshot)=>void};
+type Options={request:(changes?:LibraryChange[])=>Promise<LibrarySnapshot>;apply:(collection:Subject[],history:WatchRecord[],aliases:SubjectAliases,settings:DanmakuSettings)=>void;persist:(pending:LibraryChange[],snapshot:LibrarySnapshot)=>void;status:(phase:SyncPhase,message?:string)=>void;accountChanged:(snapshot:LibrarySnapshot)=>void};
 export function restoreChanges(value:unknown):LibraryChange[]{
  if(!Array.isArray(value))return [];
  const restored=new Map<string,LibraryChange>();
  for(const change of value){try{
-  if(!change||!['collection','history','aliases'].includes(change.kind)||!Number.isSafeInteger(change.id)||change.id<0||change.id>9999999999||!Number.isSafeInteger(change.expectedVersion)||change.expectedVersion<0||typeof change.mutationId!=='string'||!/^[-\w]{16,80}$/.test(change.mutationId))continue;
+  if(!change||!['collection','history','aliases','danmaku'].includes(change.kind)||!Number.isSafeInteger(change.id)||change.id<0||change.id>9999999999||!Number.isSafeInteger(change.expectedVersion)||change.expectedVersion<0||typeof change.mutationId!=='string'||!/^[-\w]{16,80}$/.test(change.mutationId))continue;
+  if(change.kind==='danmaku'&&change.id!==0)continue;
   const clean=libraryValue(change.kind,change.value);if(clean!==null&&valueSubjectId(change.kind,clean)!==change.id)continue;
   const normalized:LibraryChange={kind:change.kind,id:change.id,expectedVersion:change.expectedVersion,mutationId:change.mutationId,value:clean},key=entryKey(normalized);
   if((restored.get(key)?.expectedVersion??-1)>normalized.expectedVersion)continue;
@@ -20,13 +22,13 @@ export function restoreChanges(value:unknown):LibraryChange[]{
 const mutationId=()=>crypto.randomUUID();
 export class LibrarySync{
  private entries=new Map<string,LibraryEntry>();private pending=new Map<string,LibraryChange>();private visible=new Map<string,LibraryValue>();private work:Promise<void>|null=null;private stopped=false;private refreshing=false;
- constructor(private snapshot:LibrarySnapshot,private options:Options,legacy:{collection:Subject[];history:WatchRecord[];aliases?:SubjectAliases},outbox:LibraryChange[]=[]){
+ constructor(private snapshot:LibrarySnapshot,private options:Options,legacy:{collection:Subject[];history:WatchRecord[];aliases?:SubjectAliases;settings?:DanmakuSettings},outbox:LibraryChange[]=[]){
   this.replace(snapshot);for(const change of outbox)this.pending.set(entryKey(change),change);
-  for(const [key,value] of visibleEntries(legacy.collection,legacy.history,legacy.aliases)){
+  for(const [key,value] of visibleEntries(legacy.collection,legacy.history,legacy.aliases,legacy.settings)){
    const old=this.entries.get(key);if(this.pending.has(key)||old?.value===null)continue;
    // Existing cloud favourites win; migrate only new favourites or newer progress.
    if(!old||(old.kind==='history'&&(value as WatchRecord).time>(old.value as WatchRecord).time)){
-    const [kind,id]=key.split(':');this.pending.set(key,{kind:kind as 'collection'|'history'|'aliases',id:Number(id),value,expectedVersion:old?.version||0,mutationId:mutationId()});
+    const [kind,id]=key.split(':');this.pending.set(key,{kind:kind as 'collection'|'history'|'aliases'|'danmaku',id:Number(id),value,expectedVersion:old?.version||0,mutationId:mutationId()});
    }
   }
   this.render();this.persist();
@@ -38,11 +40,11 @@ export class LibrarySync{
   this.visible=new Map([...values].filter(([,value])=>value!==null));
   const collection=[...this.visible].filter(([key])=>key.startsWith('collection:')).sort(([a],[b])=>(this.entries.get(b)?.sortAt||Date.now())-(this.entries.get(a)?.sortAt||Date.now())).map(([,value])=>value as Subject);
   const history=[...this.visible].filter(([key])=>key.startsWith('history:')).map(([,value])=>value as WatchRecord).sort((a,b)=>b.time-a.time).slice(0,100);
-  const aliases=Object.fromEntries([...this.visible].filter(([key])=>key.startsWith('aliases:')).map(([,value])=>{const a=value as AliasRecord;return [String(a.subjectId),a.aliases];}));this.options.apply(collection,history,aliases);
+  const aliases=Object.fromEntries([...this.visible].filter(([key])=>key.startsWith('aliases:')).map(([,value])=>{const a=value as AliasRecord;return [String(a.subjectId),a.aliases];}));this.options.apply(collection,history,aliases,(this.visible.get('danmaku:0') as DanmakuRecord|undefined)?.settings||defaultDanmakuSettings);
  }
- observe(collection:Subject[],history:WatchRecord[],aliases?:SubjectAliases){
-  if(this.stopped)return;const retained=Object.fromEntries([...this.visible].filter(([key])=>key.startsWith('aliases:')).map(([,value])=>{const a=value as AliasRecord;return [String(a.subjectId),a.aliases];}));const next=visibleEntries(collection,history,aliases??retained);let changed=false;
-  for(const key of new Set([...next.keys(),...this.visible.keys()])){const value=next.get(key)??null;if(sameValue(value,this.visible.get(key)??null))continue;changed=true;const [kind,id]=key.split(':');this.pending.set(key,{kind:kind as 'collection'|'history'|'aliases',id:Number(id),value,expectedVersion:this.entries.get(key)?.version||0,mutationId:mutationId()});}
+ observe(collection:Subject[],history:WatchRecord[],aliases?:SubjectAliases,settings?:DanmakuSettings){
+  if(this.stopped)return;const retained=Object.fromEntries([...this.visible].filter(([key])=>key.startsWith('aliases:')).map(([,value])=>{const a=value as AliasRecord;return [String(a.subjectId),a.aliases];}));const next=visibleEntries(collection,history,aliases??retained,settings||(this.visible.get('danmaku:0') as DanmakuRecord|undefined)?.settings);let changed=false;
+  for(const key of new Set([...next.keys(),...this.visible.keys()])){const value=next.get(key)??null;if(sameValue(value,this.visible.get(key)??null))continue;changed=true;const [kind,id]=key.split(':');this.pending.set(key,{kind:kind as 'collection'|'history'|'aliases'|'danmaku',id:Number(id),value,expectedVersion:this.entries.get(key)?.version||0,mutationId:mutationId()});}
   this.visible=next;if(changed)this.persist();
  }
  get hasPending(){return this.pending.size>0;}

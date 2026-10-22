@@ -100,6 +100,7 @@ export async function readTicket(raw:string):Promise<Ticket>{
 export async function proxyMedia(req:Request){
  let ticket:Ticket;try{ticket=await readTicket(new URL(req.url).searchParams.get('ticket')||'');}catch(e){return Response.json({error:(e as Error).message},{status:403});}
  const headers:Record<string,string>={'User-Agent':UA,...mediaReferer(ticket.referer),Accept:'*/*'};const range=req.headers.get('range');if(range){const match=range.match(/^bytes=(\d{0,16})-(\d{0,16})$/);if(!match||!match[1]&&!match[2]||[match[1],match[2]].some(n=>n&&!Number.isSafeInteger(Number(n)))||match[1]&&match[2]&&Number(match[1])>Number(match[2])||!match[1]&&Number(match[2])===0)return new Response('Invalid range',{status:416});headers.Range=range;}
+ const ifRange=req.headers.get('if-range');if(range&&ifRange&&ifRange.length<=256&&!/[\r\n]/.test(ifRange))headers['If-Range']=ifRange;
  try{
   const {res,url}=await fetchPublic(ticket.url,{headers,method:req.method==='HEAD'?'HEAD':'GET',signal:req.signal},true);if(!res.ok){discard(res);return new Response('当前视频线路响应 '+res.status,{status:res.status===416?416:502,headers:res.status===416&&res.headers.has('content-range')?{'Content-Range':res.headers.get('content-range')!}:{}});}
   const type=res.headers.get('content-type')||'';const playlist=isMedia(url)&&/\.m3u8(?:[?#]|$)/i.test(url)||/mpegurl/i.test(type);
@@ -115,7 +116,7 @@ export async function proxyMedia(req:Request){
    output.set('Content-Type','application/vnd.apple.mpegurl');return new Response(lines.join('\n'),{headers:output});
   }
   if(/text\/html|json|javascript|xml/i.test(type)){discard(res);throw new Error('源站返回了网页，无法作为视频播放');}
-  for(const h of ['content-type','content-length','content-range','accept-ranges']){const value=res.headers.get(h);if(value)output.set(h,value);}if(!output.has('Content-Type'))output.set('Content-Type','application/octet-stream');
+  for(const h of ['content-type','content-length','content-range','accept-ranges','etag','last-modified']){const value=res.headers.get(h);if(value)output.set(h,value);}if(!output.has('Content-Type'))output.set('Content-Type','application/octet-stream');
   if(req.method==='HEAD')discard(res);return new Response(req.method==='HEAD'?null:res.body,{status:res.status,headers:output});
  }catch(e){return Response.json({error:(e as Error).message},{status:502});}
 }

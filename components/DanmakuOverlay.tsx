@@ -1,13 +1,14 @@
 'use client';
 import {useEffect,useRef,type RefObject} from 'react';
-import {filteredDanmaku,type DanmakuComment,type DanmakuSettings} from '../lib/danmaku';
+import {type DanmakuComment,type DanmakuSettings} from '../lib/danmaku';
+import {advancedDanmaku} from '../lib/danmaku-blocks';
 import {layoutDanmaku,activeDanmaku} from '../lib/danmaku-layout';
 export default function DanmakuOverlay({media,comments,settings}:{media:RefObject<HTMLVideoElement|null>;comments:DanmakuComment[];settings:DanmakuSettings}){
  const canvas=useRef<HTMLCanvasElement>(null);
  useEffect(()=>{
   const v=media.current,c=canvas.current;if(!v||!c)return;const context=c.getContext('2d');if(!context)return;
   let frame=0,width=0,height=0,rows:ReturnType<typeof layoutDanmaku>=[],disposed=false,lastTime=-Infinity;
-  const filtered=filteredDanmaku(comments,settings),font=`600 ${settings.fontSize}px system-ui, "Noto Sans SC", sans-serif`;
+  const filtered=advancedDanmaku(comments,settings),font=`600 ${settings.fontSize}px system-ui, "Noto Sans SC", sans-serif`;
   const draw=()=>{
    const time=v.currentTime-settings.offset;if(time===lastTime)return;lastTime=time;context.clearRect(0,0,width,height);
    if(!settings.enabled||v.readyState<2||v.seeking){c.dataset.active='0';return;}

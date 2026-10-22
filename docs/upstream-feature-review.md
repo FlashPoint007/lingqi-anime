@@ -1,5 +1,8 @@
 # Kazumi / 零柒番剧功能审查
 
+
+> 2026-10-22 更新：站内下载分片续传与完整传输进度、独立分享链接、搜索／时间表排除已看完与已弃番、弹幕高级屏蔽与 D1 同步、截图候选管理已接入。当前行为与浏览器边界见 [实现说明](resume-share-and-personal-tools.md)。下文保留原审查日期的结论。
+
 审查日期：2026-10-21。上游基准：`Predidit/Kazumi` main `184f8db535f9b4098ada763fcefea8e602126dc7`。审查了 README、`lib/pages`、`lib/request/apis`、`lib/services/player`、`lib/services/sync`、弹幕设置及发布工作流，并与本站实际组件和接口逐项对照。已实现不等于所有第三方片源均可访问；未实现项目明确保留为缺口。
 
 ## 已有和本次补齐

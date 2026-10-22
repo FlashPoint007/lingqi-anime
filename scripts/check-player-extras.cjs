@@ -21,7 +21,7 @@ assert.equal(catalog.normalizeRelatedSubjects(Array.from({length:80},(_,i)=>({id
 (async()=>{
  let drawn,exported=false;const screen=load('lib/player-extras.ts',{document:{createElement:()=>({getContext:()=>({drawImage:(...args)=>drawn=args}),toBlob:fn=>{exported=true;fn(new Blob(['png'],{type:'image/png'}));}})}});
  const media={readyState:2,videoWidth:7680,videoHeight:4320};const blob=await screen.captureVideoFrame(media);assert.equal(blob.type,'image/png');assert.equal(drawn[3],3840);assert.equal(drawn[4],2160);assert.equal(exported,true);
- await assert.rejects(screen.captureVideoFrame({...media,readyState:0}),/加载/);
+ await assert.rejects(screen.captureVideoFrame({...media,readyState:0}),/加载/);await assert.rejects(screen.captureVideoFrame({...media,seeking:true}),/跳转/);
  const blocked=load('lib/player-extras.ts',{document:{createElement:()=>({getContext:()=>({drawImage(){throw Object.assign(new Error('tainted'),{name:'SecurityError'});}})})}});
  // Native SecurityError is an Error in the browser; use the module's own realm here.
  await assert.rejects(blocked.captureVideoFrame(media),/禁止读取/);

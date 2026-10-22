@@ -1,6 +1,8 @@
 'use client';
 import {useEffect,useRef,useState} from 'react';
 import {Copy,Download,MoreHorizontal,RefreshCw} from 'lucide-react';
+import ShareButton from './ShareButton';
+import {subjectHash} from '../lib/share-links';
 import type {Subject} from '../lib/catalog';
 export default function SubjectActions({subject}:{subject:Subject}){
  const [status,setStatus]=useState(''),[busy,setBusy]=useState(false),[manual,setManual]=useState('');
@@ -18,5 +20,5 @@ export default function SubjectActions({subject}:{subject:Subject}){
   }catch(error){if(alive.current&&(!request.signal.aborted||request.signal.reason?.name==='TimeoutError'))setStatus(request.signal.reason?.name==='TimeoutError'?'封面下载超时，请重试':(error as Error).message||'封面下载失败，请重试');}
   finally{clearTimeout(timer);if(alive.current)setBusy(false);if(controller.current===request)controller.current=undefined;}
  };
- return <details className="subject-actions"><summary className="secondary" aria-label="番剧更多操作"><MoreHorizontal size={16}/>更多</summary><div className="subject-actions-menu" role="group" aria-label="番剧操作"><button type="button" onClick={()=>void copy(subject.name_cn||subject.name)}><Copy size={15}/>复制番剧标题</button>{subject.name_cn&&subject.name_cn!==subject.name&&<button type="button" onClick={()=>void copy(subject.name)}><Copy size={15}/>复制原名</button>}<button type="button" onClick={()=>void save()} disabled={busy}>{busy?<RefreshCw size={15} className="spin"/>:<Download size={15}/>}保存封面</button>{status&&<p role="status">{status}</p>}{manual&&<input aria-label="可手动复制的标题" value={manual} readOnly onFocus={e=>e.currentTarget.select()}/>}</div></details>;
+ return <details className="subject-actions"><summary className="secondary" aria-label="番剧更多操作"><MoreHorizontal size={16}/>更多</summary><div className="subject-actions-menu" role="group" aria-label="番剧操作"><ShareButton hash={subjectHash(subject.id)} label="分享这部番剧"/><button type="button" onClick={()=>void copy(subject.name_cn||subject.name)}><Copy size={15}/>复制番剧标题</button>{subject.name_cn&&subject.name_cn!==subject.name&&<button type="button" onClick={()=>void copy(subject.name)}><Copy size={15}/>复制原名</button>}<button type="button" onClick={()=>void save()} disabled={busy}>{busy?<RefreshCw size={15} className="spin"/>:<Download size={15}/>}保存封面</button>{status&&<p role="status">{status}</p>}{manual&&<input aria-label="可手动复制的标题" value={manual} readOnly onFocus={e=>e.currentTarget.select()}/>}</div></details>;
 }

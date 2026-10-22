@@ -1,9 +1,13 @@
 type DB=Pick<D1Database,'prepare'>;
 type Group='page'|'metadata'|'source'|'resolve'|'media'|'download'|'rules'|'personal'|'auth';
-const limits:Record<Group,{limit:number;block:number;parallel:number;clientParallel:number}>={download:{limit:20,block:1,parallel:12,clientParallel:2},auth:{limit:10,block:1,parallel:4,clientParallel:1},page:{limit:300,block:10,parallel:48,clientParallel:16},metadata:{limit:180,block:10,parallel:48,clientParallel:16},source:{limit:180,block:10,parallel:24,clientParallel:8},resolve:{limit:30,block:3,parallel:8,clientParallel:3},media:{limit:1200,block:30,parallel:80,clientParallel:20},rules:{limit:40,block:5,parallel:16,clientParallel:8},personal:{limit:120,block:5,parallel:16,clientParallel:4}};
+const limits:Record<Group,{limit:number;block:number;parallel:number;clientParallel:number}>={download:{limit:60,block:1,parallel:24,clientParallel:6},auth:{limit:10,block:1,parallel:4,clientParallel:1},page:{limit:300,block:10,parallel:48,clientParallel:16},metadata:{limit:180,block:10,parallel:48,clientParallel:16},source:{limit:180,block:10,parallel:24,clientParallel:8},resolve:{limit:30,block:3,parallel:8,clientParallel:3},media:{limit:1200,block:30,parallel:80,clientParallel:20},rules:{limit:40,block:5,parallel:16,clientParallel:8},personal:{limit:120,block:5,parallel:16,clientParallel:4}};
 type Bucket={window:number;remaining:number;blocked:boolean;localAllocated?:boolean};
 const locks=new Map<string,Promise<void>>();
 const buckets=new Map<string,Bucket>(),active=new Map<string,number>(),globalActive=new Map<Group,number>();let cleanupAt=0;
+// A canceled Worker invocation may never consume/cancel its response stream.
+// Only bounded source/resolve requests receive leases; media/download streams
+// retain their slots for the full transfer. Leases do not reset rate quotas.
+const sourceLeases=new Map<()=>void,number>();
 export class RequestLimitError extends Error{constructor(message:string,public status:number){super(message);}}
 export async function readRequestText(req:Request,max=65536){
  const length=req.headers.get('content-length');if(length&&(!/^\d+$/.test(length)||Number(length)>max))throw new RequestLimitError('请求过大',413);
@@ -58,10 +62,12 @@ export async function guardRequest(req:Request,db?:DB,secret?:string,override?:'
   if(Number(req.headers.get('content-length'))>(url.pathname==='/api/library'?262144:65536))return {response:reject('请求过大',413),release:noop};
  }
  const g=override||group(req),client=await identity(req,secret,trustedEdge,g==='personal'),key=client+':'+g,shared=client==='shared',config=limits[g],retry=Math.max(1,Math.ceil((60000-Date.now()%60000)/1000));
+ for(const [release,expires] of sourceLeases)if(expires<=Date.now())release();
  if((globalActive.get(g)||0)>=config.parallel||(active.get(key)||0)>=(shared?config.parallel:config.clientParallel))return {response:reject('当前请求较多，请稍后重试',429,3),release:noop};
  // Reserve concurrency before the asynchronous rate lookup as well.
  globalActive.set(g,(globalActive.get(g)||0)+1);active.set(key,(active.get(key)||0)+1);let released=false;
- const release=()=>{if(released)return;released=true;globalActive.set(g,Math.max(0,(globalActive.get(g)||1)-1));const n=(active.get(key)||1)-1;if(n>0)active.set(key,n);else active.delete(key);};
+ const release=()=>{if(released)return;released=true;sourceLeases.delete(release);globalActive.set(g,Math.max(0,(globalActive.get(g)||1)-1));const n=(active.get(key)||1)-1;if(n>0)active.set(key,n);else active.delete(key);};
+ if(g==='source'||g==='resolve')sourceLeases.set(release,Date.now()+60000);
  try{if(!await reserve(key,g,shared,db)){release();return {response:reject('访问过于频繁，请稍后重试',429,retry),release:noop};}}catch{release();return {response:reject('服务繁忙，请稍后重试',503,3),release:noop};}
  return {release};
 }

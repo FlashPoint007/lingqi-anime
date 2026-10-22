@@ -12,4 +12,4 @@ export function parseSearchFilters(params:URLSearchParams){
  const rawDays=bounded('weekdays'),weekdays=rawDays?[...new Set(rawDays.split(',').map(Number))].sort():[];if(weekdays.length>7||weekdays.some(n=>!Number.isInteger(n)||n<1||n>7))throw Error('放送星期无效');
  return {tags,rating,rank,from,to,weekdays,active:!!(tags.length||rating||rank||from||to||weekdays.length)};
 }
-export function searchHistory(value:unknown):string[]{return Array.isArray(value)?[...new Set(value.filter((q):q is string=>typeof q==='string').map(q=>q.trim().slice(0,120)).filter(Boolean))].slice(0,12):[];}
+export function searchHistory(value:unknown):string[]{return Array.isArray(value)?[...new Set(value.filter((q):q is string=>typeof q==='string').map(q=>q.trim().slice(0,500)).filter(Boolean))].slice(0,12):[];}

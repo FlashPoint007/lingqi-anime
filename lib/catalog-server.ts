@@ -1,3 +1,4 @@
+import {shortcutSearchParams} from './search-query';
 import snapshot from './catalog-snapshot.json';
 import {parseSearchFilters} from './search-filters';
 import {PAGE_SIZE,currentSeason,seasonRange,normalizeSubjects,normalizeCalendar,normalizeSubject} from './catalog';
@@ -39,6 +40,7 @@ export async function seasonCatalog(params:URLSearchParams,upstream:Upstream){
 }
 
 export async function browseCatalog(params:URLSearchParams,upstream:Upstream){
+ params=shortcutSearchParams(params);
  const q=(params.get('q')||'').slice(0,120),tag=(params.get('tag')||'').slice(0,40),cat=params.get('cat')||'',year=params.get('year')||'';
  const mode=['date','rank','popular'].includes(params.get('mode')||'')?params.get('mode')!:'date';
  const page=Math.min(50000,Math.max(1,Math.floor(Number(params.get('page'))||Math.floor((Number(params.get('offset'))||0)/PAGE_SIZE)+1))),offset=(page-1)*PAGE_SIZE;

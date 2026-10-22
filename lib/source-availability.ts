@@ -22,7 +22,7 @@ export async function sourceRequest(body:unknown,signal:AbortSignal){
 }
 // Search and chapter checks deliberately do not resolve media or download video.
 export async function checkSource(rule:Rule,names:string[],signal:AbortSignal,request=sourceRequest,refresh=false):Promise<SourceAvailability>{
- const terms=[...new Set(names.map(n=>n.trim()).filter(Boolean))].slice(0,2),results:SourceResult[]=[];
+ const terms=[...new Set(names.map(n=>n.trim()).filter(Boolean))].slice(0,4),results:SourceResult[]=[];
  const deadline=timeoutSignal(24000),combined=anySignal([signal,deadline]);
  const call=(body:Record<string,unknown>)=>request(refresh?{...body,refresh:true}:body,anySignal([combined,timeoutSignal(10000)]));
  let lastError='',successfulSearch=false;const inspected=new Set<string>();

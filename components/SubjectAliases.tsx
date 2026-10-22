@@ -1,0 +1,6 @@
+'use client';
+import {useState} from 'react';
+export default function SubjectAliases({aliases,onChange,onSelect,disabled=false}:{aliases:string[];onChange:(names:string[])=>void;onSelect:(name:string)=>void;disabled?:boolean}){
+ const [draft,setDraft]=useState(''),[error,setError]=useState('');
+ return <details className="subject-aliases"><summary>番剧别名与检索词 <span>{aliases.length}/16</span></summary><p>保存简称、译名或源站使用的名称，重新检测资源时优先尝试。正在进行的检测会继续。点击别名可填入搜索框；登录后随账户同步。</p><div className="alias-list">{aliases.map(name=><span key={name}><button type="button" onClick={()=>onSelect(name)} title="使用此别名搜索">{name}</button><button type="button" aria-label={'移除别名 '+name} disabled={disabled} onClick={()=>onChange(aliases.filter(value=>value!==name))}>×</button></span>)}</div><form onSubmit={e=>{e.preventDefault();const name=draft.normalize('NFKC').trim();if(!name)return;if(aliases.length>=16){setError('每部最多保存 16 个别名');return;}if(aliases.some(value=>value.toLowerCase()===name.toLowerCase())){setError('这个别名已经保存');return;}onChange([...aliases,name]);setDraft('');setError('');}}><input aria-label="新增番剧别名" placeholder="例如简称或其他译名" value={draft} maxLength={120} onChange={e=>setDraft(e.target.value)}/><button type="submit" disabled={disabled||!draft.trim()}>保存别名</button></form>{error&&<p role="alert">{error}</p>}</details>;
+}

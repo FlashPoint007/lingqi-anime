@@ -1,15 +1,16 @@
-import {entryKey,libraryValue,parseLibrarySnapshot,sameValue,visibleEntries,type LibraryChange,type LibraryEntry,type LibrarySnapshot,type LibraryValue} from './library-model';
+import {type SubjectAliases,type AliasRecord} from './subject-aliases';
+import {valueSubjectId,entryKey,libraryValue,parseLibrarySnapshot,sameValue,visibleEntries,type LibraryChange,type LibraryEntry,type LibrarySnapshot,type LibraryValue} from './library-model';
 import type {Subject} from './catalog';
 import type {WatchRecord} from './personal-data';
 import {mergeHistory} from './personal-data';
 export type SyncPhase='saved'|'pending'|'saving'|'error';
-type Options={request:(changes?:LibraryChange[])=>Promise<LibrarySnapshot>;apply:(collection:Subject[],history:WatchRecord[])=>void;persist:(pending:LibraryChange[],snapshot:LibrarySnapshot)=>void;status:(phase:SyncPhase,message?:string)=>void;accountChanged:(snapshot:LibrarySnapshot)=>void};
+type Options={request:(changes?:LibraryChange[])=>Promise<LibrarySnapshot>;apply:(collection:Subject[],history:WatchRecord[],aliases:SubjectAliases)=>void;persist:(pending:LibraryChange[],snapshot:LibrarySnapshot)=>void;status:(phase:SyncPhase,message?:string)=>void;accountChanged:(snapshot:LibrarySnapshot)=>void};
 export function restoreChanges(value:unknown):LibraryChange[]{
  if(!Array.isArray(value))return [];
  const restored=new Map<string,LibraryChange>();
  for(const change of value){try{
-  if(!change||!['collection','history'].includes(change.kind)||!Number.isSafeInteger(change.id)||change.id<0||change.id>9999999999||!Number.isSafeInteger(change.expectedVersion)||change.expectedVersion<0||typeof change.mutationId!=='string'||!/^[-\w]{16,80}$/.test(change.mutationId))continue;
-  const clean=libraryValue(change.kind,change.value);if(clean!==null&&(change.kind==='collection'?(clean as Subject).id:(clean as WatchRecord).subject.id)!==change.id)continue;
+  if(!change||!['collection','history','aliases'].includes(change.kind)||!Number.isSafeInteger(change.id)||change.id<0||change.id>9999999999||!Number.isSafeInteger(change.expectedVersion)||change.expectedVersion<0||typeof change.mutationId!=='string'||!/^[-\w]{16,80}$/.test(change.mutationId))continue;
+  const clean=libraryValue(change.kind,change.value);if(clean!==null&&valueSubjectId(change.kind,clean)!==change.id)continue;
   const normalized:LibraryChange={kind:change.kind,id:change.id,expectedVersion:change.expectedVersion,mutationId:change.mutationId,value:clean},key=entryKey(normalized);
   if((restored.get(key)?.expectedVersion??-1)>normalized.expectedVersion)continue;
   restored.delete(key);restored.set(key,normalized);
@@ -19,13 +20,13 @@ export function restoreChanges(value:unknown):LibraryChange[]{
 const mutationId=()=>crypto.randomUUID();
 export class LibrarySync{
  private entries=new Map<string,LibraryEntry>();private pending=new Map<string,LibraryChange>();private visible=new Map<string,LibraryValue>();private work:Promise<void>|null=null;private stopped=false;private refreshing=false;
- constructor(private snapshot:LibrarySnapshot,private options:Options,legacy:{collection:Subject[];history:WatchRecord[]},outbox:LibraryChange[]=[]){
+ constructor(private snapshot:LibrarySnapshot,private options:Options,legacy:{collection:Subject[];history:WatchRecord[];aliases?:SubjectAliases},outbox:LibraryChange[]=[]){
   this.replace(snapshot);for(const change of outbox)this.pending.set(entryKey(change),change);
-  for(const [key,value] of visibleEntries(legacy.collection,legacy.history)){
+  for(const [key,value] of visibleEntries(legacy.collection,legacy.history,legacy.aliases)){
    const old=this.entries.get(key);if(this.pending.has(key)||old?.value===null)continue;
    // Existing cloud favourites win; migrate only new favourites or newer progress.
    if(!old||(old.kind==='history'&&(value as WatchRecord).time>(old.value as WatchRecord).time)){
-    const [kind,id]=key.split(':');this.pending.set(key,{kind:kind as 'collection'|'history',id:Number(id),value,expectedVersion:old?.version||0,mutationId:mutationId()});
+    const [kind,id]=key.split(':');this.pending.set(key,{kind:kind as 'collection'|'history'|'aliases',id:Number(id),value,expectedVersion:old?.version||0,mutationId:mutationId()});
    }
   }
   this.render();this.persist();
@@ -37,11 +38,11 @@ export class LibrarySync{
   this.visible=new Map([...values].filter(([,value])=>value!==null));
   const collection=[...this.visible].filter(([key])=>key.startsWith('collection:')).sort(([a],[b])=>(this.entries.get(b)?.sortAt||Date.now())-(this.entries.get(a)?.sortAt||Date.now())).map(([,value])=>value as Subject);
   const history=[...this.visible].filter(([key])=>key.startsWith('history:')).map(([,value])=>value as WatchRecord).sort((a,b)=>b.time-a.time).slice(0,100);
-  this.options.apply(collection,history);
+  const aliases=Object.fromEntries([...this.visible].filter(([key])=>key.startsWith('aliases:')).map(([,value])=>{const a=value as AliasRecord;return [String(a.subjectId),a.aliases];}));this.options.apply(collection,history,aliases);
  }
- observe(collection:Subject[],history:WatchRecord[]){
-  if(this.stopped)return;const next=visibleEntries(collection,history);let changed=false;
-  for(const key of new Set([...next.keys(),...this.visible.keys()])){const value=next.get(key)??null;if(sameValue(value,this.visible.get(key)??null))continue;changed=true;const [kind,id]=key.split(':');this.pending.set(key,{kind:kind as 'collection'|'history',id:Number(id),value,expectedVersion:this.entries.get(key)?.version||0,mutationId:mutationId()});}
+ observe(collection:Subject[],history:WatchRecord[],aliases?:SubjectAliases){
+  if(this.stopped)return;const retained=Object.fromEntries([...this.visible].filter(([key])=>key.startsWith('aliases:')).map(([,value])=>{const a=value as AliasRecord;return [String(a.subjectId),a.aliases];}));const next=visibleEntries(collection,history,aliases??retained);let changed=false;
+  for(const key of new Set([...next.keys(),...this.visible.keys()])){const value=next.get(key)??null;if(sameValue(value,this.visible.get(key)??null))continue;changed=true;const [kind,id]=key.split(':');this.pending.set(key,{kind:kind as 'collection'|'history'|'aliases',id:Number(id),value,expectedVersion:this.entries.get(key)?.version||0,mutationId:mutationId()});}
   this.visible=next;if(changed)this.persist();
  }
  get hasPending(){return this.pending.size>0;}
@@ -63,7 +64,7 @@ export class LibrarySync{
       const merged=mergeHistory([current.value],[remote.value])[0];if(!sameValue(merged,remote.value)){this.pending.set(key,{...current,value:merged,expectedVersion:remote.version,mutationId:mutationId()});continue;}
      }
      if(current.mutationId===sent.mutationId)this.pending.delete(key);else if(accepted.has(sent.mutationId))current.expectedVersion=this.entries.get(key)?.version||0;else this.pending.delete(key);}
-    this.render();this.persist();if(limited.size){this.options.status('error','追番已达 1000 条上限；待上传条目已保留，可导出备份或移除部分追番后重试');return;}else if(next.conflicts?.length)this.options.status('saved','部分记录版本已更新，已保留数据库中的最新记录');
+    this.render();this.persist();if(limited.size){this.options.status('error','追番或别名记录已达 1000 部上限；待上传条目已保留，可导出备份或移除部分追番后重试');return;}else if(next.conflicts?.length)this.options.status('saved','部分记录版本已更新，已保留数据库中的最新记录');
    }
   }catch(error){if(!this.stopped){this.options.persist([...this.pending.values()],this.snapshot);this.options.status('error',(error as Error).message||'同步失败，待上传记录已保留');}}
  }

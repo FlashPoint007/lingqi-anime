@@ -1,0 +1,8 @@
+export type DiagnosticEvent={time:number;event:string;message:string};
+export function diagnosticText(input:unknown){return String(input||'').replace(/https?:\/\/[^\s"'<>]+/gi,value=>{try{return new URL(value).origin+'/[地址已省略]';}catch{return '[地址已省略]';}}).replace(/\b(ticket|token|signature|authorization|cookie|password|secret|apikey)\s*[:=]\s*[^\s,;]+/gi,'$1=[已隐藏]').slice(0,240);}
+export function addDiagnostic(log:DiagnosticEvent[],event:string,message:unknown){log.push({time:Date.now(),event:diagnosticText(event).slice(0,40),message:diagnosticText(message)});if(log.length>40)log.splice(0,log.length-40);}
+export function playbackSnapshot(video:HTMLVideoElement,hls?:{bandwidthEstimate?:number;currentLevel?:number;levels?:{width?:number;height?:number;bitrate?:number}[]}){
+ let buffered=0;for(let i=0;i<video.buffered.length;i++)if(video.buffered.start(i)<=video.currentTime&&video.buffered.end(i)>=video.currentTime)buffered=Math.max(0,video.buffered.end(i)-video.currentTime);
+ const quality=video.getVideoPlaybackQuality?.(),finite=(n:number|undefined)=>typeof n==='number'&&Number.isFinite(n)?Math.round(n*10)/10:0;
+ return {内核:hls?'HLS.js':'浏览器原生',状态:video.error?'媒体错误':video.ended?'播放结束':video.paused?'暂停':video.readyState<3?'缓冲中':'播放中',分辨率:video.videoWidth&&video.videoHeight?video.videoWidth+' × '+video.videoHeight:'等待画面',当前位置:finite(video.currentTime),总时长:finite(video.duration),前方缓冲秒数:finite(buffered),已就绪状态:video.readyState,网络状态:video.networkState,掉帧数:quality?.droppedVideoFrames||0,总帧数:quality?.totalVideoFrames||0,...(hls?{估算带宽Mbps:finite((hls.bandwidthEstimate||0)/1000000),清晰度级别:hls.currentLevel??-1}:{})};
+}

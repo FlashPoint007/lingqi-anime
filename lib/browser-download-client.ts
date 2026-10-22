@@ -10,5 +10,6 @@ export async function prepareLocalDownload(input:{url:string;name:string;mediaTy
 export function handToBrowser(download:BrowserDownload){
  // A real same-origin attachment request belongs to the browser download
  // manager. Do not fetch a Blob, attach an iframe, or tie it to pagehide.
+ const address=new URL(download.url,location.href);if(address.origin!==location.origin||address.pathname!=='/api/download'||!address.searchParams.has('ticket')||!['mp4','webm','zip'].includes(download.format))throw new Error('下载地址无效，请重新准备');
  const link=document.createElement('a');link.href=download.url;link.download=download.filename;link.rel='noreferrer';document.body.appendChild(link);try{link.click();}finally{link.remove();}
 }

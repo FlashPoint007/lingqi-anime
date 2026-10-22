@@ -11,7 +11,9 @@ export function anySignal(signals:AbortSignal[]):AbortSignal {
  return controller.signal;
 }
 export async function requestJson(url:string,options:RequestInit={}) {
- const signal=options.signal||timeoutSignal(30000);let response:Response;
+ const signal=options.signal||timeoutSignal(30000);
+ for(let attempt=0;;attempt++){
+ let response:Response;
  try{response=await fetch(url,{...options,signal});}catch(error){
   if(signal.reason?.name==='TimeoutError'||(error as Error).name==='TimeoutError')throw new Error('请求超时，请重试');
   if(signal.aborted)throw error;
@@ -23,7 +25,15 @@ export async function requestJson(url:string,options:RequestInit={}) {
   if([502,503,504].includes(response.status))throw new Error('站点网关暂时无法连接，请稍后重试（'+response.status+'）');
   throw new Error('本站接口未返回有效数据（'+response.status+'），请重试');
  }
+ // Source operations are read-only. A cancelled browser scan can leave a
+ // coalesced server lookup running briefly, so honor a short concurrency wait
+ // without retrying quota exhaustion, mutations or unrelated failures.
+ const retry=Number(response.headers.get('Retry-After'));
+ if(url==='/api/source'&&response.status===429&&data?.error==='当前请求较多，请稍后重试'&&attempt<2&&retry>0&&retry<=3){
+  await new Promise<void>((resolve,reject)=>{const abort=()=>{clearTimeout(timer);signal.removeEventListener('abort',abort);reject(signal.reason);},timer=setTimeout(()=>{signal.removeEventListener('abort',abort);resolve();},retry*1000);signal.addEventListener('abort',abort,{once:true});if(signal.aborted)abort();});continue;
+ }
  if(!response.ok)throw new Error(typeof data?.error==='string'?data.error:'请求失败（'+response.status+'），请重试');
  if(!data||typeof data!=='object')throw new Error('本站接口返回的数据格式不正确，请重试');
  return data;
+ }
 }

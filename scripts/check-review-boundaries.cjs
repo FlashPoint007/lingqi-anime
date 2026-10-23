@@ -11,10 +11,10 @@ function events(extra={}){const handlers=new Map();return {...extra,addEventList
 const text=node=>typeof node==='string'||typeof node==='number'?String(node):node&&typeof node==='object'?[node.props?.children].flat(Infinity).map(text).join(''):'';
 function nodes(tree,type){const found=[];(function walk(n){if(!n||typeof n!=='object')return;if(n.type===type)found.push(n);[n.props?.children].flat(Infinity).forEach(walk);})(tree);return found;}
 function discussion(initial){
- const slots=[],effects=[],requests=[];let cursor=0,dirty=true,tree,props=initial;
+ const slots=[],effects=[],requests=[];let cursor=0,dirty=true,tree,props={accountId:'owner',...initial};
  const react={useState(value){const i=cursor++;if(!(i in slots))slots[i]={value};return [slots[i].value,next=>{const n=typeof next==='function'?next(slots[i].value):next;if(n!==slots[i].value){slots[i].value=n;dirty=true;}}];},useRef(value){const i=cursor++;return slots[i]||(slots[i]={current:value});},useEffect(fn,values){const i=cursor++;if(!slots[i]||values.some((v,j)=>v!==slots[i].values[j])){const old=slots[i];slots[i]={values};effects.push(()=>{old?.cleanup?.();slots[i].cleanup=fn();});}}};
  const jsx=(type,props)=>({type,props});
- const component=load('components/Discussions.tsx',{'react':react,'react/jsx-runtime':{jsx,jsxs:jsx},'../lib/request-client':{requestJson:async url=>{requests.push(url);return {authenticated:true,total:1,posts:[{id:'root',alias:'Reader',body:'A comment',createdAt:1,replyCount:21}]};},anySignal:signals=>signals[0],timeoutSignal:()=>new AbortController().signal}},{localStorage:{getItem:()=>null,setItem(){}}}).default;
+ const component=load('components/Discussions.tsx',{'react':react,'react/jsx-runtime':{jsx,jsxs:jsx},'../lib/request-client':{requestJson:async url=>{requests.push(url);return {authenticated:true,accountId:'owner',total:1,posts:[{id:'root',alias:'Reader',body:'A comment',createdAt:1,replyCount:21}]};},anySignal:signals=>signals[0],timeoutSignal:()=>new AbortController().signal}},{localStorage:{getItem:()=>null,setItem(){}}}).default;
  const render=()=>{let turns=0;while(dirty){assert.ok(turns++<20,'discussion render loop');dirty=false;cursor=0;tree=component(props);effects.splice(0).forEach(fn=>fn());}return tree;};render();
  return {render,requests,update(next){props={...props,...next};dirty=true;render();},stop(){slots.forEach(slot=>slot?.cleanup?.());}};
 }

@@ -40,10 +40,10 @@ export default function WatchPage(p:Props){
  const line=p.roads[p.road],index=line?.episodes.findIndex(e=>e.url===p.player.sourceUrl)??-1;
  const currentNumber=p.player.number??(index>=0?episodeNumber(line!.episodes[index],index):knownEpisodeNumber({name:p.player.episode}));
  const {previous,next}=episodeNeighbors(line?.episodes||[],p.player.sourceUrl,currentNumber,p.episodes.map(e=>e.sort),p.player.subject.eps);
- const visible=useMemo(()=>visibleEpisodes(line?.episodes||[],episodeQuery,descending),[line?.episodes,episodeQuery,descending]);
+ const episodeNames=useMemo(()=>new Map(p.episodes.map(e=>[e.sort,e.name_cn||e.name])),[p.episodes]);
+ const visible=useMemo(()=>visibleEpisodes(line?.episodes||[],episodeQuery,descending,episodeNames),[line?.episodes,episodeQuery,descending,episodeNames]);
  const go=(target:EpisodeTarget|undefined)=>{if(target){if(target.episode)p.onPlay({...target.episode,number:target.number});else p.onAuto(target.number);}};
  const urls=playbackUrls(p.player);
- const episodeNames=useMemo(()=>new Map(p.episodes.map(e=>[e.sort,e.name_cn||e.name])),[p.episodes]);
  const enabledRules=p.rules.filter(r=>r.enabled!==false);
  const foundCount=enabledRules.filter(r=>{const c=p.checks[r.name];return c?.state==='found'||c?.state==='playing'||c?.roads?.some(r=>r.episodes.length>0);}).length;
  const currentTitle=episodeNames.get(currentNumber??-1)||episodeLabel(p.player.episode,currentNumber);
@@ -75,7 +75,7 @@ export default function WatchPage(p:Props){
     {screenshots.panel}
     <BatchDownloadPicker owner={p.viewerKey||'anonymous'} subject={p.player.subject} episodes={p.roads[p.road]?.episodes||[]} rule={p.rules[p.ruleIdx]} source={p.sourceContext||p.player.source}/>
     {p.mode==='video'&&<DownloadEpisode key={p.player.sourceUrl} owner={p.viewerKey||'anonymous'} subject={p.player.subject} episode={p.player.episode} number={currentNumber} nativeUrl={p.player.url} url={urls.url} sourceUrl={p.player.sourceUrl} source={p.player.source} ruleName={p.player.ruleName} mediaType={p.player.mediaType}/>}
-    <Discussions key={p.viewerKey||'anonymous'} subjectId={p.player.subject.id} episodeNumber={currentNumber} episodeId={p.episodes.find(e=>e.sort===currentNumber)?.id}/>
+    <Discussions key={p.viewerKey||'anonymous'} accountId={p.danmakuSession?.emailAccount?p.danmakuSession.owner:undefined} onAccountChange={p.danmakuSession?.refresh} subjectId={p.player.subject.id} episodeNumber={currentNumber} episodeId={p.episodes.find(e=>e.sort===currentNumber)?.id}/>
     {p.error&&<div className="watch-error" role="alert" data-source-url={p.player.sourceUrl}>{p.error}</div>}
     <div className="watch-now">
      <span className="watch-episode-stamp">EP.<b>{currentNumber===undefined?'—':String(currentNumber).padStart(2,'0')}</b></span>

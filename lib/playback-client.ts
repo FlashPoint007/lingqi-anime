@@ -36,10 +36,10 @@ export function alignEpisodeNumbers(roads:Road[],metadataNumbers:number[]){
  });
  return changed?result:roads;
 }
-export function visibleEpisodes(episodes:Episode[],query='',descending=false){
+export function visibleEpisodes(episodes:Episode[],query='',descending=false,titles?:ReadonlyMap<number,string>){
  const term=query.normalize('NFKC').trim().toLowerCase(),numeric=/^\d+(?:\.\d+)?$/.test(term);
  return episodes.map((episode,index)=>({episode,number:episodeNumber(episode,index),index}))
-  .filter(item=>!term||(numeric?item.number===Number(term):item.episode.name.normalize('NFKC').toLowerCase().includes(term)))
+  .filter(item=>!term||(numeric?item.number===Number(term):(item.episode.name+' '+(titles?.get(item.number)||'')).normalize('NFKC').toLowerCase().includes(term)))
   .sort((a,b)=>(descending?b.number-a.number:a.number-b.number)||a.index-b.index);
 }
 export type EpisodeTarget={number:number;episode?:Episode};

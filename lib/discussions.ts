@@ -1,5 +1,5 @@
 export type DiscussionPost={id:string;parentId?:string;alias:string;body:string;createdAt:number;deleted:boolean;own:boolean;replyCount?:number};
-export function discussionScope(episode:unknown){if(episode===undefined||episode===null||episode==='')return 'subject';const n=Number(episode);if(!Number.isFinite(n)||n<=0||n>100000||!/^\d+(?:\.\d{1,3})?$/.test(String(n)))throw new Error('集数无效');return 'episode:'+n;}
+export function discussionScope(episode:unknown){if(episode===undefined||episode===null||episode==='')return 'subject';if(typeof episode!=='number'&&typeof episode!=='string')throw new Error('集数无效');const n=Number(episode);if(!Number.isFinite(n)||n<0||n>100000||!/^\d+(?:\.\d{1,3})?$/.test(String(n)))throw new Error('集数无效');return 'episode:'+n;}
 export function discussionText(value:unknown,max=2000){if(typeof value!=='string')throw new Error('评论内容格式不正确');const text=value.normalize('NFC').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g,'').trim();if(!text||text.length>max)throw new Error('评论请输入 1 至 '+max+' 个字符');return text;}
 export function publicComments(raw:any,episode:boolean,offset=0){
  const source=episode?raw:raw?.list||raw?.data;if(!Array.isArray(source))throw new Error('Bangumi 讨论数据格式不正确');

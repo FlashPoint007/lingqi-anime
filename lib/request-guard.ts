@@ -16,7 +16,7 @@ export async function readRequestText(req:Request,max=65536){
  finally{clearTimeout(timer);void reader.cancel().catch(()=>{});}
 }
 function reject(message:string,status:number,retry=0){return Response.json({error:message},{status,headers:{'Cache-Control':'no-store',...(retry?{'Retry-After':String(retry)}:{})}});}
-function group(req:Request):Group{const path=new URL(req.url).pathname;if(path==='/api/auth')return 'auth';if(path==='/api/library'||path==='/api/discussions'&&req.method==='POST')return 'personal';if(path==='/api/download')return req.method==='POST'?'resolve':'download';if(path==='/api/media')return 'media';if(path==='/api/source')return 'source';if(path==='/api/rules')return 'rules';return path.startsWith('/api/')?'metadata':'page';}
+function group(req:Request):Group{const path=new URL(req.url).pathname;if(path==='/api/auth')return 'auth';if(path==='/api/library'||['/api/discussions','/api/site-danmaku'].includes(path)&&req.method==='POST')return 'personal';if(path==='/api/download')return req.method==='POST'?'resolve':'download';if(path==='/api/media')return 'media';if(path==='/api/source')return 'source';if(path==='/api/rules')return 'rules';return path.startsWith('/api/')?'metadata':'page';}
 async function identity(req:Request,secret?:string,trustedEdge=false,accountBound=false){
  // Dispatch can reconstruct Request and omit `cf`. Only the Cloudflare Worker
  // entrypoint may opt into trusting the edge-provided connecting-IP header.
@@ -53,8 +53,8 @@ export async function guardRequest(req:Request,db?:DB,secret?:string,override?:'
 
  const url=new URL(req.url),api=url.pathname.startsWith('/api/');const noop=()=>{};
  if(req.url.length>(['/api/media','/api/download'].includes(url.pathname)?16000:4096))return {response:reject('请求地址过长',414),release:noop};
- if(api&&!['/api/catalog','/api/subject','/api/episodes','/api/related','/api/people','/api/cover','/api/danmaku','/api/rules','/api/source','/api/media','/api/download','/api/library','/api/auth','/api/discussions'].includes(url.pathname))return {response:reject('接口不存在',404),release:noop};
- if(!['GET','HEAD'].includes(req.method)&&!(req.method==='POST'&&['/api/source','/api/download','/api/library','/api/auth','/api/discussions'].includes(url.pathname)))return {response:reject('请求方法不支持',405),release:noop};
+ if(api&&!['/api/catalog','/api/subject','/api/episodes','/api/related','/api/people','/api/cover','/api/danmaku','/api/rules','/api/source','/api/media','/api/download','/api/library','/api/auth','/api/discussions','/api/site-danmaku'].includes(url.pathname))return {response:reject('接口不存在',404),release:noop};
+ if(!['GET','HEAD'].includes(req.method)&&!(req.method==='POST'&&['/api/source','/api/download','/api/library','/api/auth','/api/discussions','/api/site-danmaku'].includes(url.pathname)))return {response:reject('请求方法不支持',405),release:noop};
  if(!api&&/\.(?:js|css|svg|png|jpg|jpeg|webp|ico|woff2?)$/i.test(url.pathname))return {release:noop};
  if(req.method==='POST'){
   const origin=req.headers.get('origin');if(origin&&origin!==url.origin||req.headers.get('sec-fetch-site')==='cross-site')return {response:reject('跨站请求被拒绝',403),release:noop};

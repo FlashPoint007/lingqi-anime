@@ -30,3 +30,8 @@ export const discussionPosts=sqliteTable('discussion_posts',{
  userId:text('user_id').notNull(),alias:text('alias').notNull(),body:text('body').notNull(),
  createdAt:integer('created_at').notNull(),deletedAt:integer('deleted_at'),mutationId:text('mutation_id').notNull(),
 },table=>[index('discussion_scope_created').on(table.subjectId,table.scope,table.createdAt),index('discussion_user_created').on(table.userId,table.createdAt),index('discussion_parent').on(table.parentId),uniqueIndex('discussion_mutation').on(table.userId,table.mutationId)]);
+export const siteDanmaku=sqliteTable('site_danmaku',{
+ id:text('id').primaryKey(),subjectId:integer('subject_id').notNull(),episode:text('episode').notNull(),
+ userId:text('user_id').notNull(),timeMs:integer('time_ms').notNull(),mode:integer('mode').notNull(),color:integer('color').notNull(),body:text('body').notNull(),
+ createdAt:integer('created_at').notNull(),deletedAt:integer('deleted_at'),mutationId:text('mutation_id').notNull(),
+},table=>[index('site_danmaku_timeline').on(table.subjectId,table.episode,table.deletedAt,table.timeMs),index('site_danmaku_user_created').on(table.userId,table.createdAt),index('site_danmaku_own_episode').on(table.userId,table.subjectId,table.episode,table.createdAt),uniqueIndex('site_danmaku_mutation').on(table.userId,table.mutationId)]);

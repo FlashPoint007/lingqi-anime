@@ -3,6 +3,7 @@ import {useEffect,useRef,useState} from 'react';
 import {requestJson,anySignal,timeoutSignal} from '../lib/request-client';
 import {danmakuSettings,defaultDanmakuSettings,exactDanmakuEpisode,parseDanmakuLink,importDanmaku,type DanmakuSettings,type DanmakuComment,type DanmakuMatch,type DanmakuEpisode,type DanmakuNotice} from '../lib/danmaku';
 type CommentData={comments:DanmakuComment[];total:number;sampled:boolean};
+const emptyComments:DanmakuComment[]=[];
 const settingsKey='kw-danmaku-settings-v1';
 export function useDanmaku(subjectId:number,number:number|undefined,controlled?:DanmakuSettings,onChange?:(settings:DanmakuSettings)=>void){
  const [localSettings,setLocalSettings]=useState<DanmakuSettings>(defaultDanmakuSettings),[hydrated,setHydrated]=useState(false),[revision,setRevision]=useState(0);
@@ -71,6 +72,6 @@ export function useDanmaku(subjectId:number,number:number|undefined,controlled?:
   }catch(error){if(mounted.current&&generation===fileGeneration.current)setFileStatus(error instanceof Error?error.message:'弹幕文件读取失败');}
  };
  return {settings,setSettings,matches,notices,selected,choose,automatic,failures,autoSelect:()=>{fileGeneration.current++;attempted.current.clear();setFailures({});automaticMode.current=true;setAutomatic(true);setLocal(undefined);setFileStatus('');setSelected(automaticMatches.current.map(matchKey)[0]||'');setCatalogue(undefined);setLoaded(undefined);setManualEpisode(undefined);setRevision(n=>n+1);},episodes,episode,chooseEpisode:(id:string)=>{fileGeneration.current++;automaticMode.current=false;setAutomatic(false);setLocal(undefined);setFileStatus('');setManualEpisode({key:selected,id});setLoaded(undefined);setEpisodeStatus('');setCommentStatus('');},title:catalogue?.key===selected?catalogue.title:source?.title,
-  comments:data?.comments||[],total:data?.total||0,sampled:data?.sampled||false,loading,isLocal:!!local,importFile,clearImport:()=>{fileGeneration.current++;setLocal(undefined);setFileStatus('');},fileStatus,
+  comments:data?.comments||emptyComments,total:data?.total||0,sampled:data?.sampled||false,loading,isLocal:!!local,importFile,clearImport:()=>{fileGeneration.current++;setLocal(undefined);setFileStatus('');},fileStatus,
   status:!settings.enabled?'弹幕已关闭':local?'本地弹幕已加载 · '+local.comments.length.toLocaleString()+' 条':!hydrated?'准备弹幕…':episodeStatus||(!source?(subjectId>0?matchStatus:'测试视频可手动匹配或导入弹幕'):!episode?'请选择与视频对应的弹幕分集':commentStatus),manualMatch,reload:()=>{attempted.current.clear();setFailures({});setLoaded(undefined);setCatalogue(undefined);setEpisodeStatus('');setCommentStatus('');setRevision(n=>n+1);}};
 }

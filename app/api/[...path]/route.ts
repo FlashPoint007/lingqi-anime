@@ -5,6 +5,7 @@ import {discussionResponse} from '../../../lib/discussion-server';
 import {publicComments,discussionScope} from '../../../lib/discussions';
 import {loadSubjectPeople} from '../../../lib/subject-people';
 import {danmakuResponse} from '../../../lib/danmaku-server';
+import {siteDanmakuResponse} from '../../../lib/site-danmaku-server';
 import {siteRules} from '../../../lib/site-rules';
 import {subjectCover} from '../../../lib/subject-cover';
 import {emailAuthResponse} from '../../../lib/email-auth';
@@ -27,6 +28,7 @@ async function upstream(url:string,init:RequestInit={}) {
 export async function GET(req:Request) {
  const u=new URL(req.url); const kind=u.pathname.split('/').pop();
  try {
+  if(kind==='site-danmaku')return await siteDanmakuResponse(req);
   if(kind==='danmaku')return await danmakuResponse(u.searchParams);
   if(kind==='library')return await libraryResponse(req);
   if(kind==='discussions'){
@@ -70,6 +72,7 @@ export async function GET(req:Request) {
  }catch(e){return json({error:e instanceof Error?e.message:'请求失败，请稍后重试'},502);}
 }
 export async function POST(req:Request) {
+ if(new URL(req.url).pathname==='/api/site-danmaku')return siteDanmakuResponse(req);
  if(new URL(req.url).pathname==='/api/download')return prepareBrowserDownload(req);
  if(new URL(req.url).pathname==='/api/discussions')return discussionResponse(req);
  if(new URL(req.url).pathname==='/api/auth')return emailAuthResponse(req);

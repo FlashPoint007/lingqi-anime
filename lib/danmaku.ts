@@ -1,17 +1,17 @@
 export type DanmakuProvider='bilibili'|'gamer'|'dandan';
-export type DanmakuSource=DanmakuProvider|'local';
+export type DanmakuSource=DanmakuProvider|'local'|'site';
 // Seconds, mode (scroll/bottom/top), RGB, plain text, origin. No user identifiers.
 export type DanmakuComment=[number,1|4|5,number,string,DanmakuSource];
 export type DanmakuEpisode={id:string;number?:number;title:string};
 export type DanmakuMatch={provider:DanmakuProvider;key:string;title:string};
 export type DanmakuNotice={provider:DanmakuProvider;message:string;configured:boolean};
-export type DanmakuSettings={enabled:boolean;opacity:number;fontSize:number;offset:number;area:number;speed:number;keywords:string;regexPatterns:string;maxLength:number;blockRepetition:boolean;sources:Record<DanmakuSource,boolean>;modes:Record<'scroll'|'top'|'bottom',boolean>;color:boolean;deduplicate:boolean};
-export const danmakuNames:Record<DanmakuSource,string>={bilibili:'BiliBili',gamer:'Gamer 巴哈姆特',dandan:'弹弹play',local:'本地文件'};
-export const defaultDanmakuSettings:DanmakuSettings={enabled:true,opacity:.85,fontSize:22,offset:0,area:.5,speed:1,keywords:'',regexPatterns:'',maxLength:180,blockRepetition:false,modes:{scroll:true,top:true,bottom:true},color:true,deduplicate:true,sources:{bilibili:true,gamer:true,dandan:true,local:true}};
+export type DanmakuSettings={enabled:boolean;pauseOnEdit:boolean;opacity:number;fontSize:number;offset:number;area:number;speed:number;keywords:string;regexPatterns:string;maxLength:number;blockRepetition:boolean;sources:Record<DanmakuSource,boolean>;modes:Record<'scroll'|'top'|'bottom',boolean>;color:boolean;deduplicate:boolean};
+export const danmakuNames:Record<DanmakuSource,string>={bilibili:'BiliBili',gamer:'Gamer 巴哈姆特',dandan:'弹弹play',local:'本地文件',site:'本站弹幕'};
+export const defaultDanmakuSettings:DanmakuSettings={enabled:true,pauseOnEdit:true,opacity:.85,fontSize:22,offset:0,area:.5,speed:1,keywords:'',regexPatterns:'',maxLength:180,blockRepetition:false,modes:{scroll:true,top:true,bottom:true},color:true,deduplicate:true,sources:{bilibili:true,gamer:true,dandan:true,local:true,site:true}};
 export function danmakuSettings(value:unknown):DanmakuSettings{
  const v=value&&typeof value==='object'?value as Partial<DanmakuSettings>:{};
  const clamp=(n:unknown,lo:number,hi:number,fallback:number)=>typeof n==='number'&&Number.isFinite(n)?Math.max(lo,Math.min(hi,n)):fallback;
- return {regexPatterns:typeof v.regexPatterns==='string'?v.regexPatterns.slice(0,4096):'',maxLength:Math.round(clamp(v.maxLength,5,180,180)),blockRepetition:v.blockRepetition===true,modes:{scroll:v.modes?.scroll!==false,top:v.modes?.top!==false,bottom:v.modes?.bottom!==false},color:v.color!==false,deduplicate:v.deduplicate!==false,enabled:typeof v.enabled==='boolean'?v.enabled:true,opacity:clamp(v.opacity,.2,1,.85),fontSize:clamp(v.fontSize,16,36,22),offset:clamp(v.offset,-300,300,0),area:clamp(v.area,.25,1,.5),speed:clamp(v.speed,.5,2,1),keywords:typeof v.keywords==='string'?v.keywords.slice(0,2000):'',sources:{bilibili:v.sources?.bilibili!==false,gamer:v.sources?.gamer!==false,dandan:v.sources?.dandan!==false,local:v.sources?.local!==false}};
+ return {pauseOnEdit:v.pauseOnEdit!==false,regexPatterns:typeof v.regexPatterns==='string'?v.regexPatterns.slice(0,4096):'',maxLength:Math.round(clamp(v.maxLength,5,180,180)),blockRepetition:v.blockRepetition===true,modes:{scroll:v.modes?.scroll!==false,top:v.modes?.top!==false,bottom:v.modes?.bottom!==false},color:v.color!==false,deduplicate:v.deduplicate!==false,enabled:typeof v.enabled==='boolean'?v.enabled:true,opacity:clamp(v.opacity,.2,1,.85),fontSize:clamp(v.fontSize,16,36,22),offset:clamp(v.offset,-300,300,0),area:clamp(v.area,.25,1,.5),speed:clamp(v.speed,.5,2,1),keywords:typeof v.keywords==='string'?v.keywords.slice(0,2000):'',sources:{bilibili:v.sources?.bilibili!==false,gamer:v.sources?.gamer!==false,dandan:v.sources?.dandan!==false,local:v.sources?.local!==false,site:v.sources?.site!==false}};
 }
 function plain(value:unknown){return typeof value==='string'?value.replace(/[\u0000-\u001f\u007f]/g,' ').trim().slice(0,180):'';}
 function comment(time:unknown,mode:unknown,color:unknown,text:unknown,source:DanmakuSource):DanmakuComment|null{

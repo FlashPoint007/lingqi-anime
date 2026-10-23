@@ -1,5 +1,8 @@
 export type Episode={name:string;url:string;source?:string;number?:number};
 export type Road={name:string;episodes:Episode[]};
+// Rule subscriptions can add, remove and reorder rows while playback resolves.
+// A source is selected by identity; an index is only a current-render UI value.
+export function selectedRuleIndex(rules:{name:string;enabled?:boolean}[],name:string){return rules.findIndex(rule=>rule.name===name&&rule.enabled!==false);}
 export function isCurrentPlayback(expected:{sourceUrl:string;url:string},active:{sourceUrl:string;url:string}){return expected.sourceUrl===active.sourceUrl&&expected.url===active.url;}
 export function ruleForPlayback<T extends {name:string;baseURL:string;enabled?:boolean}>(rules:T[],url:string,preferredName?:string){
  const origin=new URL(url).origin;const matching=rules.filter(rule=>{try{return rule.enabled!==false&&new URL(rule.baseURL).origin===origin;}catch{return false;}});

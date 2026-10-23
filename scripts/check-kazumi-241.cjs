@@ -33,13 +33,13 @@ function element(){return events({children:[],hidden:false,textContent:'',append
  const rules=load('lib/rule-subscription-server.ts',{fetch:async(url,options)=>{
   calls++;if(url.includes('codeload'))return new Response(null,{status:503});
   if(url.startsWith('https://raw.'))return new Promise((_,reject)=>options.signal.addEventListener('abort',()=>{rawAborted=true;reject(Error('aborted'));},{once:true}));
-  assert.ok(url.startsWith('https://cdn.gh-proxy.org/https://raw.githubusercontent.com/Predidit/KazumiRules/main/'));
+  assert.ok(url.startsWith('https://gh-proxy.org/https://raw.githubusercontent.com/Predidit/KazumiRules/main/'));
   if(url.endsWith('index.json'))return Response.json(index);active++;peak=Math.max(peak,active);await tick();active--;return Response.json(snapshot.find(e=>url.endsWith(encodeURIComponent(e.file))).rule);
  }});
  const [one,two]=await Promise.all([rules.archiveRules(),rules.archiveRules()]);assert.deepEqual(plain(one),plain(two));assert.equal(one.length,3);assert.equal(rawAborted,true);assert.ok(peak<=3);const count=calls;await rules.archiveRules();assert.equal(calls,count,'a complete mirror snapshot is cached and concurrent refreshes coalesce');await rules.archiveRules(true);assert.ok(calls>count,'manual sync bypasses the cache');
  for(const failure of ['missing','mismatch','duplicate','path','oversize']){
   const broken=load('lib/rule-subscription-server.ts',{fetch:async url=>{
-   if(!url.startsWith('https://cdn.'))return new Response(null,{status:503});
+   if(!url.startsWith('https://gh-proxy.org/'))return new Response(null,{status:503});
    if(url.endsWith('index.json'))return Response.json(failure==='duplicate'?[index[0],index[0]]:failure==='path'?[{name:'../secret'}]:index);
    if(failure==='oversize')return new Response(new Uint8Array(1048577));
    const entry=snapshot.find(e=>url.endsWith(encodeURIComponent(e.file)));if(failure==='missing'&&entry===snapshot[1])return new Response(null,{status:404});return Response.json(failure==='mismatch'?{...entry.rule,name:'wrong-name'}:entry.rule);

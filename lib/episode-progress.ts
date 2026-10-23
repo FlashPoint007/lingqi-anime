@@ -2,7 +2,7 @@ export type EpisodeProgress={position:number;duration:number;updatedAt:number;co
 export type EpisodeProgresses=Record<string,EpisodeProgress>;
 export const MAX_EPISODE_PROGRESS=200;
 const finite=(n:unknown):n is number=>typeof n==='number'&&Number.isFinite(n);
-export function episodeKey(number:unknown){return finite(number)&&number>0&&number<=100000&&/^\d+(?:\.\d{1,3})?$/.test(String(number))?String(number):undefined;}
+export function episodeKey(number:unknown){return finite(number)&&number>=0&&number<=100000&&/^\d+(?:\.\d{1,3})?$/.test(String(number))?String(number):undefined;}
 export function cleanProgresses(value:unknown):EpisodeProgresses{
  if(!value||typeof value!=='object'||Array.isArray(value))return {};
  return Object.fromEntries(Object.entries(value).slice(0,2000).flatMap(([key,v]:[string,any])=>{

@@ -1,7 +1,7 @@
 import snapshot from './rules-snapshot.json';
 const ROOT='https://raw.githubusercontent.com/Predidit/KazumiRules/main/';
-// Same mirror as Kazumi 2.4.1. Each fallback must load one complete index.
-const MIRROR='https://cdn.gh-proxy.org/'+ROOT;
+// Official Kazumi 2.4.2 mirrors. Never combine partial feeds into a deletion list.
+const RULE_ROOTS=[ROOT,'https://gh-proxy.org/'+ROOT,'https://ghfast.top/'+ROOT,'https://raw.gitcode.com/gh_mirrors/ka/KazumiRules/raw/main/'];
 const cache=new Map<string,{at:number;value:any}>();
 async function read(url:string){const old=cache.get(url);if(old&&Date.now()-old.at<3600000)return old.value;const r=await fetch(url,{signal:AbortSignal.timeout(12000),headers:{Accept:'application/json','User-Agent':'LingqiWeb'}});if(!r.ok)throw new Error('规则仓库响应 '+r.status);const value=await r.json();cache.set(url,{at:Date.now(),value});return value;}
 type ArchiveEntry={file:string;rule:any};
@@ -11,10 +11,10 @@ function indexedNames(index:any):string[]{
  if(!Array.isArray(index)||!index.length||index.length>500||index.some(e=>typeof e?.name!=='string'||!/^[-\p{L}\p{N} _.()]+$/u.test(e.name)||e.name.trim()!==e.name||e.name.length>155||e.name==='index')||new Set(index.map(e=>e.name)).size!==index.length)throw Error('有效规则索引无效');
  return index.map(e=>e.name);
 }
-async function indexedRules(root:string,signal:AbortSignal):Promise<ArchiveEntry[]>{
+async function indexedRules(root:string,signal:AbortSignal,reserve:()=>void):Promise<ArchiveEntry[]>{
  let total=0;
  const json=async(file:string)=>{
-  signal.throwIfAborted();const response=await fetch(root+encodeURIComponent(file),{signal,headers:{Accept:'application/json','User-Agent':'LingqiWeb'},redirect:'error'});
+  signal.throwIfAborted();reserve();const response=await fetch(root+encodeURIComponent(file),{signal,headers:{Accept:'application/json','User-Agent':'LingqiWeb'},redirect:'error'});
   if(!response.ok||!response.body)throw Error('规则镜像响应 '+response.status);
   const reader=response.body.getReader(),decoder=new TextDecoder();let text='',size=0;
   try{while(true){const {done,value}=await reader.read();if(done)break;size+=value.length;total+=value.length;if(size>1048576||total>4*1048576)throw Error('规则仓库超过大小限制');text+=decoder.decode(value,{stream:true});}text+=decoder.decode();return JSON.parse(text);}finally{await reader.cancel().catch(()=>{});}
@@ -24,9 +24,21 @@ async function indexedRules(root:string,signal:AbortSignal):Promise<ArchiveEntry
  return entries.filter(e=>!e.rule.deprecated&&e.rule.baseURL.startsWith('https://')).sort((a,b)=>a.file.localeCompare(b.file));
 }
 async function fallbackRules():Promise<ArchiveEntry[]>{
- const requests=[new AbortController(),new AbortController()],deadline=AbortSignal.timeout(18000);
- try{return await Promise.any([ROOT,MIRROR].map((root,i)=>indexedRules(root,AbortSignal.any([deadline,requests[i].signal])).catch(error=>{requests[i].abort();throw error;})));}
- finally{requests.forEach(request=>request.abort());}
+ const requests=new Set<AbortController>(),deadline=AbortSignal.timeout(18000);let next=0,remaining=36,finished=false;
+ const reserve=()=>{if(finished||remaining--<=0)throw Error('规则镜像请求已达本次上限');};
+ // Two complete feeds at most, three files per feed. Failed or slow mirrors
+ // advance to the next upstream endpoint within one shared deadline/budget.
+ const worker=async()=>{
+  while(!finished&&next<RULE_ROOTS.length&&!deadline.aborted){
+   const root=RULE_ROOTS[next++],controller=new AbortController();requests.add(controller);
+   try{return await indexedRules(root,AbortSignal.any([deadline,AbortSignal.timeout(10000),controller.signal]),reserve);}
+   catch{if(deadline.aborted)break;}
+   finally{controller.abort();requests.delete(controller);}
+  }
+  throw Error('规则镜像暂不可用');
+ };
+ try{return await Promise.any([worker(),worker()]);}
+ finally{finished=true;requests.forEach(request=>request.abort());}
 }
 export function parseRuleArchive(bytes:Uint8Array):ArchiveEntry[]{
  const decoder=new TextDecoder();const entries:ArchiveEntry[]=[];let active:Set<string>|undefined;

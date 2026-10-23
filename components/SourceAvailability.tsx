@@ -31,7 +31,11 @@ export function useSourceAvailability(subject:Subject|null,rules:Rule[],aliases:
    catch(e){if(!controller.signal.aborted)update({...empty,state:'error',message:(e as Error).message});}
   });return()=>controller.abort();
  },[scope,revision]);
- const report=(rule:Rule,value:Partial<SourceAvailability>)=>{if(current.current!==scope)return;reports.current.versions.set(rule.name,(reports.current.versions.get(rule.name)||0)+1);setChecks(old=>{if(current.current!==scope)return old;const next={...(old[rule.name]||empty),...value,checkedAt:Date.now()};storeAvailability(cache,key(rule),next);return {...old,[rule.name]:next};});};
+ const report=(rule:Rule,value:Partial<SourceAvailability>)=>{if(current.current!==scope)return;reports.current.versions.set(rule.name,(reports.current.versions.get(rule.name)||0)+1);setChecks(old=>{if(current.current!==scope)return old;const previous=old[rule.name]||empty;
+  // Resume resolves the video and reloads chapters concurrently. A late manual
+  // catalogue report may enrich the rows, but cannot erase a playback outcome.
+  const keepOutcome=value.state==='found'&&(previous.state==='playing'||previous.state==='episode-error');
+  const next={...previous,...value,...(keepOutcome?{state:previous.state,message:previous.message}:{}),checkedAt:Date.now()};storeAvailability(cache,key(rule),next);return {...old,[rule.name]:next};});};
  return {checks:checksScope===scope?checks:{},refresh:()=>{invalidateAvailability(cache,scope);refreshScope.current=scope;setRevision(n=>n+1);},report};
 }
 type Props={rules:Rule[];checks:Record<string,SourceAvailability>;selected:number;busy?:boolean;onRefresh:()=>void;onSelect:(index:number,check:SourceAvailability)=>void};

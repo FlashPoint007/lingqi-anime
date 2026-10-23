@@ -42,7 +42,7 @@ export default function WatchPage(p:Props){
  const {previous,next}=episodeNeighbors(line?.episodes||[],p.player.sourceUrl,currentNumber,p.episodes.map(e=>e.sort),p.player.subject.eps);
  const episodeNames=useMemo(()=>new Map(p.episodes.map(e=>[e.sort,e.name_cn||e.name])),[p.episodes]);
  const visible=useMemo(()=>visibleEpisodes(line?.episodes||[],episodeQuery,descending,episodeNames),[line?.episodes,episodeQuery,descending,episodeNames]);
- const go=(target:EpisodeTarget|undefined)=>{if(target){if(target.episode)p.onPlay({...target.episode,number:target.number});else p.onAuto(target.number);}};
+ const go=(target:EpisodeTarget|undefined)=>{if(target){if(target.episode&&p.ruleIdx>=0&&p.rules[p.ruleIdx]?.enabled!==false)p.onPlay({...target.episode,number:target.number});else p.onAuto(target.number);}};
  const urls=playbackUrls(p.player);
  const enabledRules=p.rules.filter(r=>r.enabled!==false);
  const foundCount=enabledRules.filter(r=>{const c=p.checks[r.name];return c?.state==='found'||c?.state==='playing'||c?.roads?.some(r=>r.episodes.length>0);}).length;

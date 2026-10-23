@@ -92,7 +92,7 @@ export default function Home(){
  useEffect(()=>{if(!ready)return;let alive=true;const controller=new AbortController();api('/api/subject?id='+HOME_FEATURE.subject.id,{signal:anySignal([controller.signal,timeoutSignal(10000)])}).then(data=>{if(alive&&data.id===HOME_FEATURE.subject.id)setFeatured(data);}).catch(()=>{});return()=>{alive=false;controller.abort();};},[ready]);
  useEffect(()=>{if(personal.ready&&player&&!historyRef.current.some(h=>h.subject.id===player.subject.id))remember(player.subject,{name:player.episode,url:player.sourceUrl,source:player.source,number:player.number},playerProgress.current||player.position,player.ruleName);},[personal.ready,player?.sourceUrl]);
  const availability=useSourceAvailability(player?.subject||(selected?.name==='正在读取番剧…'?null:selected),rules,subjectAliases);
- useEffect(()=>{setRules(mergeSubscribed(cleanRules(stored('kw-rules',[])),initialRules.map(r=>({file:String(r.subscriptionFile),rule:r}))));setDark(stored<boolean>('kw-dark',false)===true);privatePlaybackRef.current=stored<boolean>('kw-private-playback',false)===true;setPrivatePlayback(privatePlaybackRef.current);setDay((new Date().getDay()+6)%7);setReady(true);},[]);
+ useEffect(()=>{setRules(mergeSubscribed(cleanRules(stored('kw-rules',[])),initialRules.map(r=>({file:String(r.subscriptionFile),rule:r}))));setDark(stored<boolean>('kw-dark',false)===true);privatePlaybackRef.current=stored<boolean>('kw-private-playback',false)===true;setPrivatePlayback(privatePlaybackRef.current);setDay((new Date().getDay()+6)%7);setReady(true);document.documentElement.dataset.lingqiHydrated='1';window.dispatchEvent(new Event('lingqi:ready'));},[]);
  function persist(key:string,value:unknown){
   if(writeStorage(key,JSON.stringify(value)))storageFailures.current.delete(key);else storageFailures.current.add(key);
   setStorageError(storageFailures.current.size?'浏览器存储不可用或空间不足，本次更改可能无法保留，请导出备份。':'');
@@ -171,7 +171,8 @@ export default function Home(){
  },[view,seasonYear,seasonQuarter,reload]);
  useEffect(()=>{if(!selected)return;if(player?.subject.id!==selected.id){stopSource();setSourceTerm(title(selected));setSourceResults([]);setRoads([]);setSourceError('');setRuleIdx(rules.findIndex(r=>r.enabled!==false));}let alive=true;const controller=new AbortController(),signal=anySignal([controller.signal,timeoutSignal(15000)]);setDetailLoading(true);setDetailError('');setEpisodes([]);
   const failure=(label:string,reason:unknown)=>{if(alive)setDetailError(current=>[current,label+(typeof reason==='string'?reason:(reason as Error)?.message||'加载失败')].filter(Boolean).join('；'));};
-  const subject=api('/api/subject?id='+selected.id,{signal}).then(data=>{if(alive)setSelected(current=>current?.id===data.id?data:current);}).catch(reason=>failure('详情：',reason));
+  const sourceVersion=sourceOperation.current;
+  const subject=api('/api/subject?id='+selected.id,{signal}).then(data=>{if(!alive)return;setSelected(current=>current?.id===data.id?data:current);if(data.id===selected.id&&player?.subject.id!==selected.id&&sourceOperation.current===sourceVersion)setSourceTerm(current=>current===title(selected)?title(data):current);}).catch(reason=>failure('详情：',reason));
   const chapter=api('/api/episodes?id='+selected.id,{signal}).then(data=>{if(!alive)return;setEpisodes(data.data);if(data.total>100)failure('','当前展示前 100 集；源站线路可继续加载完整分集。');}).catch(reason=>failure('剧集：',reason));
   Promise.allSettled([subject,chapter]).finally(()=>{if(alive)setDetailLoading(false);});return()=>{alive=false;controller.abort();};
  },[selected?.id,detailRevision]);

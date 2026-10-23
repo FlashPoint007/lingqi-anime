@@ -6,7 +6,10 @@ export default function Discussions({subjectId,episodeNumber,episodeId}:{subject
  const [open,setOpen]=useState(false),[provider,setProvider]=useState('site'),[scope,setScope]=useState('subject'),[page,setPage]=useState(1),[thread,setThread]=useState(''),[revision,setRevision]=useState(0),[data,setData]=useState<{posts:DiscussionPost[];total:number;authenticated:boolean}>(),[loading,setLoading]=useState(false),[error,setError]=useState(''),[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[body,setBody]=useState(''),[alias,setAlias]=useState(''),[reply,setReply]=useState<DiscussionPost>(),[deleting,setDeleting]=useState('');
  const generation=useRef(0),submission=useRef<{key:string;mutationId:string}|undefined>(undefined),owner=useRef('');
  useEffect(()=>{try{owner.current=JSON.parse(localStorage.getItem('kw-library-owner')||'null')||'anonymous';setAlias(localStorage.getItem('kw-discussion-alias:'+owner.current)||'');}catch{}},[]);
- const context=subjectId+':'+provider+':'+scope+':'+(episodeNumber||0)+':'+thread;
+ const episodeScope=scope==='episode'?episodeNumber:undefined;
+ // Whole-series drafts survive auto-next; episode threads belong to one episode.
+ useEffect(()=>{setThread('');},[subjectId,provider,scope,episodeScope]);
+ const context=subjectId+':'+provider+':'+scope+':'+(episodeScope??'subject')+':'+thread;
  useEffect(()=>{generation.current++;setBody('');setReply(undefined);setMessage('');setBusy(false);setDeleting('');submission.current=undefined;setPage(1);},[context]);
  useEffect(()=>{
   if(!open)return;let alive=true;const controller=new AbortController();setData(undefined);setError('');setLoading(true);

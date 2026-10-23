@@ -12,7 +12,7 @@ export async function discussionResponse(req:Request){
    if(req.headers.get('origin')!==u.origin||req.headers.get('sec-fetch-site')==='cross-site')return response({error:'跨站请求被拒绝'},403);
    if(!/^application\/json(?:;|$)/i.test(req.headers.get('content-type')||''))return response({error:'请使用 JSON 请求'},415);
    if(!user)return response({error:'请先使用邮箱登录，再参与讨论'},401);
-   const input=JSON.parse(await readRequestText(req,12288));if(!uuid(input.mutationId))return response({error:'操作标识无效'},400);
+   const input=JSON.parse(await readRequestText(req,12288));if(!input||typeof input!=='object'||Array.isArray(input))return response({error:'评论数据格式不正确'},400);if(!uuid(input.mutationId))return response({error:'操作标识无效'},400);
    if(input.operation==='delete'){
     if(!uuid(input.id))return response({error:'评论编号无效'},400);
     const result=await db.prepare('UPDATE discussion_posts SET body=\'\',alias=\'已删除\',deleted_at=? WHERE id=? AND user_id=? AND deleted_at IS NULL RETURNING id').bind(Date.now(),input.id,user.userId).all();

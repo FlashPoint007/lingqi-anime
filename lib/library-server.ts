@@ -36,7 +36,7 @@ export async function libraryResponse(req:Request){
   if(req.method!=='POST')return response({authenticated:true,account,entries:await entries(db,user.userId,extended)});
   if(req.headers.get('origin')!==new URL(req.url).origin||req.headers.get('sec-fetch-site')==='cross-site')return response({error:'跨站请求被拒绝'},403);
   if(!/^application\/json(?:;|$)/i.test(req.headers.get('content-type')||''))return response({error:'请使用 JSON 请求'},415);
-  const body=JSON.parse(await readRequestText(req,262144));if(body?.accountId!==user.userId)return response({error:'登录账号已变化，请刷新后同步'},409);
+  const body=JSON.parse(await readRequestText(req,262144));if(!body||typeof body!=='object'||Array.isArray(body))return response({error:'同步数据格式不正确'},400);if(body.accountId!==user.userId)return response({error:'登录账号已变化，请刷新后同步'},409);
   if(!Array.isArray(body?.changes)||body.changes.length<1||body.changes.length>50)throw new Error('每次同步需包含 1 至 50 项操作');
   const changes:LibraryChange[]=body.changes.map(parseChange);if(changes.some(change=>extended<3&&change.kind==='danmaku'||extended<2&&change.kind==='aliases'))throw new Error('别名同步需要新版接口');if(new Set(changes.map(entryKey)).size!==changes.length)throw new Error('同步操作包含重复条目');
   const now=Date.now();

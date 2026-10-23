@@ -1,5 +1,5 @@
 // Explicit production dependencies shared by the existing VM-based harnesses.
 const fs=require('node:fs'),vm=require('node:vm'),ts=require('typescript'),cache=new Map();
-const names=new Set(['subject-aliases','playback-policy','playback-diagnostics','search-query','collection-query','search-filters','collection-state','episode-progress','danmaku','share-links','offline-resume']);
+const names=new Set(['catalog','subject-aliases','playback-policy','playback-diagnostics','search-query','collection-query','search-filters','collection-state','episode-progress','danmaku','share-links','offline-resume']);
 function dependency(name){const match=name.match(/^(?:\.\.\/lib\/|\.\/)([\w-]+)$/);if(!match||!names.has(match[1]))return undefined;const file='lib/'+match[1]+'.ts';if(cache.has(file))return cache.get(file);const exports={};cache.set(file,exports);vm.runInNewContext(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,require:source=>{const result=dependency(source);if(!result)throw Error('Unexpected feature dependency '+source);return result;},URL,URLSearchParams,Date,TextEncoder,console},{filename:file});return exports;}
 module.exports={dependency};

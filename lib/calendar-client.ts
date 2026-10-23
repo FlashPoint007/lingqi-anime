@@ -1,7 +1,7 @@
 import {currentSeason,normalizeCalendar} from './catalog';
 import {readStorage,writeStorage} from './personal-data';
 // Invalidate calendars cached before current-week and premiere feeds were split.
-const KEY='kw-season-cache-v2',memory=new Map<string,any>();
+const KEY='kw-season-cache-v3',memory=new Map<string,any>();
 function valid(value:any,year:number,quarter:number){try{if(!value||value.year!==year||value.quarter!==quarter||!Number.isFinite(value.savedAt)||value.savedAt>Date.now()+60000||Date.now()-value.savedAt>7*86400000||!['current','premiere'].includes(value.basis))return;const now=currentSeason();if((value.basis==='current')!==(year===now.year&&quarter===now.quarter))return;return {...value,calendar:normalizeCalendar(value.calendar)};}catch{return;}}
 export function readSeasonCache(year:number,quarter:number){const key=year+':'+quarter;const cached=valid(memory.get(key),year,quarter);if(cached)return cached;try{return valid(JSON.parse(readStorage(KEY)||'{}')[key],year,quarter);}catch{return;}}
 export function seasonCacheFresh(value:any){return !!value&&!value.cacheStale&&!value.offline&&Date.now()-value.savedAt<300000;}

@@ -38,6 +38,7 @@ export async function emailAuthResponse(req:Request){
  working++;
  try{
   const body=JSON.parse(await readRequestText(req,4096));
+  if(!body||typeof body!=='object'||Array.isArray(body))return response({error:'账号请求格式不正确'},400);
   if(body.action==='logout'){
    const raw=token(req);if(raw)await database().prepare('DELETE FROM email_sessions WHERE token_hash=?').bind(await digest(raw)).run();
    return response({ok:true},200,sessionCookie('signed-out'));

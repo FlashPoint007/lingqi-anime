@@ -47,7 +47,9 @@ export async function seasonCatalog(params:URLSearchParams,upstream:Upstream){
   if(first.batch.length===PAGE_SIZE)for(let offset=PAGE_SIZE;offset<Math.min(total,1000);offset+=PAGE_SIZE*3){
    const batches=await Promise.all([offset,offset+PAGE_SIZE,offset+PAGE_SIZE*2].filter(n=>n<Math.min(total,1000)).map(page));for(const data of batches){items.push(...data.batch);total=Math.max(total,data.total);}
   }
-  const unique=[...new Map(items.map(s=>[s.id,s])).values()];return {calendar:groups(unique),year,quarter,basis:'premiere',complete:total<=unique.length};
+  // Search and Kazumi's season archive have different inclusion criteria.
+  // Prefer a stale archive during outages and recheck this fallback next visit.
+  const unique=[...new Map(items.map(s=>[s.id,s])).values()];return {calendar:groups(unique),year,quarter,basis:'premiere',complete:total<=unique.length,offline:true,notice:'季度接口暂不可用，当前为备用首播检索，收录可能与 Kazumi 略有差异'};
  }
 }
 

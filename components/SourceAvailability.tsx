@@ -23,9 +23,12 @@ export function useSourceAvailability(subject:Subject|null,rules:Rule[],aliases:
   const controller=new AbortController();const force=refreshScope.current===scope;refreshScope.current='';setChecksScope(scope);if(!subject||subject.id===0){setChecks({});return;}
   const enabled=rules.filter(r=>r.enabled!==false),candidates=enabled.filter(r=>!ruleCompatibility(r));
   const initial=Object.fromEntries(enabled.map(rule=>{const unsupported=ruleCompatibility(rule);return [rule.name,unsupported?{...empty,state:'error' as const,message:unsupported}:cachedAvailability(cache,key(rule))||empty];}));setChecks(initial);
+  const versions=new Map(reports.current.versions);
   void checkSources(candidates,controller.signal,async rule=>{
    if(initial[rule.name].state!=='queued')return;
-   const version=reports.current.versions.get(rule.name)||0;const update=(value:SourceAvailability)=>{if(!controller.signal.aborted)setChecks(old=>{if(controller.signal.aborted||current.current!==scope||(reports.current.versions.get(rule.name)||0)!==version)return old;if(value.checkedAt)storeAvailability(cache,key(rule),value);return {...old,[rule.name]:value};});};
+   const version=versions.get(rule.name)||0;
+   if((reports.current.versions.get(rule.name)||0)!==version)return;
+   const update=(value:SourceAvailability)=>{if(!controller.signal.aborted)setChecks(old=>{if(controller.signal.aborted||current.current!==scope||(reports.current.versions.get(rule.name)||0)!==version)return old;if(value.checkedAt)storeAvailability(cache,key(rule),value);return {...old,[rule.name]:value};});};
    update({...empty,state:'checking'});
    try{const result=await checkSource(rule,names,controller.signal,undefined,force);if(controller.signal.aborted)return;update(result);}
    catch(e){if(!controller.signal.aborted)update({...empty,state:'error',message:(e as Error).message});}

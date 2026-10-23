@@ -1,10 +1,33 @@
 import snapshot from './rules-snapshot.json';
 const ROOT='https://raw.githubusercontent.com/Predidit/KazumiRules/main/';
+// Same mirror as Kazumi 2.4.1. Each fallback must load one complete index.
+const MIRROR='https://cdn.gh-proxy.org/'+ROOT;
 const cache=new Map<string,{at:number;value:any}>();
 async function read(url:string){const old=cache.get(url);if(old&&Date.now()-old.at<3600000)return old.value;const r=await fetch(url,{signal:AbortSignal.timeout(12000),headers:{Accept:'application/json','User-Agent':'LingqiWeb'}});if(!r.ok)throw new Error('规则仓库响应 '+r.status);const value=await r.json();cache.set(url,{at:Date.now(),value});return value;}
 type ArchiveEntry={file:string;rule:any};
 let archiveCache:{at:number;entries:ArchiveEntry[]}|undefined;
 let pendingArchive:Promise<ArchiveEntry[]>|undefined;
+function indexedNames(index:any):string[]{
+ if(!Array.isArray(index)||!index.length||index.length>500||index.some(e=>typeof e?.name!=='string'||!/^[-\p{L}\p{N} _.()]+$/u.test(e.name)||e.name.trim()!==e.name||e.name.length>155||e.name==='index')||new Set(index.map(e=>e.name)).size!==index.length)throw Error('有效规则索引无效');
+ return index.map(e=>e.name);
+}
+async function indexedRules(root:string,signal:AbortSignal):Promise<ArchiveEntry[]>{
+ let total=0;
+ const json=async(file:string)=>{
+  signal.throwIfAborted();const response=await fetch(root+encodeURIComponent(file),{signal,headers:{Accept:'application/json','User-Agent':'LingqiWeb'},redirect:'error'});
+  if(!response.ok||!response.body)throw Error('规则镜像响应 '+response.status);
+  const reader=response.body.getReader(),decoder=new TextDecoder();let text='',size=0;
+  try{while(true){const {done,value}=await reader.read();if(done)break;size+=value.length;total+=value.length;if(size>1048576||total>4*1048576)throw Error('规则仓库超过大小限制');text+=decoder.decode(value,{stream:true});}text+=decoder.decode();return JSON.parse(text);}finally{await reader.cancel().catch(()=>{});}
+ };
+ const names=indexedNames(await json('index.json')),entries:ArchiveEntry[]=new Array(names.length);let next=0;
+ await Promise.all(Array.from({length:Math.min(3,names.length)},async()=>{while(next<names.length){const i=next++,name=names[i],file=name+'.json',rule=await json(file);if(!rule||rule.name!==name||typeof rule.baseURL!=='string')throw Error('有效规则文件不匹配：'+name);entries[i]={file,rule};}}));
+ return entries.filter(e=>!e.rule.deprecated&&e.rule.baseURL.startsWith('https://')).sort((a,b)=>a.file.localeCompare(b.file));
+}
+async function fallbackRules():Promise<ArchiveEntry[]>{
+ const requests=[new AbortController(),new AbortController()],deadline=AbortSignal.timeout(18000);
+ try{return await Promise.any([ROOT,MIRROR].map((root,i)=>indexedRules(root,AbortSignal.any([deadline,requests[i].signal])).catch(error=>{requests[i].abort();throw error;})));}
+ finally{requests.forEach(request=>request.abort());}
+}
 export function parseRuleArchive(bytes:Uint8Array):ArchiveEntry[]{
  const decoder=new TextDecoder();const entries:ArchiveEntry[]=[];let active:Set<string>|undefined;
  for(let offset=0;offset+512<=bytes.length;){
@@ -25,10 +48,14 @@ export function parseRuleArchive(bytes:Uint8Array):ArchiveEntry[]{
 export async function archiveRules(refresh=false):Promise<ArchiveEntry[]>{
  if(!refresh&&archiveCache&&Date.now()-archiveCache.at<3600000)return archiveCache.entries;if(pendingArchive)return pendingArchive;
  pendingArchive=(async()=>{
-  const response=await fetch('https://codeload.github.com/Predidit/KazumiRules/tar.gz/refs/heads/main',{signal:AbortSignal.timeout(20000)});if(!response.ok||!response.body)throw new Error('规则归档下载失败');
+  let entries:ArchiveEntry[];
+  try{
+  const response=await fetch('https://codeload.github.com/Predidit/KazumiRules/tar.gz/refs/heads/main',{signal:AbortSignal.timeout(12000)});if(!response.ok||!response.body)throw new Error('规则归档下载失败');
   const reader=response.body.pipeThrough(new DecompressionStream('gzip')).getReader();const chunks:Uint8Array[]=[];let size=0;
   while(true){const {value,done}=await reader.read();if(done)break;size+=value.length;if(size>4*1024*1024){await reader.cancel();throw new Error('规则仓库超过 4 MB');}chunks.push(value);}
-  const bytes=new Uint8Array(size);let offset=0;for(const c of chunks){bytes.set(c,offset);offset+=c.length;}const entries=parseRuleArchive(bytes);archiveCache={at:Date.now(),entries};return entries;
+  const bytes=new Uint8Array(size);let offset=0;for(const c of chunks){bytes.set(c,offset);offset+=c.length;}entries=parseRuleArchive(bytes);
+  }catch{entries=await fallbackRules();}
+  archiveCache={at:Date.now(),entries};return entries;
  })();try{return await pendingArchive;}finally{pendingArchive=undefined;}
 }
 export async function ruleManifest(){

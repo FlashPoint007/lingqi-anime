@@ -1,0 +1,50 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),ts=require('typescript');
+const compile=source=>ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
+const plain=value=>JSON.parse(JSON.stringify(value)),tick=async()=>{for(let i=0;i<8;i++)await new Promise(resolve=>setImmediate(resolve));};
+function load(file,globals={}){const exports={};vm.runInNewContext(compile(fs.readFileSync(file,'utf8')),{exports,URL,URLSearchParams,Request,Response,Headers,AbortSignal,AbortController,TextEncoder,TextDecoder,Uint8Array,DecompressionStream,console,setTimeout,clearTimeout,require:name=>name.endsWith('.json')?{default:JSON.parse(fs.readFileSync('lib/'+name.slice(2),'utf8'))}:require('./check-feature-deps.cjs').dependency(name),...globals},{filename:file});return exports;}
+function events(extra={}){const handlers=new Map();return {...extra,handlers,addEventListener(name,fn){if(!handlers.has(name))handlers.set(name,new Set());handlers.get(name).add(fn);},removeEventListener(name,fn){handlers.get(name)?.delete(fn);},fire(name,event={}){for(const fn of handlers.get(name)||[])fn(event);}};}
+function element(){return events({children:[],hidden:false,textContent:'',append(...children){this.children.push(...children);},replaceChildren(...children){this.children=children;}});}
+(async()=>{
+ const share=load('lib/share-links.ts'),origin='https://site.example';
+ assert.equal(share.shareInputHash(' kazumi://bangumi/400602 ',origin),'#subject/400602');
+ assert.equal(share.parseShareRoute('#kazumi://bangumi/400602').id,400602);
+ const search=share.parseShareRoute(share.shareInputHash('kazumi://search?query='+encodeURIComponent('葬送的芙莉莲'),origin));assert.equal(search.search.q,'葬送的芙莉莲');assert.equal(search.search.page,1);assert.equal(search.search.filters.tags,'');
+ for(const host of ['bgm.tv','bangumi.tv','chii.in'])assert.equal(share.shareInputHash('https://'+host+'/subject/400602?utm_source=share',origin),'#subject/400602');
+ assert.equal(share.shareInputHash(origin+'/#calendar?year=1999&quarter=4&day=2',origin),'#calendar?year=1999&quarter=4&day=2');
+ assert.equal(share.shareInputHash('芙莉莲 tag:奇幻',origin),undefined);
+ for(const bad of ['kazumi://bangumi/0','kazumi://bangumi/01','kazumi://bangumi/99999999999','kazumi://bangumi/1/extra','kazumi://search?query=','kazumi://search?query=one&query=two','kazumi://search?query=%ZZ','kazumi://search?query='+('x'.repeat(121)),'kazumi://user:pass@bangumi/1','kazumi://unknown/1','https://evil.example/#subject/1','https://bgm.tv.evil.example/subject/1','http://bgm.tv/subject/1',origin+'/#subject/0'])assert.throws(()=>share.shareInputHash(bad,origin),undefined,bad);
+ // Execute the actual Home handler: a pasted link goes through the normal route
+ // controller and never becomes a keyword or an arbitrary network destination.
+ const home=ts.createSourceFile('page.tsx',fs.readFileSync('app/page.tsx','utf8'),ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);let runSearch;
+ (function visit(node){if(ts.isFunctionDeclaration(node)&&node.name?.text==='runSearch')runSearch=node.getText(home);ts.forEachChild(node,visit);})(home);
+ let routed=0,pushed='',parsed=0;const context={shareInputHash:share.shareInputHash,location:{origin},navigationHash:{current:'#old'},window:{history:{pushState(_a,_b,hash){pushed=hash;}}},routeHandler:{current(){routed++;}},parseSearchQuery(){parsed++;throw Error('must not parse links as keywords');},setError(){},setToast(){}};vm.createContext(context);vm.runInContext(compile(runSearch),context);context.runSearch('kazumi://bangumi/400602');assert.equal(pushed,'#subject/400602');assert.equal(routed,1);assert.equal(parsed,0);assert.equal(context.navigationHash.current,undefined);
+ console.log('PASS: Kazumi 2.4 links, Bangumi/site share imports, Home navigation and malformed/hostile link rejection');
+ const snapshot=JSON.parse(fs.readFileSync('lib/rules-snapshot.json','utf8')).entries.slice(0,3),index=snapshot.map(e=>({name:e.rule.name}));let calls=0,active=0,peak=0,rawAborted=false;
+ const rules=load('lib/rule-subscription-server.ts',{fetch:async(url,options)=>{
+  calls++;if(url.includes('codeload'))return new Response(null,{status:503});
+  if(url.startsWith('https://raw.'))return new Promise((_,reject)=>options.signal.addEventListener('abort',()=>{rawAborted=true;reject(Error('aborted'));},{once:true}));
+  assert.ok(url.startsWith('https://cdn.gh-proxy.org/https://raw.githubusercontent.com/Predidit/KazumiRules/main/'));
+  if(url.endsWith('index.json'))return Response.json(index);active++;peak=Math.max(peak,active);await tick();active--;return Response.json(snapshot.find(e=>url.endsWith(encodeURIComponent(e.file))).rule);
+ }});
+ const [one,two]=await Promise.all([rules.archiveRules(),rules.archiveRules()]);assert.deepEqual(plain(one),plain(two));assert.equal(one.length,3);assert.equal(rawAborted,true);assert.ok(peak<=3);const count=calls;await rules.archiveRules();assert.equal(calls,count,'a complete mirror snapshot is cached and concurrent refreshes coalesce');await rules.archiveRules(true);assert.ok(calls>count,'manual sync bypasses the cache');
+ for(const failure of ['missing','mismatch','duplicate','path','oversize']){
+  const broken=load('lib/rule-subscription-server.ts',{fetch:async url=>{
+   if(!url.startsWith('https://cdn.'))return new Response(null,{status:503});
+   if(url.endsWith('index.json'))return Response.json(failure==='duplicate'?[index[0],index[0]]:failure==='path'?[{name:'../secret'}]:index);
+   if(failure==='oversize')return new Response(new Uint8Array(1048577));
+   const entry=snapshot.find(e=>url.endsWith(encodeURIComponent(e.file)));if(failure==='missing'&&entry===snapshot[1])return new Response(null,{status:404});return Response.json(failure==='mismatch'?{...entry.rule,name:'wrong-name'}:entry.rule);
+  }});await assert.rejects(broken.archiveRules(),undefined,'partial/invalid mirror must not become an authoritative deletion list: '+failure);
+ }
+ console.log('PASS: Kazumi 2.4.1 mirror recovery, bounded/coalesced complete snapshots, refresh, loser cancellation and missing/oversized/malformed feed rejection');
+ // Run the whole browser script, including its startup, with a never-ready worker.
+ const timers=new Map();let timerId=0,who='anonymous',listCalls=0;
+ const downloads=new Map(['A','B'].map(id=>[id,{id,owner:'anonymous',subject:{name:id},episode:'EP1',position:10,status:'complete',type:'video',entry:'0',bytes:20}]));
+ const video=events({readyState:2,duration:120,seeking:false,currentTime:0,pause(){},load(){},removeAttribute(){this.src='';},canPlayType:()=>'',scrollIntoView(){},play:async()=>{}}),elements={library:element(),video,message:element(),retry:element(),playback:element(),'player-title':element()},workers=events({register:async()=>({}),ready:new Promise(()=>{}),controller:null});
+ const env={Date,console,document:events({getElementById:id=>elements[id],createElement:element,visibilityState:'visible'}),window:events(),navigator:{serviceWorker:workers},location:{hash:''},localStorage:{getItem:key=>key==='kw-library-owner'?JSON.stringify(who):'false'},setTimeout:(fn,ms)=>{timers.set(++timerId,{fn,ms});return timerId;},clearTimeout:id=>timers.delete(id),readOffline:async(_store,id)=>downloads.get(id),listOffline:async()=>{listCalls++;return [...downloads.values()].map(x=>({...x}));},offlineAssetURL:(id,entry)=>'/__offline_media/'+id+'/'+entry,removeOffline:async id=>downloads.delete(id),updateOfflineProgress:async(id,owner,change)=>{const item=downloads.get(id);if(item?.owner!==owner)return;const next={...item,...change};downloads.set(id,next);return next;}};
+ vm.createContext(env);vm.runInContext(fs.readFileSync('public/offline-player.js','utf8').replace(/^import[^\n]+\n/,''),env);await tick();assert.equal(elements.library.children.length,2,'a slow worker cannot hide existing downloads');assert.equal(elements.library.children[0].children[1].disabled,true);assert.equal(listCalls,1);
+ [...timers.values()].find(t=>t.ms===12000).fn();await tick();assert.match(elements.message.textContent,/准备超时/);assert.equal(elements.retry.hidden,false);assert.equal(elements.library.children.length,2);
+ workers.ready=Promise.resolve({});workers.controller={};elements.retry.fire('click');await tick();assert.equal(elements.retry.hidden,true);assert.equal(elements.library.children[0].children[1].disabled,false);assert.equal(timers.size,0);
+ const staleButton=elements.library.children[0].children[1];downloads.set('A',{...downloads.get('A'),position:70});staleButton.fire('click');await tick();video.fire('loadedmetadata');assert.equal(video.currentTime,70,'opening must read the latest record instead of the row snapshot');video.seeking=false;video.currentTime=85;video.fire('seeked');await tick();elements.library.children[1].children[1].fire('click');await tick();video.fire('loadedmetadata');staleButton.fire('click');await tick();video.fire('loadedmetadata');assert.equal(video.currentTime,85,'A to B to A resumes at the new A position');
+ const offline=vm.runInContext('({play,current:()=>current})',env);downloads.delete('B');await offline.play({id:'B',owner:'anonymous'});assert.equal(offline.current().id,'A','a deleted row cannot reopen missing media');assert.match(elements.message.textContent,/已删除/);
+ console.log('PASS: visible offline library during stalled startup, bounded timeout/retry, latest stored resume on repeat selection and deleted-media rejection');
+})().catch(error=>{console.error(error);process.exitCode=1;});

@@ -1,4 +1,7 @@
-// Keep the catalogue usable on browsers without AbortSignal.any / timeout.
+// Keep the catalogue usable on browsers without newer AbortSignal methods.
+export function throwIfAborted(signal:AbortSignal){
+ if(signal.aborted)throw signal.reason??new DOMException('请求已取消','AbortError');
+}
 export function timeoutSignal(ms:number):AbortSignal {
  if(typeof AbortSignal.timeout==='function')return AbortSignal.timeout(ms);
  const controller=new AbortController();setTimeout(()=>controller.abort(new DOMException('请求超时','TimeoutError')),Math.max(0,ms));return controller.signal;

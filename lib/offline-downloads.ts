@@ -1,4 +1,4 @@
-import {anySignal,requestJson,timeoutSignal} from './request-client';
+import {throwIfAborted,anySignal,requestJson,timeoutSignal} from './request-client';
 import {parseOfflinePlaylist} from './offline-hls';
 import {offlineIdentity,responseValidator,validResume} from './offline-resume';
 import type {Subject} from './catalog';
@@ -53,7 +53,7 @@ export async function queueOfflineEpisodes(inputs:Input[]){
 function record(input:Input,status:OfflineDownload['status']):OfflineDownload{return {id:crypto.randomUUID(),owner:input.owner,subject:{id:input.subject.id,name:input.subject.name.slice(0,200),name_cn:input.subject.name_cn?.slice(0,200)},episode:input.episode.slice(0,200),number:input.number,sourceUrl:input.sourceUrl,source:input.source,ruleName:input.ruleName,createdAt:Date.now(),bytes:0,status,type:input.mediaType||'video',entry:'0',position:0,downloadUrl:input.url};}
 async function performDownload(input:Input,old?:OfflineDownload,onStatus?:(message:string)=>void){
  if(running)throw Error('已有下载任务，请等待完成或先暂停');const controller=new AbortController(),id=old?.id||crypto.randomUUID();running={id,owner:input.owner,controller};downloadChannel();notify();
- let item:OfflineDownload|undefined,lastNotice=0,received=0,totalBytes=0,nextRequest=0,budget=LIMIT,startTime=Date.now();const abort=()=>controller.signal.throwIfAborted();
+ let item:OfflineDownload|undefined,lastNotice=0,received=0,totalBytes=0,nextRequest=0,budget=LIMIT,startTime=Date.now();const abort=()=>throwIfAborted(controller.signal);
  const hide=()=>controller.abort(new DOMException('页面关闭，已完成的分片会保留','AbortError'));window.addEventListener('pagehide',hide);
  const request=async(url:string,headers?:HeadersInit)=>{abort();const address=new URL(url,location.href);if(address.username||address.password||address.protocol!=='https:'&&address.origin!==location.origin)throw Error('视频下载地址不安全');
   const deadline=new AbortController(),timer=setTimeout(()=>deadline.abort(),30000);let response:Response;try{response=await fetch(address.href,{headers,signal:anySignal([controller.signal,deadline.signal]),credentials:'omit',redirect:'error',cache:'no-store'});}catch(error){if(controller.signal.aborted)throw error;throw Error('视频读取失败，可能不允许跨域下载或需要重新解析线路');}finally{clearTimeout(timer);}

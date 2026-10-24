@@ -1,3 +1,4 @@
+import {setMediaVolume} from './player-compat';
 import type {PlayerAction,PlayerPreferences} from './player-preferences';
 type Options={video:HTMLVideoElement;stage:HTMLElement;surface:HTMLElement;preferences:()=>PlayerPreferences;play:()=>void;seek:(delta:number)=>unknown;action:(action:PlayerAction)=>void;message:(message:string)=>void;brightness:(n:number)=>void;suppressClick:()=>void};
 export function bindPlayerOperations(o:Options){
@@ -18,7 +19,7 @@ export function bindPlayerOperations(o:Options){
   if(Math.abs(dx)+Math.abs(dy)<12)return;stopHold();if(!o.preferences().gestures||e.pointerType==='mouse')return;
   e.preventDefault();o.suppressClick();const bounds=surface.getBoundingClientRect();if(!pointer.axis)pointer.axis=Math.abs(dx)>Math.abs(dy)?'seek':pointer.x<bounds.left+bounds.width/2?'brightness':'volume';
   if(pointer.axis==='seek'){const delta=dx/Math.max(bounds.width,1)*120;o.message('松开跳转至 '+Math.floor(Math.max(0,Math.min(v.duration||0,pointer.position+delta)))+' 秒');}
-  else if(pointer.axis==='volume'){v.volume=Math.max(0,Math.min(1,pointer.volume-dy/Math.max(bounds.height,1)));v.muted=false;o.message('音量 '+Math.round(v.volume*100)+'%');}
+  else if(pointer.axis==='volume'){const changed=setMediaVolume(v,pointer.volume-dy/Math.max(bounds.height,1));o.message(changed?'音量 '+Math.round(v.volume*100)+'%':'此设备请使用系统音量键调节音量');}
   else{brightness=Math.max(.25,Math.min(1.5,pointer.brightness-dy/Math.max(bounds.height,1)));o.brightness(brightness);o.message('画面亮度 '+Math.round(brightness*100)+'%');}
  };
  const pointerEnd=(e:PointerEvent)=>{if(!pointer||pointer.id!==e.pointerId)return;const p=pointer;pointer=undefined;const wasHeld=held;stopHold();if(wasHeld)o.suppressClick();if(p.axis==='seek'&&e.type==='pointerup'){const width=surface.getBoundingClientRect().width;o.seek(p.position+(e.clientX-p.x)/Math.max(width,1)*120-v.currentTime);}if(p.axis){o.suppressClick();o.message('');}};

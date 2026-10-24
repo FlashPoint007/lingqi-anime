@@ -2,12 +2,18 @@ type DB=Pick<D1Database,'prepare'>;
 type Group='page'|'metadata'|'source'|'resolve'|'media'|'download'|'rules'|'personal'|'auth';
 const limits:Record<Group,{limit:number;block:number;parallel:number;clientParallel:number}>={download:{limit:60,block:1,parallel:24,clientParallel:6},auth:{limit:10,block:1,parallel:4,clientParallel:1},page:{limit:300,block:10,parallel:48,clientParallel:16},metadata:{limit:180,block:10,parallel:48,clientParallel:16},source:{limit:180,block:10,parallel:24,clientParallel:8},resolve:{limit:30,block:3,parallel:8,clientParallel:3},media:{limit:1200,block:30,parallel:80,clientParallel:20},rules:{limit:40,block:5,parallel:16,clientParallel:8},personal:{limit:120,block:5,parallel:16,clientParallel:4}};
 type Bucket={window:number;remaining:number;blocked:boolean;localAllocated?:boolean};
-const locks=new Map<string,Promise<void>>();
+type ReservationLock={done:Promise<void>;release:()=>void;expires:number};
+const locks=new Map<string,ReservationLock>();
 const buckets=new Map<string,Bucket>(),active=new Map<string,number>(),globalActive=new Map<Group,number>();let cleanupAt=0;
 // A canceled Worker invocation may never consume/cancel its response stream.
-// Only bounded source/resolve requests receive leases; media/download streams
-// retain their slots for the full transfer. Leases do not reset rate quotas.
+// Bounded requests receive leases; media/download streams retain their slots
+// for the full transfer. Leases do not reset rate quotas.
 const sourceLeases=new Map<()=>void,number>();
+class ReservationTimeout extends Error{}
+function reservationDeadline<T>(task:Promise<T>,ms:number){
+ let timer:ReturnType<typeof setTimeout>;const expires=Date.now()+ms,expired=()=>new ReservationTimeout('限流检查超时');
+ return Promise.race([task.then(value=>{if(Date.now()>expires)throw expired();return value;}),new Promise<T>((_,reject)=>{timer=setTimeout(()=>reject(expired()),ms);})]).finally(()=>clearTimeout(timer));
+}
 export class RequestLimitError extends Error{constructor(message:string,public status:number){super(message);}}
 export async function readRequestText(req:Request,max=65536){
  const length=req.headers.get('content-length');if(length&&(!/^\d+$/.test(length)||Number(length)>max))throw new RequestLimitError('请求过大',413);
@@ -37,17 +43,19 @@ async function reserveUnlocked(key:string,g:Group,shared:boolean,db?:DB){
  if(bucket.blocked)return false;
  if(bucket.remaining>0){bucket.remaining--;return true;}
  const current=bucket;
- const task=(async()=>{if(db){try{const row=await db.prepare('INSERT INTO request_buckets (key,window_start,hits) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET hits=hits+excluded.hits RETURNING hits').bind(key+':'+window,window,config.block).first<{hits:number}>();if(!row||row.hits>limit){current.blocked=true;return;}current.remaining=config.block;
-   if(now-cleanupAt>60000){cleanupAt=now;await db.prepare('DELETE FROM request_buckets WHERE key IN (SELECT key FROM request_buckets WHERE window_start < ? LIMIT 5000)').bind(window-60000).run();}return;
-  }catch{/* A local ceiling remains enforced when D1 is unavailable. */}}
+ const task=(async()=>{if(db){try{const row=await reservationDeadline(db.prepare('INSERT INTO request_buckets (key,window_start,hits) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET hits=hits+excluded.hits RETURNING hits').bind(key+':'+window,window,config.block).first<{hits:number}>(),2000);if(!row||row.hits>limit){current.blocked=true;return;}current.remaining=config.block;
+   if(now-cleanupAt>60000){cleanupAt=now;void reservationDeadline(db.prepare('DELETE FROM request_buckets WHERE key IN (SELECT key FROM request_buckets WHERE window_start < ? LIMIT 5000)').bind(window-60000).run(),1000).catch(()=>{});}return;
+  }catch(error){if(error instanceof ReservationTimeout)throw error;/* A local ceiling remains enforced when D1 is unavailable. */}}
   // Without D1 this reservation lasts for the minute, not just one block.
   if(current.localAllocated){current.blocked=true;return;}current.localAllocated=true;current.remaining=limit;
  })();await task;
  if(current.blocked)return false;if(current.remaining<=0){current.blocked=true;return false;}current.remaining--;return true;
 }
 async function reserve(key:string,g:Group,shared:boolean,db?:DB){
- const previous=locks.get(key)||Promise.resolve();let unlock!:()=>void;const next=new Promise<void>(resolve=>unlock=resolve);locks.set(key,next);await previous;
- try{return await reserveUnlocked(key,g,shared,db);}finally{unlock();if(locks.get(key)===next)locks.delete(key);}
+ let previous=locks.get(key);if(previous&&previous.expires<=Date.now()){locks.delete(key);previous.release();previous=undefined;}
+ let unlock!:()=>void;const next:ReservationLock={done:new Promise<void>(resolve=>unlock=resolve),release:()=>unlock(),expires:Date.now()+4000};locks.set(key,next);
+ try{if(previous)await reservationDeadline(previous.done,Math.max(1,Math.min(2000,previous.expires-Date.now())));if(Date.now()>=next.expires)throw new ReservationTimeout('限流等待超时');return await reserveUnlocked(key,g,shared,db);}
+ finally{unlock();if(locks.get(key)===next)locks.delete(key);}
 }
 export async function guardRequest(req:Request,db?:DB,secret?:string,override?:'resolve',trustedEdge=false){
 
@@ -67,7 +75,7 @@ export async function guardRequest(req:Request,db?:DB,secret?:string,override?:'
  // Reserve concurrency before the asynchronous rate lookup as well.
  globalActive.set(g,(globalActive.get(g)||0)+1);active.set(key,(active.get(key)||0)+1);let released=false;
  const release=()=>{if(released)return;released=true;sourceLeases.delete(release);globalActive.set(g,Math.max(0,(globalActive.get(g)||1)-1));const n=(active.get(key)||1)-1;if(n>0)active.set(key,n);else active.delete(key);};
- if(g==='source'||g==='resolve')sourceLeases.set(release,Date.now()+60000);
+ if(g!=='media'&&g!=='download')sourceLeases.set(release,Date.now()+60000);
  try{if(!await reserve(key,g,shared,db)){release();return {response:reject('访问过于频繁，请稍后重试',429,retry),release:noop};}}catch{release();return {response:reject('服务繁忙，请稍后重试',503,3),release:noop};}
  return {release};
 }

@@ -67,7 +67,8 @@ export function episodeLabel(name:string,number?:number){
  const normalized=name.normalize('NFKC').trim();
  if(number===undefined)return normalized;
  const prefix='第 '+number+' 集';
- if(knownEpisodeNumber({name:normalized})!==number)return normalized?prefix+' · '+normalized:prefix;
+ // Explicit canonical numbers can differ from a source's local season index.
+ if(knownEpisodeNumber({name:normalized})===undefined)return normalized?prefix+' · '+normalized:prefix;
  const rest=normalized.replace(/^(?:(?:第\s*)?\d+(?:\.\d+)?\s*(?:[集话話回]|$)|(?:EP(?:ISODE)?|Chapter)\s*[.:-]?\s*\d+(?:\.\d+)?(?=$|\s|[:：-]))/i,'').replace(/^[\s·:：-]+/,'');
  return rest?prefix+' · '+rest:prefix;
 }

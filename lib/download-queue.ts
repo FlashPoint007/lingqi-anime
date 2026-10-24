@@ -1,5 +1,5 @@
 import {prepareLocalDownload,handToBrowser,type BrowserDownload} from './browser-download-client';
-import {requestJson,anySignal,timeoutSignal} from './request-client';
+import {throwIfAborted,requestJson,anySignal,timeoutSignal} from './request-client';
 import {validateRule,publicUrl,type Rule} from './web-core';
 import type {Subject} from './catalog';
 import type {Episode} from './playback-client';
@@ -40,7 +40,7 @@ export async function runDownloadQueue(owner:string,signal:AbortSignal){
    try{
     let address=task.directUrl,mediaType=task.mediaType;
     if(!address){const rule=validateRule(task.rule);publicUrl(task.episode.url);const resolved=await requestJson('/api/source',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({operation:'resolve',rule,url:task.episode.url,source:task.source}),signal:combined});if(resolved.mode!=='video'||typeof resolved.url!=='string')throw Error(resolved.message||'这集未解析到视频，请到播放页更换线路');address=resolved.url;mediaType=resolved.mediaType;}
-    const download=await prepareLocalDownload({url:address!,name:(task.subject.name_cn||task.subject.name)+' - '+task.episode.name,mediaType},combined);combined.throwIfAborted();if(readDownloadQueue(owner).tasks.find(t=>t.id===task.id)?.state==='preparing')edit(owner,task.id,{state:'ready',download,preparedAt:Date.now(),error:undefined});
+    const download=await prepareLocalDownload({url:address!,name:(task.subject.name_cn||task.subject.name)+' - '+task.episode.name,mediaType},combined);throwIfAborted(combined);if(readDownloadQueue(owner).tasks.find(t=>t.id===task.id)?.state==='preparing')edit(owner,task.id,{state:'ready',download,preparedAt:Date.now(),error:undefined});
    }catch(error){const current=readDownloadQueue(owner).tasks.find(t=>t.id===task.id);if(current?.state==='preparing')edit(owner,task.id,{state:controller.signal.aborted||signal.aborted?'queued':'failed',error:controller.signal.aborted||signal.aborted?undefined:combined.reason?.name==='TimeoutError'?'解析准备超时，请重试':(error as Error).message});}
    finally{if(active.get(owner)?.controller===controller)active.delete(owner);}
   }

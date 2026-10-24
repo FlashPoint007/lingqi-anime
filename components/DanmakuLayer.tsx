@@ -10,13 +10,17 @@ import {useDanmaku} from './useDanmaku';
 import DanmakuBlocks from './DanmakuBlocks';
 import {advancedDanmaku} from '../lib/danmaku-blocks';
 import DanmakuOverlay from './DanmakuOverlay';
+import {useDanmakuConversion} from './useDanmakuConversion';
 import {danmakuNames,type DanmakuSource} from '../lib/danmaku';
 export default function DanmakuLayer({media,subjectId,number,danmakuPreferences,onDanmakuPreferences,danmakuSync,danmakuSession,composerHost,mayResume}:{danmakuPreferences?:DanmakuSettings;onDanmakuPreferences?:(settings:DanmakuSettings)=>void;danmakuSync?:string;danmakuSession?:DanmakuSession;composerHost:RefObject<HTMLElement|null>;mayResume:()=>boolean;media:RefObject<HTMLVideoElement|null>;subjectId:number;number:number|undefined}){
  const d=useDanmaku(subjectId,number,danmakuPreferences,onDanmakuPreferences),[open,setOpen]=useState(false),[link,setLink]=useState(''),[composer,setComposer]=useState(false),[sent,setSent]=useState('');
  const site=useSiteDanmaku(subjectId,number,media,d.settings.enabled&&d.settings.sources.site,danmakuSession);
  const comments=useMemo(()=>[...d.comments,...siteDanmakuComments(site.posts,d.settings.offset)].sort((a,b)=>a[0]-b[0]),[d.comments,site.posts,d.settings.offset]);
+ // Filter the original and displayed text so conversion cannot undo blocking.
+ const eligible=useMemo(()=>advancedDanmaku(comments,d.settings),[comments,d.settings]);
+ const converted=useDanmakuConversion(eligible,d.settings.conversion,d.settings.enabled);
  const change=<K extends keyof DanmakuSettings>(key:K,value:DanmakuSettings[K])=>d.setSettings(current=>({...current,[key]:value}));
- return <><DanmakuOverlay media={media} comments={comments} settings={d.settings}/>
+ return <><DanmakuOverlay media={media} comments={converted.comments} settings={d.settings}/>
   <div className="danmaku-switches" onClick={e=>e.stopPropagation()} onDoubleClick={e=>e.stopPropagation()}>
    <button type="button" aria-label="弹幕开关" aria-pressed={d.settings.enabled} onClick={()=>change('enabled',!d.settings.enabled)}><MessageSquare size={15}/>{d.settings.enabled?'弹幕':'弹幕关'}{comments.length>0&&<small>{comments.length.toLocaleString()}</small>}</button>
    <button type="button" aria-label="弹幕设置" aria-expanded={open} disabled={composer} onClick={()=>setOpen(!open)}><Settings2 size={15}/></button>
@@ -35,7 +39,7 @@ export default function DanmakuLayer({media,subjectId,number,danmakuPreferences,
    {d.notices.some(n=>n.provider==='dandan'&&!n.configured)&&<p className="danmaku-caption">站长可在<a href="https://dev.dandanplay.com/" target="_blank" rel="noreferrer">弹弹play 开发者中心</a>申请本站应用凭证。访客无需注册弹弹play。</p>}
    <p className="danmaku-caption">来源显示筛选（过滤已加载的弹幕）</p><div className="danmaku-source-filters" aria-label="弹幕来源显示筛选">{(['site','bilibili','gamer','dandan',...(d.isLocal?['local']:[])] as DanmakuSource[]).map(source=><label key={source}><input type="checkbox" checked={d.settings.sources[source]} onChange={e=>change('sources',{...d.settings.sources,[source]:e.target.checked})}/>{danmakuNames[source]}<small>{comments.filter(row=>row[4]===source).length}</small></label>)}</div><p className="danmaku-caption" role="status">{site.status} <button type="button" onClick={site.refresh}>刷新本站弹幕</button></p>
    <p className="danmaku-caption">弹幕类型</p><div className="danmaku-source-filters" aria-label="弹幕类型筛选">{(['scroll','top','bottom'] as const).map(mode=><label key={mode}><input type="checkbox" checked={d.settings.modes[mode]} onChange={e=>change('modes',{...d.settings.modes,[mode]:e.target.checked})}/>{{scroll:'滚动弹幕',top:'顶部弹幕',bottom:'底部弹幕'}[mode]}</label>)}</div>
-   <div className="danmaku-source-filters"><label><input type="checkbox" checked={d.settings.color} onChange={e=>change('color',e.target.checked)}/>保留弹幕颜色</label><label><input type="checkbox" checked={d.settings.deduplicate} onChange={e=>change('deduplicate',e.target.checked)}/>合并 10 秒内相同弹幕</label></div><p className="danmaku-caption">过滤后可显示 {advancedDanmaku(comments,d.settings).length.toLocaleString()} 条；更改不会重新请求片源。</p>
+   <div className="danmaku-source-filters"><label><input type="checkbox" checked={d.settings.color} onChange={e=>change('color',e.target.checked)}/>保留弹幕颜色</label><label><input type="checkbox" checked={d.settings.deduplicate} onChange={e=>change('deduplicate',e.target.checked)}/>合并 10 秒内相同弹幕</label></div><label className="danmaku-field">简繁转换<select aria-label="弹幕简繁转换" value={d.settings.conversion} onChange={e=>change('conversion',e.target.value as DanmakuSettings['conversion'])}><option value="none">不转换</option><option value="simplified">转为简体</option><option value="traditional">转为繁体</option></select></label><p className="danmaku-caption">仅转换本机显示文字，原始弹幕与发送内容保留；登录后同步此偏好。</p>{converted.status&&<p className="danmaku-caption" role="status">{converted.status}</p>}<p className="danmaku-caption">过滤后可显示 {advancedDanmaku(converted.comments,d.settings).length.toLocaleString()} 条；更改不会重新请求片源。</p>
    <div className="danmaku-ranges">
     <label>不透明度 <output>{Math.round(d.settings.opacity*100)}%</output><input aria-label="弹幕不透明度" type="range" min=".2" max="1" step=".05" value={d.settings.opacity} onChange={e=>change('opacity',Number(e.target.value))}/></label>
     <label>字号 <output>{d.settings.fontSize}</output><input aria-label="弹幕字号" type="range" min="16" max="36" step="1" value={d.settings.fontSize} onChange={e=>change('fontSize',Number(e.target.value))}/></label>

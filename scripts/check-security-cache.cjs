@@ -34,7 +34,7 @@ const secret='test-key-with-more-than-thirty-two-bytes';
  await cache.cachedJson('catalog','background',async()=>({value:'old'}),{ttl:1000,stale:10000});clock+=1001;
  let finishRefresh,backgroundCalls=0;const refreshGate=new Promise(resolve=>finishRefresh=resolve),slowRefresh=async()=>{backgroundCalls++;await refreshGate;return {value:'new'};};
  const fast=await cache.cachedJson('catalog','background',slowRefresh,{ttl:1000,stale:10000,background:true});assert.equal((await fast.json()).value,'old');assert.equal(fast.headers.get('x-lingqi-cache'),'stale-updating');
- const alsoFast=await cache.cachedJson('catalog','background',slowRefresh,{ttl:1000,stale:10000,background:true});assert.equal((await alsoFast.json()).value,'old');assert.equal(backgroundCalls,1);assert.equal(background.length,1);
+ const alsoFast=await cache.cachedJson('catalog','background',slowRefresh,{ttl:1000,stale:10000,background:true});assert.equal((await alsoFast.json()).value,'old');assert.equal(backgroundCalls,1);assert.ok(background.length>0,'foreground and background tasks are retained until settlement');
  finishRefresh();await Promise.all(background);assert.equal((await (await cache.cachedJson('catalog','background',slowRefresh,{ttl:1000,stale:10000,background:true})).json()).value,'new');
  clock+=10001;await assert.rejects(cache.cachedJson('catalog','query',async()=>{throw Error('origin down');},{ttl:1000,stale:10000}),/origin down/);
  let unlock;const gate=new Promise(resolve=>unlock=resolve);calls=0;

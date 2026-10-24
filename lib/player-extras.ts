@@ -1,4 +1,10 @@
 // Local-only browser equivalents of Kazumi's subtitle, screenshot and sleep tools.
+// Match upstream's five-second near-end resume guard, including stale imported records.
+export function playbackResumeStart(position:number,duration:number){
+ if(!Number.isFinite(position)||position<=0)return 0;
+ return Number.isFinite(duration)&&duration>0&&position>=Math.max(0,duration-5)?0:position;
+}
+
 export function subtitleVtt(input:string){
  if(new TextEncoder().encode(input).length>2*1024*1024)throw Error('请选择不超过 2 MB 的 VTT / SRT 字幕');
  const text=input.replace(/^\uFEFF/,'').replace(/\r\n?/g,'\n').trim();

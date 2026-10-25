@@ -3,7 +3,10 @@ export const normalizeTitle=(name:string)=>name.normalize('NFKC').toLowerCase().
 export type SourceSubject={eps?:number;platform?:string};
 export const episodic=(subject?:SourceSubject)=>!!subject&&(Number(subject.eps)>1||subject.eps!==1&&/^(?:TV|WEB|OVA|ONA)|电视|電視|网络|網絡/i.test(subject.platform||''));
 export const firstSeason=(name:string)=>normalizeTitle(name).replace(/(?:第[一1][季期部]|season1)$/,'');
-export function matchesTitle(name:string,names:string[],subject?:SourceSubject){const n=normalizeTitle(name);return !!n&&names.some(value=>normalizeTitle(value)===n||episodic(subject)&&firstSeason(name)===firstSeason(value));}
+// Repeated !/? can identify a sequel (けいおん!!, ご注文はうさぎですか？？).
+// Keep them when automatically selecting sources; explicit user aliases still apply.
+const sequelPunctuation=(name:string)=>name.normalize('NFKC').match(/[!?]{2,}/g)?.join('|')||'';
+export function matchesTitle(name:string,names:string[],subject?:SourceSubject){const n=normalizeTitle(name),punctuation=sequelPunctuation(name);return !!n&&names.some(value=>punctuation===sequelPunctuation(value)&&(normalizeTitle(value)===n||episodic(subject)&&firstSeason(name)===firstSeason(value)));}
 export function sourceCatalogueIssue(roads:Road[],subject?:SourceSubject){
  const lines=roads.filter(road=>road.episodes.length);if(!subject||!lines.length)return '';
  // A single numbered EP is a valid ongoing series. A lone unnumbered HD/正片

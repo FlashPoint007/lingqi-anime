@@ -4,6 +4,16 @@ const sources=load('lib/source-availability.ts'),rule={name:'Test',baseURL:'http
 const tv={eps:13,platform:'TV'},results=[{name:'夏目友人帐',url:'https://source.example/movie-a'},{name:'夏目友人帐',url:'https://source.example/movie-b'},{name:'夏目友人帐第二季',url:'https://source.example/season-2'},{name:'夏目友人帐第一季',url:'https://source.example/season-1'}];
 const episodic=count=>[{name:'线路1',episodes:Array.from({length:count},(_,n)=>({name:'第'+(n+1)+'集',url:'https://source.example/ep/'+(n+1)}))}],movie=[{name:'线路1',episodes:[{name:'HD国语版',url:'https://source.example/movie-play'}]}];
 (async()=>{
+ assert.equal(sources.matchesTitle('请问您今天要来点兔子吗？',['请问您今天要来点兔子吗？？'],tv),false,'question marks distinguishing a sequel must not be discarded');
+ assert.equal(sources.matchesTitle('けいおん！',['けいおん！！'],tv),false,'exclamation marks distinguishing seasons must not be discarded');
+ assert.equal(sources.matchesTitle('请问您今天要来点兔子吗？？',['请问您今天要来点兔子吗??'],tv),true,'fullwidth and ASCII title punctuation remain equivalent');
+ assert.equal(sources.matchesTitle('けいおん!! 第1季',['けいおん！！'],tv),true,'explicit first-season suffixes remain supported without erasing title punctuation');
+ assert.equal(sources.matchesTitle('请问您今天要来点兔子吗',['请问您今天要来点兔子吗？？'],tv),false,'a source omitting meaningful sequel punctuation needs manual confirmation');
+ assert.equal(sources.matchesTitle('请问您今天要来点兔子吗？',['请问您今天要来点兔子吗？？','请问您今天要来点兔子吗？'],tv),true,'an explicit user alias may confirm a source title');
+ const sequelResults=[{name:'请问您今天要来点兔子吗？',url:'https://source.example/rabbit-1'},{name:'请问您今天要来点兔子吗？？',url:'https://source.example/rabbit-2'}],sequelInspected=[];
+ const sequel=await sources.checkSource(rule,['请问您今天要来点兔子吗？？'],signal,async body=>{if(body.operation==='search')return {results:sequelResults};sequelInspected.push(body.url);return {roads:episodic(12)};},false,{eps:12,platform:'TV'});
+ assert.equal(sequel.source,'https://source.example/rabbit-2');assert.deepEqual(sequelInspected,['https://source.example/rabbit-2'],'never inspect an otherwise identical first-season catalogue as the sequel');
+ const ambiguousSequel=await sources.checkSource(rule,['请问您今天要来点兔子吗？？'],signal,async body=>{assert.equal(body.operation,'search');return {results:sequelResults.slice(0,1)};},false,{eps:12,platform:'TV'});assert.equal(ambiguousSequel.state,'possible');assert.equal(ambiguousSequel.source,undefined);
  const inspected=[];const checked=await sources.checkSource(rule,['夏目友人帐','夏目友人帳'],signal,async body=>{if(body.operation==='search')return {results};inspected.push(body.url);return {roads:body.url.endsWith('season-1')?episodic(13):movie};},false,tv);
  assert.equal(checked.source,'https://source.example/season-1','a 13-episode TV series must not automatically select a same-name movie');assert.equal(checked.roads[0].episodes.length,13);assert.ok(!inspected.includes('https://source.example/season-2'));
  const suspicious=await sources.checkSource(rule,['夏目友人帐'],signal,async body=>body.operation==='search'?{results:results.slice(0,1)}:{roads:movie},false,tv);assert.equal(suspicious.state,'possible');assert.equal(suspicious.source,undefined);assert.match(suspicious.message,/电影|单片|确认/);

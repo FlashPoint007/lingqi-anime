@@ -24,10 +24,11 @@ export async function fetchPublic(url:string,init:RequestInit={},stream=false){
 }
 export function mediaReferer(referer:string):Record<string,string>{return new URL(referer).hostname==='next.xifanacg.com'?{}:{Referer:referer};}
 type MediaFailure={message:string;gone:boolean};
-async function reachableMedia(url:string,referer:string,signal?:AbortSignal,failures?:Map<string,MediaFailure>){
- try{const {res}=await fetchPublic(url,{signal:signal?AbortSignal.any([signal,AbortSignal.timeout(5000)]):AbortSignal.timeout(5000),headers:{'User-Agent':UA,...mediaReferer(referer),...(/\.m3u8(?:[?#]|$)/i.test(url)?{}:{Range:'bytes=0-4095'}),Accept:'*/*'}});if(!res.ok){failures?.set(mediaUrl(url).href,{message:'源站视频文件响应 HTTP '+res.status+(res.status===404||res.status===410?'，该文件已失效':'，当前服务器无法读取'),gone:res.status===404||res.status===410});discard(res);return false;}
-  if(/\.m3u8(?:[?#]|$)/i.test(url)){const text=await boundedText(res,1024*1024);return text.trimStart().startsWith('#EXTM3U');}
-  const type=res.headers.get('content-type')||'';discard(res);return !/text\/html|json|javascript|xml/i.test(type);
+async function reachableMedia(url:string,referer:string,signal?:AbortSignal,failures?:Map<string,MediaFailure>):Promise<'hls'|'video'|false>{
+ try{const {res,url:finalUrl}=await fetchPublic(url,{signal:signal?AbortSignal.any([signal,AbortSignal.timeout(5000)]):AbortSignal.timeout(5000),headers:{'User-Agent':UA,...mediaReferer(referer),...(/\.m3u8(?:[?#]|$)/i.test(url)?{}:{Range:'bytes=0-4095'}),Accept:'*/*'}});if(!res.ok){failures?.set(mediaUrl(url).href,{message:'源站视频文件响应 HTTP '+res.status+(res.status===404||res.status===410?'，该文件已失效':'，当前服务器无法读取'),gone:res.status===404||res.status===410});discard(res);return false;}
+  const type=res.headers.get('content-type')||'';
+  if(/\.m3u8(?:[?#]|$)/i.test(url)||/\.m3u8(?:[?#]|$)/i.test(finalUrl)||/mpegurl/i.test(type)){const text=await boundedText(res,1024*1024);return text.trimStart().startsWith('#EXTM3U')?'hls':false;}
+  discard(res);return /text\/html|json|javascript|xml/i.test(type)?false:'video';
  }catch{return false;}
 }
 // Xifan Next publishes episode-scoped media through its anonymous playback API.
@@ -54,30 +55,30 @@ async function xifanMedia(page:string,signal?:AbortSignal){
  if(data.source_id!==undefined&&data.source_id!==source.id&&!data.candidates?.some((c:any)=>c.source_id===source.id&&c.url===data.url))throw new Error('稀饭返回的视频与所选线路不一致');
  return url;
 }
-export async function resolvePlayback(rule:Rule,page:string,declared?:string,parentSignal?:AbortSignal){
+export async function resolvePlayback(rule:Rule,page:string,declared?:string,parentSignal?:AbortSignal):Promise<{media:string;referer:string;verified:boolean;mediaType:'hls'|'video';reason?:string}>{
  const source=mediaUrl(page);if(source.origin!==new URL(rule.baseURL).origin)throw new Error('播放页面必须属于所选源站');
  const pending=[page],seen=new Set<string>();let directCandidate='',candidateReferer=page;const errors:string[]=[];const deadline=Date.now()+20000,signal=parentSignal?AbortSignal.any([parentSignal,AbortSignal.timeout(20000)]):AbortSignal.timeout(20000);
  const mediaFailures=new Map<string,MediaFailure>();
  const candidate=(url:string,referer:string)=>{if(!directCandidate||mediaFailures.get(directCandidate)?.gone){directCandidate=mediaUrl(url).href;candidateReferer=referer;}};
  // A passed API URL is accepted only by the route after finding it in upstream data.
- if(declared&&isMedia(declared)){candidate(declared,page);if(await reachableMedia(declared,page,signal,mediaFailures))return {media:directCandidate,referer:page,verified:true};}
+ if(declared&&isMedia(declared)){candidate(declared,page);const mediaType=await reachableMedia(declared,page,signal,mediaFailures);if(mediaType)return {media:directCandidate,referer:page,verified:true,mediaType};}
  for(let depth=0;depth<4&&pending.length;depth++){
   if(Date.now()>deadline||signal.aborted)break;
   const next=pending.shift()!;if(seen.has(next))continue;seen.add(next);
   try{
-   if(isMedia(next)){candidate(next,page);if(await reachableMedia(next,page,signal,mediaFailures))return {media:mediaUrl(next).href,referer:page,verified:true};continue;}
-   const dynamic=await xifanMedia(next,signal);if(dynamic){candidate(dynamic,next);if(await reachableMedia(dynamic,next,signal,mediaFailures))return {media:dynamic,referer:next,verified:true};continue;}
+   if(isMedia(next)){candidate(next,page);const mediaType=await reachableMedia(next,page,signal,mediaFailures);if(mediaType)return {media:mediaUrl(next).href,referer:page,verified:true,mediaType};continue;}
+   const dynamic=await xifanMedia(next,signal);if(dynamic){candidate(dynamic,next);const mediaType=await reachableMedia(dynamic,next,signal,mediaFailures);if(mediaType)return {media:dynamic,referer:next,verified:true,mediaType};continue;}
    const {res,url}=await fetchPublic(next,{signal,headers:{'User-Agent':String(rule.userAgent||UA),Accept:'text/html,application/json','Referer':String(rule.referer||page)}});
    if(!res.ok){discard(res);throw new Error(res.status===404?'源站播放页不存在（404），该条目或线路可能已失效':'源站响应 '+res.status);}const html=await boundedText(res);
    const pageError=sourcePageError(html);if(pageError)throw new Error(pageError);
-   for(const media of extractMedia(html,url).slice(0,3)){if(signal.aborted)break;candidate(media,url);if(await reachableMedia(media,url,signal,mediaFailures))return {media,referer:url,verified:true};}
+   for(const media of extractMedia(html,url).slice(0,3)){if(signal.aborted)break;candidate(media,url);const mediaType=await reachableMedia(media,url,signal,mediaFailures);if(mediaType)return {media,referer:url,verified:true,mediaType};}
    const links=playerLinks(html,url).filter(link=>!isMedia(link));
    // Only follow declared player links, never arbitrary links or page scripts.
    for(const link of links){if(/(?:comment|ads?|analytics|google)/i.test(new URL(link).pathname))continue;if(pending.length<3)pending.push(link);}
   }catch(e){errors.push((e as Error).message);}
  }
  const failure=mediaFailures.get(directCandidate);
- return {media:failure?.gone?'':directCandidate,verified:false,referer:candidateReferer,reason:signal.aborted?'播放解析超时或已取消，请重试或切换视频源':failure?.message||errors[0]||'此线路未解析到可播放的视频地址，请切换线路或视频源'};
+ return {media:failure?.gone?'':directCandidate,verified:false,mediaType:/\.m3u8(?:[?#]|$)/i.test(directCandidate)?'hls':'video',referer:candidateReferer,reason:signal.aborted?'播放解析超时或已取消，请重试或切换视频源':failure?.message||errors[0]||'此线路未解析到可播放的视频地址，请切换线路或视频源'};
 }
 
 export type Ticket={url:string;referer:string;expires:number};

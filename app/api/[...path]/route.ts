@@ -92,7 +92,7 @@ export async function POST(req:Request) {
    }
    const resolved=await resolvePlayback(rule,page.href,declared,req.signal);
    if(!resolved.media)return json({mode:'unavailable',sourceUrl:page.href,message:resolved.reason||'当前线路暂不能在本站解析，请切换线路或视频源'});
-   return json({mode:'video',url:await signedMediaUrl(resolved.media,resolved.referer),mediaUrl:resolved.media,sourceUrl:page.href,verified:resolved.verified,preferDirect:new URL(resolved.referer).hostname==='next.xifanacg.com'&&!/\.m3u8(?:[?#]|$)/i.test(resolved.media),mediaType:/\.m3u8(?:[?#]|$)/i.test(resolved.media)?'hls':'video'});
+   return json({mode:'video',url:await signedMediaUrl(resolved.media,resolved.referer),mediaUrl:resolved.media,sourceUrl:page.href,verified:resolved.verified,preferDirect:new URL(resolved.referer).hostname==='next.xifanacg.com'&&resolved.mediaType!=='hls',mediaType:resolved.mediaType});
   }
   if(!['search','chapters'].includes(body.operation))throw new Error('无效的源查询操作');
   const sensitive=/authorization|api[-_]?key|password|access[-_]?token|bearer/i.test(JSON.stringify([rule,body.url]));

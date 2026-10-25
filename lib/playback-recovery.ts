@@ -7,7 +7,9 @@ export function createPlaybackRecovery(now=Date.now){
  const begin=(target:Identity,manual=false,clear=false)=>{
   const next=identity(target);
   if(next!==scope||clear){scope=next;failed.clear();media.clear();retries=0;deadline=0;}
-  if(manual){cancelled=false;retries=0;deadline=0;}
+  // The first catalogue lookup consumes the same window as automatic retries.
+  // Otherwise a slow initial lookup gets a second full window after it fails.
+  if(manual){cancelled=false;retries=0;deadline=now()+90000;}
  };
  return {
   begin,

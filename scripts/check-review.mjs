@@ -42,6 +42,14 @@ try{
  }finally{Object.defineProperty(globalThis,'crypto',savedCrypto);}
  // An existing catalogue with a deleted media file is not a direct fallback.
  const sourceRule={baseURL:'https://source.example'},sourcePage='https://source.example/play';
+ // A CDN may hide an HLS playlist behind a .mp4-looking path. The player must
+ // receive the probed response type, not choose its engine from the suffix.
+ globalThis.fetch=async url=>String(url).includes('media.example')?new Response('#EXTM3U\n#EXTINF:5,\nsegment.ts\n#EXT-X-ENDLIST',{headers:{'Content-Type':'application/vnd.apple.mpegurl'}}):new Response('<video src="https://media.example/disguised.mp4"></video>');
+ const disguised=await playback.resolvePlayback(sourceRule,sourcePage);assert.equal(disguised.verified,true);assert.equal(disguised.mediaType,'hls','the media probe must carry the actual HLS response type to the API');
+ globalThis.fetch=async url=>String(url).includes('disguised.mp4')?new Response(null,{status:302,headers:{Location:'https://media.example/final.m3u8'}}):String(url).includes('final.m3u8')?new Response('#EXTM3U\n#EXTINF:5,\nsegment.ts\n#EXT-X-ENDLIST',{headers:{'Content-Type':'application/octet-stream'}}):new Response('<video src="https://media.example/disguised.mp4"></video>');
+ const redirectedHls=await playback.resolvePlayback(sourceRule,sourcePage);assert.equal(redirectedHls.mediaType,'hls','the final redirect URL can establish the playlist type');assert.equal(redirectedHls.verified,true);
+ globalThis.fetch=async url=>String(url).includes('media.example')?new Response('<html>Not a playlist</html>',{headers:{'Content-Type':'application/vnd.apple.mpegurl'}}):new Response('<video src="https://media.example/disguised.mp4"></video>');
+ assert.equal((await playback.resolvePlayback(sourceRule,sourcePage)).verified,false,'a MIME label alone is not a valid playlist');
  globalThis.fetch=async url=>String(url).includes('media.example')?new Response('gone',{status:404}):new Response('<video src="https://media.example/missing.mp4"></video>');
  const gone=await playback.resolvePlayback(sourceRule,sourcePage,'https://media.example/missing.mp4');assert.equal(gone.media,'');assert.match(gone.reason,/HTTP 404/);
  const unicodeGone=await playback.resolvePlayback(sourceRule,sourcePage,'https://media.example/剧集.mp4');assert.equal(unicodeGone.media,'','failure keys use the same URL normalization as candidates');

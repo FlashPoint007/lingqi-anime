@@ -8,7 +8,7 @@ import type {Rule} from '../lib/web-core';
 import type {Subject} from '../lib/catalog';
 const cache=new Map<string,SourceAvailability>();
 const empty:SourceAvailability={state:'queued',message:'',results:[]};
-export function useSourceAvailability(subject:Subject|null,rules:Rule[],aliases:SubjectAliases={}){
+export function useSourceAvailability(subject:Subject|null,rules:Rule[],aliases:SubjectAliases={},deferred=false){
  const [checks,setChecks]=useState<Record<string,SourceAvailability>>({}),[checksScope,setChecksScope]=useState(''),[revision,setRevision]=useState(0);
  const names=subject?searchNames(subject,aliases):[];
  // Editing several aliases must not repeatedly cancel and restart 17 sources.
@@ -20,7 +20,7 @@ export function useSourceAvailability(subject:Subject|null,rules:Rule[],aliases:
  if(reports.current.scope!==scope)reports.current={scope,versions:new Map<string,number>()};
  const key=(rule:Rule)=>scope+'|'+JSON.stringify(names)+'|'+rule.name;
  useEffect(()=>{
-  const controller=new AbortController();const force=refreshScope.current===scope;refreshScope.current='';setChecksScope(scope);if(!subject||subject.id===0){setChecks({});return;}
+  const controller=new AbortController();const force=refreshScope.current===scope;refreshScope.current='';setChecksScope(scope);if(!subject||subject.id===0||deferred){setChecks({});return;}
   const enabled=rules.filter(r=>r.enabled!==false),candidates=enabled.filter(r=>!ruleCompatibility(r));
   const initial=Object.fromEntries(enabled.map(rule=>{const unsupported=ruleCompatibility(rule);return [rule.name,unsupported?{...empty,state:'error' as const,message:unsupported}:cachedAvailability(cache,key(rule))||empty];}));setChecks(initial);
   const versions=new Map(reports.current.versions);
@@ -33,7 +33,7 @@ export function useSourceAvailability(subject:Subject|null,rules:Rule[],aliases:
    try{const result=await checkSource(rule,names,controller.signal,undefined,force,subject);if(controller.signal.aborted)return;update(result);}
    catch(e){if(!controller.signal.aborted)update({...empty,state:'error',message:(e as Error).message});}
   });return()=>controller.abort();
- },[scope,revision]);
+ },[scope,revision,deferred]);
  const report=(rule:Rule,value:Partial<SourceAvailability>)=>{if(current.current!==scope)return;reports.current.versions.set(rule.name,(reports.current.versions.get(rule.name)||0)+1);setChecks(old=>{if(current.current!==scope)return old;const previous=old[rule.name]||empty;
   // Resume resolves the video and reloads chapters concurrently. A late manual
   // catalogue report may enrich the rows, but cannot erase a playback outcome.

@@ -1,8 +1,9 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),ts=require('typescript');
 const compile=s=>ts.transpileModule(s,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText;
-const home=ts.createSourceFile('page.tsx',fs.readFileSync('app/page.tsx','utf8'),ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX),parts={};let detailEffect,startDisabled;
+const home=ts.createSourceFile('page.tsx',fs.readFileSync('app/page.tsx','utf8'),ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX),parts={};let detailEffect,startDisabled,probeDeferred;
 (function visit(n){
  if(ts.isFunctionDeclaration(n)&&n.name)parts[n.name.text]=n.getText(home);
+ if(ts.isVariableDeclaration(n)&&n.name.getText(home)==='availabilityDeferred')probeDeferred=n.initializer.getText(home);
  if(ts.isCallExpression(n)&&n.expression.getText(home)==='useEffect'&&n.arguments[0]?.getText(home).includes('Promise.allSettled'))detailEffect=n.arguments[0].getText(home);
  if(ts.isJsxElement(n)&&n.openingElement.tagName.getText(home)==='button'&&n.children.some(c=>ts.isJsxText(c)&&c.text.includes('开始观看')))startDisabled=n.openingElement.attributes.properties.find(a=>a.name?.text==='disabled').initializer.expression.getText(home);
  ts.forEachChild(n,visit);
@@ -65,6 +66,9 @@ test('real history recovery preserves position and resolves global sequel number
 });
 test('a ready episode catalogue is playable while subject metadata is slow',async()=>{
  let finishSubject;const c=execute('this.effect='+detailEffect,{selected:current,player:null,rules:[rule],detailLoading:false,episodes:[],sourceOperation:{current:0},title:s=>s.name,stopSource(){},setSourceTerm(){},setSourceResults(){},setRoads(){},setSourceError(){},setRuleIdx(){},setDetailError(){},setSelected(){},setDetailLoading:v=>c.detailLoading=v,setEpisodes:v=>c.episodes=v,anySignal:AbortSignal.any,timeoutSignal:()=>new AbortController().signal,api:url=>url.startsWith('/api/subject')?new Promise(resolve=>finishSubject=resolve):Promise.resolve({data:[{id:201,sort:1,name:'First episode'}],total:1})});
- const cleanup=c.effect();await tick();assert.equal(c.detailLoading,true);assert.equal(c.episodes.length,1);vm.runInContext(compile('this.disabled='+startDisabled),c);assert.equal(c.disabled,false,'subject metadata must not block a loaded playable episode');finishSubject(current);await tick();assert.equal(c.detailLoading,false);c.episodes=[];vm.runInContext(compile('this.disabled='+startDisabled),c);assert.equal(c.disabled,true,'an empty catalogue cannot start an unknown episode');cleanup();
+ const evaluate=()=>vm.runInContext(compile('this.availabilityDeferred='+probeDeferred+';this.disabled='+startDisabled),c);
+ const cleanup=c.effect();await tick();assert.equal(c.detailLoading,true);assert.equal(c.episodes.length,1);evaluate();assert.equal(c.disabled,false,'a known episode count must not wait for slower subject metadata');
+ c.selected={id:current.id,name:current.name};evaluate();assert.equal(c.disabled,true,'completely missing matching metadata waits instead of guessing a same-name movie');c.selected={...current,eps:undefined,platform:'TV'};evaluate();assert.equal(c.disabled,false,'known platform metadata can also start a loaded episode');
+ finishSubject(current);await tick();assert.equal(c.detailLoading,false);c.episodes=[];evaluate();assert.equal(c.disabled,true,'an empty catalogue cannot start an unknown episode');cleanup();
 });
 (async()=>{let failed=0;for(const [name,run] of tests){try{await run();console.log('PASS: '+name);}catch(error){failed++;console.error('FAIL: '+name+'\n'+error.stack);}}if(failed)process.exitCode=1;})().catch(error=>{console.error(error);process.exitCode=1;});

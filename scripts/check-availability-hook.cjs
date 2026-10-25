@@ -8,11 +8,12 @@ const slots=[],effects=[];let cursor=0,dirty=false,stopped=false,result;
 const schedule=()=>{if(dirty||stopped)return;dirty=true;queueMicrotask(()=>{dirty=false;if(!stopped)render();});};
 const react={useState(initial){const i=cursor++;if(!slots[i])slots[i]={value:initial};return [slots[i].value,value=>{const next=typeof value==='function'?value(slots[i].value):value;if(next!==slots[i].value){slots[i].value=next;schedule();}}];},useRef(value){const i=cursor++;return slots[i]||(slots[i]={current:value});},useEffect(fn,deps){const i=cursor++,old=slots[i];if(!old||deps.some((v,n)=>v!==old.deps[n])){slots[i]={deps,cleanup:old?.cleanup};effects.push(()=>{slots[i].cleanup?.();slots[i].cleanup=fn();});}}};
 const exportsValue={};vm.runInNewContext(ts.transpileModule(fs.readFileSync('components/SourceAvailability.tsx','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText,{exports:exportsValue,require:name=>name.includes('subject-aliases')?require('./check-feature-deps.cjs').dependency(name):name==='react'?react:name.includes('source-availability')?core:name.includes('subscriptions')?{ruleCompatibility:()=>''}:{},AbortController,Date:Clock,console});
-let subject={id:77,name:'Example'},aliases={};const rules=['A','B','C','D'].map(name=>({name,enabled:true}));
-function render(){cursor=0;result=exportsValue.useSourceAvailability(subject,rules,aliases);effects.splice(0).forEach(fn=>fn());}
+let subject={id:77,name:'Example'},aliases={},deferred=false;const rules=['A','B','C','D'].map(name=>({name,enabled:true}));
+function render(){cursor=0;result=exportsValue.useSourceAvailability(subject,rules,aliases,deferred);effects.splice(0).forEach(fn=>fn());}
 const tick=async()=>{for(let n=0;n<5;n++)await new Promise(resolve=>setImmediate(resolve));};
 (async()=>{
- render();await tick();assert.equal(result.checks.A.state,'checking');
+ deferred=true;render();await tick();assert.equal(searchTerms.length,0,'partial metadata must not start a scan that immediately restarts when detail metadata arrives');
+ subject={...subject,eps:12,platform:'TV'};deferred=false;render();await tick();assert.equal(searchTerms.length,3,'ready metadata starts exactly the bounded three-worker scan');assert.equal(result.checks.A.state,'checking');
  assert.equal(result.checks.D.state,'queued');assert.equal(callbacks.has('D'),false);result.report(rules[3],{state:'playing',message:'排队检测前本集已播放'});
  result.report(rules[0],{state:'playing',message:'本集已播放'});await tick();callbacks.get('A')({state:'found',message:'后台目录结果',results:[],checkedAt:clock});callbacks.get('B')({state:'found',message:'B 的目录',results:[],checkedAt:clock});callbacks.get('C')({state:'found',message:'C 的目录',results:[],checkedAt:clock});await tick();
  assert.equal(result.checks.D.state,'playing','a queued background worker cannot overwrite a playback report before its turn starts');assert.equal(callbacks.has('D'),false,'already reported sources do not start redundant queued checks');

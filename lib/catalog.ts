@@ -7,6 +7,8 @@ export const seasonNames=['冬季','春季','夏季','秋季'];
 export function scoreLabel(value:number){return Number.isFinite(value)&&value>0?value.toFixed(1):'暂无评分';}
 export function catalogYears(items:Subject[],year=currentSeason().year,selected=''){const years=[Number(selected),...items.map(s=>Number((s.date||s.air_date||'').slice(0,4)))].filter(y=>Number.isInteger(y)&&y>=1900&&y<=2100);const latest=Math.min(2100,Math.max(year+2,...years));return Array.from({length:latest-1900+1},(_,i)=>latest-i);}
 export function currentSeason(){const parts=new Intl.DateTimeFormat('en',{timeZone:'Asia/Shanghai',year:'numeric',month:'numeric'}).formatToParts(new Date());const year=Number(parts.find(p=>p.type==='year')?.value),month=Number(parts.find(p=>p.type==='month')?.value);return {year,quarter:Math.ceil(month/3)};}
+// Monday is zero, matching the timetable, regardless of the visitor's timezone.
+export function currentWeekday(now=new Date()){return (new Date(now.getTime()+8*3600000).getUTCDay()+6)%7;}
 // Kazumi includes the month before each quarter to retain early premieres.
 export function seasonRange(year:number,quarter:number){
  if(!Number.isInteger(year)||year<1900||year>2100||!Number.isInteger(quarter)||quarter<1||quarter>4)throw new Error('无效的放送季度');

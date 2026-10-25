@@ -1,5 +1,5 @@
 import {emptySearchFilters,parseSearchFilters,searchFilterParams,type SearchFilters} from './search-filters';
-import {currentSeason} from './catalog';
+import {currentSeason,currentWeekday} from './catalog';
 export type ShareSearch={q:string;sort:string;tag:string;category:string;year:string;page:number;filters:SearchFilters;hideCompleted:boolean;hideDropped:boolean};
 export type ShareRoute={view:string;id?:number;search?:ShareSearch;calendar?:{year:number;quarter:number;day:number}};
 const views=['discover','calendar','collection','history','downloads','rules','rule-test','settings'];
@@ -16,7 +16,7 @@ export function parseShareRoute(hash:string):ShareRoute{
   return {view:'discover',search:{q,sort,tag,category,year,page,filters:{...emptySearchFilters,tags:fields.tags.join(','),scoreMin:p.get('scoreMin')||'',scoreMax:p.get('scoreMax')||'',rankMin:p.get('rankMin')||'',rankMax:p.get('rankMax')||'',dateFrom:fields.from,dateTo:fields.to,weekdays:fields.weekdays},hideCompleted:p.get('hideCompleted')==='1',hideDropped:p.get('hideDropped')==='1'}};
  }
  if(view==='calendar'){
-  const now=currentSeason(),year=Number(p.get('year')||now.year),quarter=Number(p.get('quarter')||now.quarter),day=Number(p.get('day')||0);
+  const now=currentSeason(),year=Number(p.get('year')||now.year),quarter=Number(p.get('quarter')||now.quarter),day=p.has('day')?Number(p.get('day')):currentWeekday();
   if(!Number.isInteger(year)||year<1900||year>2100||!Number.isInteger(quarter)||quarter<1||quarter>4||!Number.isInteger(day)||day<0||day>6)throw Error('分享链接的季度无效');return {view,calendar:{year,quarter,day}};
  }
  if(views.includes(view)&&!p.size)return {view};throw Error('无法识别这个站内分享链接');

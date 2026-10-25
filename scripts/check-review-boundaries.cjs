@@ -28,8 +28,8 @@ function discussion(initial){
  });
  assert.equal(fallback.offline,true);assert.match(fallback.notice,/备用首播/);assert.equal(fallback.basis,'premiere');assert.equal(fallback.calendar[0].items.length,1);
  // Calendar links and dropdowns use the same season and support old archives.
- const share=load('lib/share-links.ts',{'./catalog':{currentSeason:()=>({year:2027,quarter:1})}});
- assert.deepEqual(plain(share.parseShareRoute('#calendar').calendar),{year:2027,quarter:1,day:0});
+ const share=load('lib/share-links.ts',{'./catalog':{currentSeason:()=>({year:2027,quarter:1}),currentWeekday:()=>4}});
+ assert.deepEqual(plain(share.parseShareRoute('#calendar').calendar),{year:2027,quarter:1,day:4});
  const years=load('lib/catalog.ts').catalogYears([],2026,'1999');assert.ok(years.includes(1999));assert.ok(years.includes(2026));
  const home=ts.createSourceFile('page.tsx',fs.readFileSync('app/page.tsx','utf8'),ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);let yearOptions;
  (function find(node){if(ts.isJsxElement(node)&&node.openingElement.attributes.properties.some(p=>p.name?.text==='aria-label'&&p.initializer?.text==='放送年份')){yearOptions=node.children.find(ts.isJsxExpression)?.expression;}ts.forEachChild(node,find);})(home);

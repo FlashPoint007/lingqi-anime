@@ -6,9 +6,11 @@ import {subjectHash} from '../lib/share-links';
 import type {Subject} from '../lib/catalog';
 export default function SubjectActions({subject}:{subject:Subject}){
  const [status,setStatus]=useState(''),[busy,setBusy]=useState(false),[manual,setManual]=useState('');
- const controller=useRef<AbortController|undefined>(undefined),alive=useRef(true);
+ const controller=useRef<AbortController|undefined>(undefined),alive=useRef(true),copyRequest=useRef(0),copyContext=useRef('');
+ const titleContext=JSON.stringify([subject.id,subject.name,subject.name_cn]);copyContext.current=titleContext;
+ useEffect(()=>{copyRequest.current++;setManual('');setStatus('');},[titleContext]);
  useEffect(()=>{alive.current=true;return()=>{alive.current=false;controller.current?.abort();};},[]);
- const copy=async(text:string)=>{try{await navigator.clipboard.writeText(text);if(alive.current){setManual('');setStatus('标题已复制');}}catch{if(alive.current){setManual(text);setStatus('复制未获允许，可选择下方标题手动复制');}}};
+ const copy=async(text:string)=>{const id=++copyRequest.current,context=titleContext,current=()=>alive.current&&copyRequest.current===id&&copyContext.current===context;try{await navigator.clipboard.writeText(text);if(current()){setManual('');setStatus('标题已复制');}}catch{if(current()){setManual(text);setStatus('复制未获允许，可选择下方标题手动复制');}}};
  const save=async()=>{
   if(controller.current)return;const request=new AbortController();controller.current=request;const timer=setTimeout(()=>request.abort(new DOMException('封面下载超时，请重试','TimeoutError')),20000);setBusy(true);setStatus('正在准备封面…');
   try{

@@ -42,6 +42,11 @@ export default function WatchPage(p:Props){
  const {previous,next}=episodeNeighbors(line?.episodes||[],p.player.sourceUrl,currentNumber,p.episodes.map(e=>e.sort),p.player.subject.eps);
  const episodeNames=useMemo(()=>new Map(p.episodes.map(e=>[e.sort,e.name_cn||e.name])),[p.episodes]);
  const visible=useMemo(()=>visibleEpisodes(line?.episodes||[],episodeQuery,descending,episodeNames),[line?.episodes,episodeQuery,descending,episodeNames]);
+ const missing=useMemo(()=>{
+  if(!line)return [];const available=new Set(line.episodes.map(episodeNumber));
+  const official=p.episodes.map(e=>({name:e.name_cn||e.name||'第 '+e.sort+' 集',url:String(e.id),number:e.sort}));
+  return visibleEpisodes(official,episodeQuery,descending,episodeNames).filter(e=>!available.has(e.number));
+ },[line,p.episodes,episodeQuery,descending,episodeNames]);
  const go=(target:EpisodeTarget|undefined)=>{if(target){if(target.episode&&p.ruleIdx>=0&&p.rules[p.ruleIdx]?.enabled!==false)p.onPlay({...target.episode,number:target.number});else p.onAuto(target.number);}};
  const urls=playbackUrls(p.player);
  const enabledRules=p.rules.filter(r=>r.enabled!==false);
@@ -91,7 +96,8 @@ export default function WatchPage(p:Props){
      <div className="watch-roads" aria-label="播放线路">{p.roads.map((r,i)=><button key={i} className={p.road===i?'active':''} aria-pressed={p.road===i} onClick={()=>p.onRoad(i)}>{r.name}</button>)}</div>
      <div className="episode-tools"><Search size={14} aria-hidden="true"/><input aria-label="筛选集数或标题" placeholder="找集数 / 标题" value={episodeQuery} onChange={e=>setEpisodeQuery(e.target.value)}/><button type="button" aria-label="切换分集排序" aria-pressed={descending} onClick={()=>setDescending(!descending)}>{descending?'倒序':'正序'}</button><span>{visible.length} / {line?.episodes.length||0}</span></div>
      <div className="watch-episodes">{visible.map(({episode:e,number,index:i})=><button key={e.url+'-'+i} disabled={p.busy} title={e.name} aria-label={'播放第 '+number+' 集 '+e.name} className={e.url===p.player.sourceUrl?'active':''} aria-current={e.url===p.player.sourceUrl?'true':undefined} onClick={()=>p.onPlay({...e,number})}><span className="episode-number">{String(number).padStart(2,'0')}</span><span className="episode-name">{episodeNames.get(number)||(knownEpisodeNumber(e)!==undefined?'第 '+number+' 集':e.name)}{p.progresses?.[String(number)]&&<small className="episode-progress-label">{p.progresses[String(number)].completed?'已到结尾':Math.floor(p.progresses[String(number)].position/60)+':'+String(Math.floor(p.progresses[String(number)].position%60)).padStart(2,'0')}</small>}</span></button>)}</div>
-     {!visible.length&&<p className="watch-hint">没有匹配的剧集。<button onClick={()=>setEpisodeQuery('')}>清空筛选</button></p>}
+     {!visible.length&&!missing.length&&<p className="watch-hint">没有匹配的剧集。<button onClick={()=>setEpisodeQuery('')}>清空筛选</button></p>}
+     {missing.length>0&&<><p className="watch-hint">目录中的以下集数未在当前线路列出，可尝试跨源查找。</p><div className="watch-episodes" aria-label="当前线路缺少的目录剧集">{missing.map(({episode,number})=><button type="button" key={number} disabled={p.busy||p.mode==='resolving'} aria-label={'跨源寻找第 '+number+' 集 '+episode.name} onClick={()=>p.onAuto(number)}><span className="episode-number">{String(number).padStart(2,'0')}</span><span className="episode-name">{episode.name}<small className="episode-progress-label">跨源寻找</small></span></button>)}</div></>}
     </>}
     {!p.roads.length&&p.episodes.length>0&&<><p className="watch-hint">选择剧集，自动寻找可用的视频源。</p><div className="watch-episodes">{p.episodes.map(e=><button key={e.id} aria-label={'自动寻找第 '+e.sort+' 集'} onClick={()=>p.onAuto(e.sort)}><span className="episode-number">{String(e.sort).padStart(2,'0')}</span><span className="episode-name">{e.name_cn||e.name||'第 '+e.sort+' 集'}</span></button>)}</div></>}
     {!p.roads.length&&!p.episodes.length&&<p className="watch-hint">搜索番剧并选择结果后，完整分集会显示在这里。</p>}

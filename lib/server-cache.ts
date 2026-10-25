@@ -1,7 +1,8 @@
 import {env,waitUntil} from 'cloudflare:workers';
 type Row={key:string;kind:string;value_json:string;updated_at:number;expires_at:number;stale_until:number};
 type Options={ttl:number;stale:number;refresh?:boolean;background?:boolean;timeout?:number};
-type Work={task:Promise<Response>;expires:number};
+type SharedResult={body:string|null;status:number;headers:[string,string][]};
+type Work={task:Promise<SharedResult>;expires:number};
 const memory=new Map<string,Row>(),pending=new Map<string,Work>();const refreshing=new Map<string,Work>();let memoryBytes=0,lastCleanup=0;
 const MAX_VALUE=192*1024,MAX_MEMORY=8*1024*1024,MAX_ENTRIES=1000;
 function within<T>(task:Promise<T>,ms:number){
@@ -11,12 +12,15 @@ function within<T>(task:Promise<T>,ms:number){
 }
 function startWork(map:Map<string,Work>,key:string,run:()=>Promise<Response>,timeout:number){
  const work:Work={task:undefined!,expires:Date.now()+timeout+2000};
- work.task=within(Promise.resolve().then(run),timeout+2000).finally(()=>{if(map.get(key)===work)map.delete(key);});map.set(key,work);
+ // Workers bind response body streams to their originating request. Coalesce
+ // plain values only, then construct a fresh response inside each caller.
+ work.task=within(Promise.resolve().then(run).then(async response=>({body:response.body===null?null:await response.text(),status:response.status,headers:Array.from(response.headers.entries())})),timeout+2000).finally(()=>{if(map.get(key)===work)map.delete(key);});map.set(key,work);
  // Coalesced work must outlive the first visitor cancelling their request.
  // The lease also recovers a task whose timer/finalizer never ran.
  if(typeof waitUntil==='function')waitUntil(work.task.then(()=>{},()=>{}));
  return work.task;
 }
+function ownResponse(value:SharedResult){return new Response(value.body,{status:value.status,headers:value.headers});}
 export async function cacheKey(kind:string,input:string){const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(input));return kind+':'+Array.from(new Uint8Array(digest),byte=>byte.toString(16).padStart(2,'0')).join('');}
 function remember(row:Row){const old=memory.get(row.key);if(old)memoryBytes-=old.value_json.length;memory.delete(row.key);memory.set(row.key,row);memoryBytes+=row.value_json.length;while(memory.size>128||memoryBytes>MAX_MEMORY){const first=memory.keys().next().value!;memoryBytes-=memory.get(first)!.value_json.length;memory.delete(first);}}
 function valid(row:Row){try{const value=JSON.parse(row.value_json);return value!==null&&typeof value==='object';}catch{return false;}}
@@ -28,7 +32,7 @@ export async function cachedJson(kind:string,input:string,load:()=>Promise<any>,
  if(row&&(row.stale_until<=now||!valid(row))){memoryBytes-=row.value_json.length;memory.delete(key);row=undefined;}
  if(row&&row.expires_at>now&&!options.refresh)return result(row,'memory');
  for(const map of [pending,refreshing])for(const [id,work]of map)if(work.expires<=now)map.delete(id);
- const work=pending.get(key);if(work)return (await work.task).clone();
+ const work=pending.get(key);if(work)return ownResponse(await work.task);
  // Bound concurrent distinct misses so a cache cannot turn into a memory flood.
  if(pending.size+refreshing.size>=48){if(row&&options.background&&!options.refresh)return result(row,'stale',true);return Response.json({error:'查询较多，请稍后重试'},{status:503,headers:{'Cache-Control':'no-store','Retry-After':'3'}});}
  const task=async()=>{
@@ -52,6 +56,6 @@ export async function cachedJson(kind:string,input:string,load:()=>Promise<any>,
    }
    return result(row,'stale-updating',true);
   }
-  const update=refreshing.get(key);return update?await update.task:await reload();
- };return (await startWork(pending,key,task,timeout)).clone();
+  const update=refreshing.get(key);return update?ownResponse(await update.task):await reload();
+ };return ownResponse(await startWork(pending,key,task,timeout));
 }

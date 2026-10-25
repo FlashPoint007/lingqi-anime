@@ -4,8 +4,12 @@ import {parseSearchFilters} from './search-filters';
 import {PAGE_SIZE,currentSeason,seasonRange,normalizeSubjects,normalizeCalendar,normalizeSubject} from './catalog';
 type Upstream=(url:string,init?:RequestInit)=>Promise<any>;
 const categoryCodes=new Set(['0','1','2','3','5']);
+function premiereDate(subject:any){
+ const value=subject.date||subject.air_date;if(!/^\d{4}-\d{2}-\d{2}$/.test(value||''))return;
+ const date=new Date(value+'T12:00:00Z');return Number.isFinite(date.getTime())&&date.toISOString().slice(0,10)===value?value:undefined;
+}
 const groups=(items:any[])=>Array.from({length:7},(_,i)=>({weekday:{id:i+1},items:items.filter(s=>{
- const date=s.date||s.air_date;if(!/^\d{4}-\d{2}-\d{2}$/.test(date||''))return false;
+ const date=premiereDate(s);if(!date)return false;
  return (new Date(date+'T12:00:00Z').getUTCDay()+6)%7===i;
 })}));
 export async function seasonCatalog(params:URLSearchParams,upstream:Upstream){
@@ -35,6 +39,9 @@ export async function seasonCatalog(params:URLSearchParams,upstream:Upstream){
  }
  try{
   const calendar=await groupedCalendar('https://api.kazumi.fyi/kazumi/v1/calendar/season?'+new URLSearchParams(range));
+  // A successful HTTP response must not relabel a different season as this one.
+  // Weekly feeds above intentionally keep continuing shows from older seasons.
+  if(calendar.some(day=>day.items.some(subject=>{const raw=subject.date||subject.air_date,date=premiereDate(subject);return !!raw&&(!date||date<range.start||date>=range.end);})))throw Error('季度档案包含其他季度或无效的首播日期');
   services.abort();return {calendar,year,quarter,basis:'premiere',complete:true};
  }catch{
   services.abort();
@@ -44,12 +51,13 @@ export async function seasonCatalog(params:URLSearchParams,upstream:Upstream){
   };
   const first=await page(0),items=[...first.batch];let total=first.total;
   // Independent fallback pages run in bounded batches instead of waiting serially.
-  if(first.batch.length===PAGE_SIZE)for(let offset=PAGE_SIZE;offset<Math.min(total,1000);offset+=PAGE_SIZE*3){
+  for(let offset=PAGE_SIZE;offset<Math.min(total,1000);offset+=PAGE_SIZE*3){
    const batches=await Promise.all([offset,offset+PAGE_SIZE,offset+PAGE_SIZE*2].filter(n=>n<Math.min(total,1000)).map(page));for(const data of batches){items.push(...data.batch);total=Math.max(total,data.total);}
   }
   // Search and Kazumi's season archive have different inclusion criteria.
   // Prefer a stale archive during outages and recheck this fallback next visit.
-  const unique=[...new Map(items.map(s=>[s.id,s])).values()];return {calendar:groups(unique),year,quarter,basis:'premiere',complete:total<=unique.length,offline:true,notice:'季度接口暂不可用，当前为备用首播检索，收录可能与 Kazumi 略有差异'};
+  const unique=[...new Map(items.map(s=>[s.id,s])).values()],eligible=unique.filter(subject=>{const date=premiereDate(subject);return date&&date>=range.start&&date<range.end;}),complete=total<=unique.length&&eligible.length===unique.length;
+  return {calendar:groups(eligible),year,quarter,basis:'premiere',complete,offline:true,notice:'季度接口暂不可用，当前为备用首播检索，收录可能与 Kazumi 略有差异'+(!complete?'；部分条目未完整返回、重复或缺少有效的本季首播日期，数据不完整':'')};
  }
 }
 

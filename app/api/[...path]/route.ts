@@ -50,7 +50,7 @@ export async function GET(req:Request) {
    try{params=shortcutSearchParams(params);parseSearchFilters(params);}catch(e){return json({error:e instanceof Error?e.message:'筛选条件无效'},400);}
    // Include the current quarter so a weekly cache cannot survive into an archive.
    const season=u.searchParams.get('mode')==='calendar'?currentSeason():null;
-   return await cachedJson('catalog',(season?'calendar-v4:'+season.year+':'+season.quarter+':':'browse-v6:')+params.toString(),()=>u.searchParams.get('mode')==='calendar'?seasonCatalog(u.searchParams,upstream):browseCatalog(u.searchParams,upstream),{background:true,timeout:u.searchParams.get('mode')==='calendar'?40000:16000,ttl:u.searchParams.get('mode')==='calendar'?3600000:300000,stale:u.searchParams.get('mode')==='calendar'?7*86400000:86400000,refresh:u.searchParams.get('refresh')==='1'});
+   return await cachedJson('catalog',(season?'calendar-v5:'+season.year+':'+season.quarter+':':'browse-v6:')+params.toString(),()=>u.searchParams.get('mode')==='calendar'?seasonCatalog(u.searchParams,upstream):browseCatalog(u.searchParams,upstream),{background:true,timeout:u.searchParams.get('mode')==='calendar'?40000:16000,ttl:u.searchParams.get('mode')==='calendar'?3600000:300000,stale:u.searchParams.get('mode')==='calendar'?7*86400000:86400000,refresh:u.searchParams.get('refresh')==='1'});
   }
   if(kind==='people'){const id=u.searchParams.get('id')||'';if(!/^\d{1,10}$/.test(id))return json({error:'无效条目 ID'},400);return await cachedJson('people','v2:'+id,()=>loadSubjectPeople(id,upstream),{background:true,ttl:21600000,stale:86400000,refresh:u.searchParams.get('refresh')==='1'});}
   if(kind==='subject'||kind==='episodes'||kind==='related') {

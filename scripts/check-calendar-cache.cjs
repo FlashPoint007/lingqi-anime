@@ -4,8 +4,8 @@ const storage=new Map(),catalog=load('lib/catalog.ts'),cache=load('lib/calendar-
 const value={calendar:Array.from({length:7},(_,i)=>({weekday:{id:i+1},items:i===0?[{id:7,name:'Example'}]:[]})),basis:'premiere',complete:true};
 cache.saveSeasonCache(2026,1,value);assert.equal(cache.readSeasonCache(2026,1).calendar[0].items[0].id,7);assert.equal(cache.readSeasonCache(2026,2),undefined,'quarters never share the wrong cached list');
 cache.saveSeasonCache(2026,2,{...value,calendar:'broken'});assert.equal(cache.readSeasonCache(2026,2),undefined,'invalid upstream data cannot overwrite the saved calendar');
-for(let year=2020;year<2026;year++)cache.saveSeasonCache(year,1,value);assert.equal(Object.keys(JSON.parse(storage.get('kw-season-cache-v3'))).length,4);
-const restarted=()=>load('lib/calendar-client.ts',{'./catalog':catalog,'./personal-data':{readStorage:key=>storage.get(key),writeStorage:()=>{}}});assert.ok(restarted().readSeasonCache(2025,1));storage.set('kw-season-cache-v3','broken');assert.equal(restarted().readSeasonCache(2025,1),undefined);
+for(let year=2020;year<2026;year++)cache.saveSeasonCache(year,1,value);assert.equal(Object.keys(JSON.parse(storage.get('kw-season-cache-v4'))).length,4);
+const restarted=()=>load('lib/calendar-client.ts',{'./catalog':catalog,'./personal-data':{readStorage:key=>storage.get(key),writeStorage:()=>{}}});assert.ok(restarted().readSeasonCache(2025,1));storage.set('kw-season-cache-v4','broken');assert.equal(restarted().readSeasonCache(2025,1),undefined);
 const large='https://lain.bgm.tv/pic/cover/l/aa/bb/example.jpg';assert.equal(covers.coverUrl(large),'https://lain.bgm.tv/r/400/pic/cover/l/aa/bb/example.jpg');assert.equal(covers.coverUrl(large,'large'),large);assert.equal(covers.coverUrl(large.replace('https:','http:')),'https://lain.bgm.tv/r/400/pic/cover/l/aa/bb/example.jpg');assert.equal(covers.coverUrl(large.replace('https:','http:'),'large'),large);assert.equal(covers.coverUrl('https://images.example/pic/cover/l/test.jpg'),'https://images.example/pic/cover/l/test.jpg');assert.equal(covers.coverUrl(undefined),undefined);
 const apiLarge='https://api.bgm.tv/v0/subjects/555605/image?type=large';
 assert.equal(covers.coverUrl(apiLarge),'https://api.bgm.tv/v0/subjects/555605/image?type=common');
@@ -22,3 +22,5 @@ const current=catalog.currentSeason();assert.throws(()=>cache.seasonData({...val
 storage.set('kw-season-cache-v1',JSON.stringify({'2019:1':{...value,year:2019,quarter:1,savedAt:Date.now()}}));assert.equal(restarted().readSeasonCache(2019,1),undefined,'pre-fix calendars are invalidated without clearing personal data');
 assert.equal(cache.seasonCacheFresh({savedAt:Date.now(),offline:true}),false,'a degraded feed is rechecked on the next visit');
 console.log('PASS: persistent quarter isolation, validation, bounded cache and corrupt storage; 400-pixel card covers and API image thumbnails preserve full detail artwork');
+
+assert.match(cache.seasonNotice({cacheStale:true}),/缓存/);assert.match(cache.seasonNotice({offline:true}),/备用/);assert.equal(cache.seasonNotice({notice:'specific reason',cacheStale:true}),'specific reason');assert.equal(cache.seasonNotice({}),'');

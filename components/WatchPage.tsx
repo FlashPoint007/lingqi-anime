@@ -52,6 +52,7 @@ export default function WatchPage(p:Props){
  const enabledRules=p.rules.filter(r=>r.enabled!==false);
  const foundCount=enabledRules.filter(r=>{const c=p.checks[r.name];return c?.state==='found'||c?.state==='playing'||c?.roads?.some(r=>r.episodes.length>0);}).length;
  const currentTitle=episodeNames.get(currentNumber??-1)||episodeLabel(p.player.episode,currentNumber);
+ const sourceTitle=p.mode==='video'&&p.player.source?p.results.find(result=>result.url===p.player.source)?.name:undefined;
  return <div className={'watch-page '+(!panel?'watch-theater':'')}>
   <header className="watch-header">
    <button className="watch-back" aria-label="返回番剧" title="返回番剧" onClick={p.onBack}><span className="watch-brand-mark" aria-hidden="true">07</span><span className="watch-brand-copy"><b>零柒番剧</b><small>放映室 / WATCH</small></span><ArrowLeft size={16}/></button>
@@ -92,6 +93,7 @@ export default function WatchPage(p:Props){
     <div className="watch-section-heading"><div><span className="watch-eyebrow">EPISODES / 选集</span><h2>选集与线路</h2></div><span className="watch-episode-total">{line?.episodes.length||p.episodes.length||'—'} 集</span></div>
     {p.sourceError&&<p className="watch-source-error" role="alert">{p.sourceError}</p>}
     <label className="watch-source-label">视频源<select aria-label="播放页视频源" value={p.ruleIdx} onChange={e=>p.onRule(Number(e.target.value))}>{p.ruleIdx<0&&<option value={-1}>请选择视频源</option>}{p.rules.map((r,i)=>r.enabled!==false&&<option key={r.name} value={i}>{r.name}{p.checks[r.name]?' · '+availabilityLabels[p.checks[r.name].state]:''}</option>)}</select></label>
+    {sourceTitle&&<p className="watch-hint" aria-label="当前片源条目">源站条目：{sourceTitle}</p>}
     {p.roads.length>0&&<>
      <div className="watch-roads" aria-label="播放线路">{p.roads.map((r,i)=><button key={i} className={p.road===i?'active':''} aria-pressed={p.road===i} onClick={()=>p.onRoad(i)}>{r.name}</button>)}</div>
      <div className="episode-tools"><Search size={14} aria-hidden="true"/><input aria-label="筛选集数或标题" placeholder="找集数 / 标题" value={episodeQuery} onChange={e=>setEpisodeQuery(e.target.value)}/><button type="button" aria-label="切换分集排序" aria-pressed={descending} onClick={()=>setDescending(!descending)}>{descending?'倒序':'正序'}</button><span>{visible.length} / {line?.episodes.length||0}</span></div>

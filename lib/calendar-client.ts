@@ -1,10 +1,11 @@
 import {currentSeason,normalizeCalendar} from './catalog';
 import {readStorage,writeStorage} from './personal-data';
-// Invalidate calendars cached before current-week and premiere feeds were split.
-const KEY='kw-season-cache-v3',memory=new Map<string,any>();
+// Invalidate calendars cached before historical season/date integrity checks.
+const KEY='kw-season-cache-v4',memory=new Map<string,any>();
 function valid(value:any,year:number,quarter:number){try{if(!value||value.year!==year||value.quarter!==quarter||!Number.isFinite(value.savedAt)||value.savedAt>Date.now()+60000||Date.now()-value.savedAt>7*86400000||!['current','premiere'].includes(value.basis))return;const now=currentSeason();if((value.basis==='current')!==(year===now.year&&quarter===now.quarter))return;return {...value,calendar:normalizeCalendar(value.calendar)};}catch{return;}}
 export function readSeasonCache(year:number,quarter:number){const key=year+':'+quarter;const cached=valid(memory.get(key),year,quarter);if(cached)return cached;try{return valid(JSON.parse(readStorage(KEY)||'{}')[key],year,quarter);}catch{return;}}
 export function seasonCacheFresh(value:any){return !!value&&!value.cacheStale&&!value.offline&&Date.now()-value.savedAt<300000;}
+export function seasonNotice(value:any){return typeof value?.notice==='string'&&value.notice?value.notice:value?.cacheStale?'当前使用缓存时间表，收录可能暂未更新，可稍后刷新':value?.offline?'当前使用备用时间表，收录可能与主接口不同':'';}
 export function seasonData(data:any,year:number,quarter:number){if(data?.year!==year||data?.quarter!==quarter)throw Error('放送时间表季度不匹配，请重试');const value=valid({...data,savedAt:Date.now()},year,quarter);if(!value)throw Error('放送时间表格式不正确，请重试');return value;}
 export function saveSeasonCache(year:number,quarter:number,data:any){
  const value=valid({...data,year,quarter,savedAt:Date.now()},year,quarter);if(!value)return;

@@ -47,7 +47,7 @@ function discussion(initial){
  d.update({episodeNumber:3,episodeId:103});await tick();d.render();assert.ok(!d.requests.at(-1).includes('thread='));assert.ok(d.requests.at(-1).includes('episode=3'));d.stop();
  // Execute the real offline script against an asynchronous media/storage mock.
  const writes=[],pending=[];let defer=false,owner='anonymous',time=0;
- const video=events({readyState:2,duration:120,seeking:false,currentTime:0,pause(){},load(){},removeAttribute(){this.src='';},canPlayType:()=>'',scrollIntoView(){},play:async()=>{}});
+ const video=events({readyState:2,videoWidth:1280,videoHeight:720,duration:120,seeking:false,currentTime:0,pause(){},load(){},removeAttribute(){this.src='';},canPlayType:()=>'',scrollIntoView(){},play:async()=>{}});
  Object.defineProperty(video,'currentTime',{get:()=>time,set:value=>{time=value;video.seeking=true;}});
  const elements={library:{replaceChildren(){},append(){}},video,message:{textContent:''},retry:events({hidden:true}),playback:{hidden:true},'player-title':{textContent:''}},window=events(),document=events({getElementById:id=>elements[id],createElement:()=>({}),visibilityState:'visible'});
  const context={document,window,navigator:{},location:{hash:''},localStorage:{getItem:key=>key==='kw-library-owner'?JSON.stringify(owner):'false'},console,Date,readOffline:async(_store,id)=>item(id),listOffline:async()=>[],removeOffline:async()=>{},offlineAssetURL:(id,entry)=>'/__offline_media/'+id+'/'+entry,updateOfflineProgress:(id,who,change)=>{writes.push({id,who,change});if(defer)return new Promise(resolve=>pending.push(resolve));return Promise.resolve(undefined);}};

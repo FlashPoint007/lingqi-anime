@@ -13,7 +13,7 @@ export function useSourceAvailability(subject:Subject|null,rules:Rule[],aliases:
  const names=subject?searchNames(subject,aliases):[];
  // Editing several aliases must not repeatedly cancel and restart 17 sources.
  // Existing checks stay visible; the next explicit refresh/open uses new names.
- const scope=JSON.stringify([subject?.id,rules.filter(r=>r.enabled!==false).map(r=>r)]);
+ const scope=JSON.stringify([subject?.id,subject?.eps,subject?.platform,rules.filter(r=>r.enabled!==false).map(r=>r)]);
  const current=useRef(scope);current.current=scope;
  const refreshScope=useRef('');
  const reports=useRef({scope,versions:new Map<string,number>()});
@@ -30,7 +30,7 @@ export function useSourceAvailability(subject:Subject|null,rules:Rule[],aliases:
    if((reports.current.versions.get(rule.name)||0)!==version)return;
    const update=(value:SourceAvailability)=>{if(!controller.signal.aborted)setChecks(old=>{if(controller.signal.aborted||current.current!==scope||(reports.current.versions.get(rule.name)||0)!==version)return old;if(value.checkedAt)storeAvailability(cache,key(rule),value);return {...old,[rule.name]:value};});};
    update({...empty,state:'checking'});
-   try{const result=await checkSource(rule,names,controller.signal,undefined,force);if(controller.signal.aborted)return;update(result);}
+   try{const result=await checkSource(rule,names,controller.signal,undefined,force,subject);if(controller.signal.aborted)return;update(result);}
    catch(e){if(!controller.signal.aborted)update({...empty,state:'error',message:(e as Error).message});}
   });return()=>controller.abort();
  },[scope,revision]);

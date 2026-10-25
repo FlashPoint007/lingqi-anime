@@ -9,7 +9,7 @@ const home=ts.createSourceFile('page.tsx',fs.readFileSync('app/page.tsx','utf8')
 })(home);
 const playback={exports:{},URL};vm.runInNewContext(compile(fs.readFileSync('lib/playback-client.ts','utf8')),playback);const core=playback.exports;
 const tick=async()=>{for(let i=0;i<5;i++)await new Promise(resolve=>setImmediate(resolve));},plain=v=>JSON.parse(JSON.stringify(v));
-function execute(code,values){const c={URL,Date,AbortController,AbortSignal,Error,console,...values};vm.createContext(c);vm.runInContext(compile(code),c);return c;}
+function execute(code,values){const c={URL,Date,AbortController,AbortSignal,Error,console,...require('./check-feature-deps.cjs').dependency('../lib/source-identity'),...values};vm.createContext(c);vm.runInContext(compile(code),c);return c;}
 const current={id:2,name:'A ten-episode show',eps:10},previous={id:1,name:'An unrelated sequel'},rule={name:'A',baseURL:'https://source.test/',enabled:true};
 const localRoads=[{name:'Line',episodes:Array.from({length:10},(_,i)=>({name:'第'+(i+1)+'集',url:'https://source.test/ep/'+(i+1)}))}];
 function chapters(subject=previous,fetcher=async()=>({roads:localRoads})){
@@ -32,6 +32,16 @@ test('resume chapters never borrow another anime’s sequel numbering',async()=>
 test('the real resume entry point passes its target anime to chapter loading',()=>{
  const h=start();h.ctx.start(current,{name:'第1集',number:1,url:'https://source.test/ep/1',source:'https://source.test/show'},45,'A');
  assert.equal(h.chapters[0][3]?.id,current.id);assert.equal(h.resolved[0][3],45);assert.equal(h.selected().id,current.id);
+});
+test('ambiguous saved HD records validate their catalogue before resuming',async()=>{
+ const h=start(),target={id:259,name:'夏目友人帐',eps:13,platform:'TV'},episode={name:'HD国语版',number:1,url:'https://source.test/movie-play',source:'https://source.test/movie'};
+ h.ctx.start(target,episode,224,'A');assert.equal(h.chapters.length,0,'verification owns the catalogue request instead of racing a second read');assert.equal(h.resolved[0][5],true,'a canonical episode number does not prove an unnumbered HD movie is an episode');
+ const recovered=[],players=[];const context=execute(parts.resolveSource,{...core,recovery:{current:{begin(){}}},roads:[],playerProgress:{current:224},lastProgress:{current:0},playbackId:{current:1},beginPlayback:()=>({id:1,controller:new AbortController()}),setSourceError(){},setPlayError(){},setPlayMode(){},setPlayer:value=>players.push(value),setRoads(){},setChapterSource(){},setActiveRoad(){},setResolveStatus(){},selected:target,episodes:[],anySignal:AbortSignal.any,timeoutSignal:()=>new AbortController().signal,playEpisode:(...args)=>recovered.push(args),api:async()=>({roads:[{name:'电影',episodes:[{name:'HD国语版',url:episode.url}]}]})});
+ await context.resolveSource(target,episode,rule,224,[],true);assert.equal(recovered.length,1);assert.equal(recovered[0][3],true,'a proven catalogue mismatch must restart the correct episode rather than carry movie progress');assert.ok(players.every(player=>!player.url),'the wrong movie is never mounted while validating history');
+});
+test('replacing a proven mismatched movie resets only that episode’s progress',()=>{
+ const target={id:259,name:'夏目友人帐',eps:13},historyRef={current:[{subject:target,number:1,position:224,progresses:{'1':{position:224,duration:300,updatedAt:1,completed:true},'2':{position:40,duration:1440,updatedAt:1,completed:false}}}]};
+ const context=execute(parts.remember,{personal:{ready:true},privatePlaybackRef:{current:false},historyRef,withEpisodeProgress:require('./check-feature-deps.cjs').dependency('../lib/episode-progress').withEpisodeProgress,setHistory(){}});context.remember(target,{name:'第1集',number:1,url:'https://source.test/tv/1'},0,'Test',true);assert.equal(historyRef.current[0].progresses['1'].position,0);assert.equal(historyRef.current[0].progresses['1'].completed,false);assert.equal(historyRef.current[0].progresses['2'].position,40);
 });
 test('disabled/removed/rehosted history sources recover the known episode',()=>{
  for(const rules of [[{...rule,enabled:false}],[],[{...rule,baseURL:'https://new-source.test/'}]]){

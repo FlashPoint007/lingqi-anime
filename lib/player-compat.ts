@@ -10,6 +10,9 @@ export function setMediaVolume(video:HTMLVideoElement,value:number){
  const next=Math.max(0,Math.min(1,value));
  try{video.volume=next;if(Math.abs(video.volume-next)>.01)return false;video.muted=false;return true;}catch{return false;}
 }
+export function toggleMediaMute(video:HTMLVideoElement,restore=.5){
+ try{if(video.volume===0)return setMediaVolume(video,Number.isFinite(restore)&&restore>0?restore:.5);video.muted=!video.muted;return true;}catch{return false;}
+}
 export function mediaFullscreen(video:HTMLVideoElement,stage:HTMLElement,doc:Document=document){
  return doc.fullscreenElement===stage||doc.fullscreenElement===video||(video as AppleVideo).webkitDisplayingFullscreen===true;
 }

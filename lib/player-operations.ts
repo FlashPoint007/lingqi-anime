@@ -1,6 +1,6 @@
-import {setMediaVolume} from './player-compat';
+import {setMediaVolume,toggleMediaMute} from './player-compat';
 import type {PlayerAction,PlayerPreferences} from './player-preferences';
-type Options={video:HTMLVideoElement;stage:HTMLElement;surface:HTMLElement;preferences:()=>PlayerPreferences;play:()=>void;seek:(delta:number)=>unknown;action:(action:PlayerAction)=>void;message:(message:string)=>void;brightness:(n:number)=>void;suppressClick:()=>void};
+type Options={video:HTMLVideoElement;stage:HTMLElement;surface:HTMLElement;preferences:()=>PlayerPreferences;play:()=>void;mute?:()=>void;seek:(delta:number)=>unknown;action:(action:PlayerAction)=>void;message:(message:string)=>void;brightness:(n:number)=>void;suppressClick:()=>void};
 export function bindPlayerOperations(o:Options){
  const {video:v,stage,surface}=o;let timer:ReturnType<typeof setTimeout>|undefined,held=false,oldRate=1,key='',pointer:{id:number;x:number;y:number;position:number;volume:number;brightness:number;axis:string}|undefined,brightness=1;
  const stopHold=()=>{clearTimeout(timer);timer=undefined;if(held){v.playbackRate=oldRate;held=false;o.message('');}};
@@ -10,7 +10,7 @@ export function bindPlayerOperations(o:Options){
   if(editable(e.target)||e.altKey||e.ctrlKey||e.metaKey||e.shiftKey)return;const code=e.code||({' ':'Space',f:'KeyF',F:'KeyF'} as Record<string,string>)[e.key]||e.key;
   const prefs=o.preferences(),action=(Object.entries(prefs.shortcuts).find(([,value])=>value===code)?.[0]) as PlayerAction|undefined;if(!action)return;e.preventDefault();if(e.repeat)return;
   if(action==='forward'){o.seek(prefs.seekStep);key=code;beginHold();}
-  else if(action==='back')o.seek(-prefs.seekStep);else if(action==='play')v.paused?o.play():v.pause();else if(action==='mute')v.muted=!v.muted;else o.action(action);
+  else if(action==='back')o.seek(-prefs.seekStep);else if(action==='play')v.paused?o.play():v.pause();else if(action==='mute'){if(o.mute)o.mute();else if(!toggleMediaMute(v))o.message('此设备请使用系统音量键调节音量');}else o.action(action);
  };
  const up=(e:KeyboardEvent)=>{if((e.code||e.key)===key){stopHold();key='';}};
  const pointerDown=(e:PointerEvent)=>{if(e.button!==0||editable(e.target)||pointer)return;pointer={id:e.pointerId,x:e.clientX,y:e.clientY,position:v.currentTime,volume:v.volume,brightness,axis:''};beginHold();};

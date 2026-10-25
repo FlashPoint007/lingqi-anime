@@ -1,5 +1,15 @@
-export type ImageMatch={id:number;title:string;displayTitle:string;alternate:string;episode:string;from:number;to:number;similarity:number};
+import {publicUrl} from './web-core';
+export type ImageMatch={id:number;title:string;displayTitle:string;alternate:string;episode:string;from:number;to:number;similarity:number;video?:string};
 const text=(value:unknown)=>typeof value==='string'?value.trim().slice(0,200):'';
+export function imageSourceUrl(input:string){if(input.length>2048)throw Error('图片链接过长，请选择本机图片');try{const value=input.trim(),url=publicUrl(value);if(url.hash)throw Error();return value;}catch{throw Error('请输入不含账号信息的公开 HTTPS 图片链接');}}
+function previewUrl(value:unknown){if(typeof value!=='string'||value.length>2048)return;try{const url=new URL(value);if(url.protocol==='https:'&&!url.username&&!url.password&&!url.port&&!url.hash&&['api.trace.moe','media.trace.moe'].includes(url.hostname)&&/^\/video\/.+/.test(url.pathname))return value;}catch{}}
+function episodeLabel(row:any){
+ const valid=(n:unknown):n is number=>typeof n==='number'&&Number.isFinite(n)&&n>=0&&n<=100000;
+ if(valid(row.episode_start)&&valid(row.episode_end)&&row.episode_end>=row.episode_start)return row.episode_start===row.episode_end?String(row.episode_start):row.episode_start+'—'+row.episode_end;
+ if(valid(row.episode))return String(row.episode);
+ if(Array.isArray(row.episode))return [...new Set(row.episode.filter(valid))].slice(0,8).join(' / ');
+ return text(row.episode).slice(0,40);
+}
 export function imageMatches(value:any):ImageMatch[]{
  if(!value||!Array.isArray(value.result))throw Error('识别服务返回的数据格式不正确，请稍后重试');
  const matches:ImageMatch[]=[];
@@ -7,8 +17,7 @@ export function imageMatches(value:any):ImageMatch[]{
   const anime=row?.anilist;if(!anime||!Number.isSafeInteger(anime.id)||anime.id<1||anime.id>2147483647||anime.isAdult!==false)continue;
   const title=text(anime.title?.native)||text(anime.title?.romaji)||text(anime.title?.english);if(!title)continue;
   if(!Number.isFinite(row.similarity)||row.similarity<=0||row.similarity>1||!Number.isFinite(row.from)||!Number.isFinite(row.to)||row.from<0||row.to<row.from||row.to>86400)continue;
-  const episode=typeof row.episode==='number'&&Number.isFinite(row.episode)&&row.episode>=0&&row.episode<=100000?String(row.episode):text(row.episode).slice(0,40);
-  matches.push({id:anime.id,title,displayTitle:text(anime.title?.chinese)||title,alternate:text(anime.title?.romaji)||text(anime.title?.english),episode,from:row.from,to:row.to,similarity:row.similarity});
+  matches.push({id:anime.id,title,displayTitle:text(anime.title?.chinese)||title,alternate:text(anime.title?.romaji)||text(anime.title?.english),episode:episodeLabel(row),from:row.from,to:row.to,similarity:row.similarity,video:previewUrl(row.video)});
  }
  matches.sort((a,b)=>b.similarity-a.similarity);const unique=new Set<string>();return matches.filter(m=>{const key=m.id+':'+m.episode;if(unique.has(key))return false;unique.add(key);return true;}).slice(0,8);
 }
@@ -26,8 +35,14 @@ export async function resizeScreenshot(file:File,signal:AbortSignal){
 }
 export async function searchScreenshot(blob:Blob,signal:AbortSignal):Promise<ImageMatch[]>{
  check(signal);if(blob.type!=='image/jpeg'||!blob.size||blob.size>1024*1024)throw Error('请先选择并处理有效图片');
- const form=new FormData();form.append('image',blob,'screenshot.jpg');let response:Response;
- try{response=await fetch('https://api.trace.moe/search?anilistInfo=2',{method:'POST',body:form,credentials:'omit',referrerPolicy:'no-referrer',redirect:'error',signal});}catch(error){check(signal);throw Error('无法连接图片识别服务，请检查网络后重试');}
+ const form=new FormData();form.append('image',blob,'screenshot.jpg');return requestMatches('https://api.trace.moe/search?anilistInfo=2',{method:'POST',body:form},signal);
+}
+export async function searchScreenshotUrl(input:string,signal:AbortSignal):Promise<ImageMatch[]>{
+ check(signal);const url=imageSourceUrl(input),params=new URLSearchParams({anilistInfo:'2',url});return requestMatches('https://api.trace.moe/search?'+params,{},signal);
+}
+async function requestMatches(url:string,options:RequestInit,signal:AbortSignal):Promise<ImageMatch[]>{
+ let response:Response;
+ try{response=await fetch(url,{...options,credentials:'omit',referrerPolicy:'no-referrer',redirect:'error',signal});}catch(error){check(signal);throw Error('无法连接图片识别服务，请检查网络后重试');}
  if(!response.ok){void response.body?.cancel().catch(()=>{});throw Error(response.status===402?'识别服务配额已用完或有其他识别正在进行，请稍后再试':response.status===429?'识别请求较多，请稍后再试':response.status===413?'图片过大，请裁切后重试':'图片识别服务暂时不可用，请稍后再试');}
  const reader=response.body?.getReader();if(!reader)throw Error('识别服务没有返回数据');const parts:Uint8Array[]=[];let size=0;
  try{while(true){check(signal);const {value,done}=await reader.read();if(done)break;size+=value.length;if(size>262144)throw Error('识别结果过大，请更换图片重试');parts.push(value);}}finally{void reader.cancel().catch(()=>{});}

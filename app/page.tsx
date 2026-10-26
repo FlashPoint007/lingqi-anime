@@ -94,7 +94,7 @@ export default function Home(){
  useEffect(()=>{if(ready&&personal.ready)setRecentSearches(searchHistory(stored(searchHistoryKey,[])));},[ready,personal.ready,searchHistoryKey]);
  function changePrivacy(value:boolean,save=true){const wasPrivate=privatePlaybackRef.current;privatePlaybackRef.current=value;if(value)privacyResume.current=null;else if(wasPrivate)privacyResume.current=privacyTarget.current;setPrivatePlayback(value);if(save)persist('kw-private-playback',value);}
  useEffect(()=>{if(!ready)return;let alive=true;const controller=new AbortController();api('/api/subject?id='+HOME_FEATURE.subject.id,{signal:anySignal([controller.signal,timeoutSignal(10000)])}).then(data=>{if(alive&&data.id===HOME_FEATURE.subject.id)setFeatured(data);}).catch(()=>{});return()=>{alive=false;controller.abort();};},[ready]);
- useEffect(()=>{if(personal.ready&&player&&!historyRef.current.some(h=>h.subject.id===player.subject.id))remember(player.subject,{name:player.episode,url:player.sourceUrl,source:player.source,number:player.number},playerProgress.current||player.position,player.ruleName);},[personal.ready,player?.sourceUrl]);
+ useEffect(()=>{if(personal.ready&&player?.url&&player.sourceUrl&&!historyRef.current.some(h=>h.subject.id===player.subject.id))remember(player.subject,{name:player.episode,url:player.sourceUrl,source:player.source,number:player.number},playerProgress.current||player.position,player.ruleName);},[personal.ready,player?.sourceUrl,player?.url]);
  const availabilitySubject=player?.subject||selected;
  // Partial card metadata would start a scan and immediately cancel/restart it
  // when episode count or platform arrives. Known metadata can scan in parallel.
@@ -133,11 +133,17 @@ export default function Home(){
   if(!ready||!personal.ready||navigationHash.current===location.hash)return;const firstRoute=navigationHash.current===undefined;navigationHash.current=location.hash;
   let route:ReturnType<typeof parseShareRoute>;try{route=parseShareRoute(location.hash);}catch(e){setToast((e as Error).message);return;}
   if(firstRoute&&!location.hash)return;navigationEpoch.current++;routeApplying.current=true;if(route.id===player?.subject.id&&route.view==='watch')return;
-  flushProgress.current();stopPlayback();stopSource();setPlayer(null);setRoads([]);setSourceResults([]);setChapterSource('');setSourceError('');setEpisodes([]);setSelected(null);
+  const retainedDetail=!!route.id&&selected?.id===route.id;
+  flushProgress.current();stopPlayback();stopSource();setPlayer(null);setRoads([]);setSourceResults([]);setChapterSource('');setSourceError('');
+  // Returning from the player keeps an existing same-ID detail and episodes.
+  // Clearing them would not rerun the detail effect, whose key is the subject ID.
+  if(!retainedDetail){setEpisodes([]);setSelected(null);}
   if(route.id){
    const h=historyRef.current.find(item=>item.subject.id===route.id);
    if(route.view==='watch'&&h){setSourceTerm(title(h.subject));start(h.subject,{name:h.episode,url:h.url,source:h.source,number:h.number},h.position,h.ruleName);return;}
-   setView('discover');openSubject(h?.subject||{id:route.id,name:'正在读取番剧…'});return;
+   const origin=window.history.state;
+   const known=retainedDetail?selected:player?.subject.id===route.id?player.subject:h?.subject||collection.find(subject=>subject.id===route.id);
+   setView(origin?.lingqiSubject===true&&menus.some(menu=>menu.id===origin.view)?origin.view:'discover');if(!retainedDetail)openSubject(known||{id:route.id,name:'正在读取番剧…'});return;
   }
   setView(route.view);setError('');
   if(route.search){const s=route.search;setQuery(s.q);setActiveQuery(s.q);setSort(s.sort);setTag(s.tag);setCategory(s.category);setCatalogYear(s.year);setOffset((s.page-1)*PAGE_SIZE);setAdvanced(s.filters);setHideCompleted(s.hideCompleted);setHideDropped(s.hideDropped);setFilteredCursors([]);}
@@ -186,7 +192,7 @@ export default function Home(){
  },[selected?.id,detailRevision]);
  useLayoutEffect(()=>{if(player&&selected?.id!==player.subject.id)return;setRoads(current=>alignEpisodeNumbers(current,episodes.map(e=>e.sort)));},[roads,episodes,selected?.id,player?.subject.id]);
  function closeDetail(){stopSource();setSelected(null);if(location.hash.startsWith('#subject/')){const hash=view==='discover'?'#discover':'#'+view;markNavigation(hash);window.history.replaceState(null,'',hash);}}
- function openSubject(subject:Subject){const hash=subjectHash(subject.id);if(location.hash!==hash){markNavigation(hash);window.history.pushState(null,'',hash);}stopSource();setEpisodes([]);setDetailLoading(true);setDetailError('');setSourceError('');setPlayError('');setSourceResults([]);setRoads([]);setDirect('');setSelected(subject);}
+ function openSubject(subject:Subject){const hash=subjectHash(subject.id);if(location.hash!==hash){markNavigation(hash);window.history.pushState({lingqiSubject:true,view},'',hash);}stopSource();setEpisodes([]);setDetailLoading(true);setDetailError('');setSourceError('');setPlayError('');setSourceResults([]);setRoads([]);setDirect('');setSelected(subject);}
  function setCollectionState(s:Subject,state:CollectionState|''){if(!personal.ready){setToast('正在读取个人记录，请稍候');return;}setCollection(old=>state?old.some(x=>x.id===s.id)?[{...old.find(x=>x.id===s.id)!,collectionStatus:collectionState(state)},...old.filter(x=>x.id!==s.id)]:[{...s,collectionStatus:collectionState(state)},...old]:old.filter(x=>x.id!==s.id));}
  function toggle(s:Subject){if(!personal.ready){setToast('正在读取个人记录，请稍候');return;}setCollection(old=>old.some(x=>x.id===s.id)?old.filter(x=>x.id!==s.id):[{...s,collectionStatus:'watching'},...old]);}
  function markNavigation(hash?:string){navigationEpoch.current++;routeApplying.current=false;if(hash!==undefined)navigationHash.current=hash;}
@@ -197,7 +203,7 @@ export default function Home(){
  useLayoutEffect(()=>{if(!ready||!selectedRuleName||ruleIdx>=0)return;stopSource();setSourceResults([]);setRoads([]);setChapterSource('');setActiveRoad(0);setSelectedRuleName('');setSourceError('原视频源已停用或移除，请选择其他视频源。');},[rules,selectedRuleName,ready]);
  function cancelPlayback(){recovery.current.cancel();stopPlayback();setPlayMode('unavailable');setPlayError('已停止寻找线路，可以重新解析或选择其他视频源。');}
  function saveProgress(n:number,flush=false,duration=0,ended=false){
-  if(!player||!isCurrentPlayback(player,{sourceUrl:activePlayerUrl.current,url:activeMediaUrl.current})||!Number.isFinite(n)||n<0)return;
+  if(!player?.url||!player.sourceUrl||!isCurrentPlayback(player,{sourceUrl:activePlayerUrl.current,url:activeMediaUrl.current})||!Number.isFinite(n)||n<0)return;
   playerProgress.current=n;if(privatePlaybackRef.current)return;const resume=privacyResume.current;if(resume){if(resume.subjectId===player.subject.id&&isCurrentPlayback(player,resume)){if(!personal.ready)return;privacyResume.current=null;if(!historyRef.current.some(h=>h.subject.id===player.subject.id))remember(player.subject,{name:player.episode,url:player.sourceUrl,source:player.source,number:player.number},n,player.ruleName);}else privacyResume.current=null;}if(!historyRef.current.some(h=>h.subject.id===player.subject.id))return;if(!flush&&Date.now()-lastProgress.current<5000)return;lastProgress.current=Date.now();
   const next=historyRef.current.map(h=>h.subject.id===player.subject.id?withEpisodeProgress({...h,episode:player.episode,url:player.sourceUrl,source:player.source,number:player.number,ruleName:player.ruleName,position:n,time:Date.now()},duration,ended):h);historyRef.current=next;setHistory(next);if(flush){writeStorage('kw-history',JSON.stringify(next));void personal.flush(next);}
  }
@@ -248,10 +254,11 @@ export default function Home(){
  async function resolveSource(s:Subject,e:Episode,r:Rule,position=0,contextRoads=roads,validateCatalogue=false){
   e={...e,number:e.number??knownEpisodeNumber(e)};
   recovery.current.begin({subjectId:s.id,number:e.number},true,true);
+  const deadline=Date.now()+recovery.current.remaining();
   const {id,controller}=beginPlayback();playerProgress.current=position;lastProgress.current=0;setSourceError('');setPlayError('');setPlayMode('resolving');setPlayer({subject:s,episode:e.name,url:'',sourceUrl:e.url,source:e.source,position,number:e.number,ruleName:r.name});
   if(validateCatalogue&&e.source){
    try{
-    const detail=contextRoads.length?undefined:await api('/api/source',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rule:r,url:e.source,operation:'chapters',source:e.source}),signal:anySignal([controller.signal,timeoutSignal(12000)])});if(id!==playbackId.current)return;
+    const detail=contextRoads.length?undefined:await api('/api/source',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rule:r,url:e.source,operation:'chapters',source:e.source}),signal:anySignal([controller.signal,timeoutSignal(Math.max(1,Math.min(12000,deadline-Date.now())))])});if(id!==playbackId.current)return;
     const checked:Road[]=contextRoads.length?contextRoads:detail.roads||parseChapters(detail.html,r,detail.url||e.source);
     if(!checked.some(road=>road.episodes.length)){void playEpisode(s,e.number??1);return;}
     if(sourceCatalogueIssue(checked,s)){void playEpisode(s,e.number??1,false,true);return;}
@@ -263,7 +270,8 @@ export default function Home(){
   let message='当前线路未解析到视频地址';
   for(const attempt of attempts){
    if(id!==playbackId.current)return;
-   try{setResolveStatus(r.name+' · 正在解析 '+attempt.episode.name);const d=await api('/api/source',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rule:r,url:attempt.episode.url,operation:'resolve',source:attempt.episode.source}),signal:anySignal([controller.signal,timeoutSignal(35000)])});if(id!==playbackId.current)return;
+   if(Date.now()>=deadline)break;
+   try{setResolveStatus(r.name+' · 正在解析 '+attempt.episode.name);const d=await api('/api/source',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rule:r,url:attempt.episode.url,operation:'resolve',source:attempt.episode.source}),signal:anySignal([controller.signal,timeoutSignal(Math.max(1,Math.min(35000,deadline-Date.now())))])});if(id!==playbackId.current)return;
     if(d.mode!=='video'){message=d.message||message;continue;}
     setActiveRoad(Math.max(0,roadsRef.current.findIndex(line=>line.episodes.some(ep=>ep.url===attempt.episode.url))));setPlayMode('video');setPlayer({subject:s,episode:attempt.episode.name,url:d.url,sourceUrl:attempt.episode.url,source:attempt.episode.source,position,number:attempt.episode.number,ruleName:r.name,preferDirect:d.preferDirect,mediaUrl:d.mediaUrl,mediaType:d.mediaType});remember(s,attempt.episode,position,r.name);return;
    }catch(error){message=(error as Error).message;}
@@ -326,7 +334,7 @@ export default function Home(){
   }
   }
   if(id!==playbackId.current)return;
-  if(directFallback){const {data,episode,index,results,lines,road,source}=directFallback;setRuleIdx(index);setSourceResults(results);setRoads(lines);setActiveRoad(road);setChapterSource(source);setPlayer({subject:s,episode:episode.name,url:data.url,sourceUrl:episode.url,source,position,number,ruleName:rules[index].name,preferDirect:data.preferDirect,mediaUrl:data.mediaUrl,mediaType:data.mediaType});setPlayMode('video');setPlayError('此线路暂未通过本站连接检查；播放器会尝试当前浏览器直连，仍失败时请更换源。');remember(s,episode,position,rules[index].name,fresh);}
+  if(directFallback){const {data,episode,index,results,lines,road,source}=directFallback;setRuleIdx(index);setSourceResults(results);setRoads(lines);setActiveRoad(road);setChapterSource(source);setPlayer({subject:s,episode:episode.name,url:data.url,sourceUrl:episode.url,source,position,number,ruleName:rules[index].name,preferDirect:data.preferDirect,mediaUrl:data.mediaUrl,mediaType:data.mediaType});setPlayMode('video');setPlayError('此线路暂未通过本站连接检查；播放器将尝试加载，仍失败时请更换源。');remember(s,episode,position,rules[index].name,fresh);}
   else {setPlayMode('unavailable');setPlayError('尚未找到本集的可播放线路。请在选集面板手动搜索或更换视频源。'+(failures[0]?' '+failures[0]:''));}
  }
  function start(s:Subject,e:Episode,position=0,preferredRuleName?:string){if(s.name==='正在读取番剧…'){setPlayError('番剧资料尚未加载，请稍候或重新加载详情');return;}let u:URL;try{u=new URL(e.url);if(u.protocol!=='https:')throw new Error();}catch{setPlayError('请输入有效的 HTTPS 地址');return;}

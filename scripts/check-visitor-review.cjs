@@ -1,0 +1,51 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),ts=require('typescript');
+const compile=source=>ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
+const dependency=require('./check-feature-deps.cjs').dependency;
+function execute(source,values={}){const context={exports:{},URL,URLSearchParams,Date,AbortController,AbortSignal,console,require:dependency,...values};vm.createContext(context);vm.runInContext(compile(source),context);return context;}
+const ast=ts.createSourceFile('page.tsx',fs.readFileSync('app/page.tsx','utf8'),ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX),parts={};let route,initialHistory;
+(function visit(node){if(ts.isFunctionDeclaration(node)&&node.name)parts[node.name.text]=node.getText(ast);if(ts.isBinaryExpression(node)&&node.left.getText(ast)==='routeHandler.current')route=node.right.getText(ast);if(ts.isCallExpression(node)&&node.expression.getText(ast)==='useEffect'&&node.arguments[0]?.getText(ast).includes('remember(player.subject'))initialHistory=node.arguments[0].getText(ast);ts.forEachChild(node,visit);})(ast);
+const tests=[];const test=(name,run)=>tests.push([name,run]);const plain=value=>JSON.parse(JSON.stringify(value));
+test('returning from failed playback preserves the library view and known title',()=>{
+ const subject={id:41,name:'Known movie',eps:1},opened=[],views=[],chapters=[],selected=[];
+ const context=execute('this.route='+route,{ready:true,personal:{ready:true},navigationHash:{current:'#watch/41'},navigationEpoch:{current:0},routeApplying:{current:false},location:{hash:'#subject/41'},window:{history:{state:{lingqiSubject:true,view:'collection'}}},menus:[{id:'discover'},{id:'collection'}],selected:subject,player:{subject},view:'collection',parseShareRoute:()=>({view:'subject',id:41}),historyRef:{current:[]},collection:[subject],flushProgress:{current(){}},stopPlayback(){},stopSource(){},setPlayer(){},setRoads(){},setSourceResults(){},setChapterSource(){},setSourceError(){},setEpisodes:value=>chapters.push(value),setSelected:value=>selected.push(value),setView:value=>views.push(value),setToast(){},openSubject:value=>opened.push(value)});
+ context.route();assert.equal(views.at(-1),'collection','return must not silently switch to discovery');assert.equal(opened.length,0,'the already loaded same-ID detail must not be re-opened');assert.equal(chapters.length,0,'clearing same-ID episodes would not trigger the ID-dependent detail effect again');assert.ok(selected.every(value=>value?.name===subject.name),'a known movie must not flash an unknown-title placeholder');
+ const pushes=[];const opening=execute(parts.openSubject,{view:'calendar',location:{hash:'#calendar'},subjectHash:id=>'#subject/'+id,window:{history:{pushState:(state,unused,hash)=>pushes.push({state,hash})}},markNavigation(){},stopSource(){},setEpisodes(){},setDetailLoading(){},setDetailError(){},setSourceError(){},setPlayError(){},setSourceResults(){},setRoads(){},setDirect(){},setSelected(){}});
+ opening.openSubject(subject);assert.equal(pushes[0].state.view,'calendar','the originating page belongs to this history entry');
+});
+test('cold subject links still open in discovery and reject unknown return views',()=>{
+ const opened=[],views=[];const context=execute('this.route='+route,{ready:true,personal:{ready:true},navigationHash:{current:undefined},navigationEpoch:{current:0},routeApplying:{current:false},location:{hash:'#subject/42'},window:{history:{state:{lingqiSubject:true,view:'invalid'}}},menus:[{id:'discover'},{id:'collection'}],selected:null,player:null,view:'history',parseShareRoute:()=>({view:'subject',id:42}),historyRef:{current:[]},collection:[],flushProgress:{current(){}},stopPlayback(){},stopSource(){},setPlayer(){},setRoads(){},setSourceResults(){},setChapterSource(){},setSourceError(){},setEpisodes(){},setSelected(){},setView:value=>views.push(value),setToast(){},openSubject:value=>opened.push(value)});
+ context.route();assert.equal(views.at(-1),'discover');assert.equal(opened.at(-1).id,42);
+});
+test('several saved aliases cannot crowd both canonical titles out of source searches',()=>{
+ const aliases=dependency('../lib/subject-aliases'),subject={id:41,name:'Original title',name_cn:'正式标题'};
+ const names=plain(aliases.searchNames(subject,{'41':['Nickname A','Nickname B','Nickname C','Nickname D']}));
+ assert.ok(names.includes(subject.name));assert.ok(names.includes(subject.name_cn));assert.equal(names[0],'Nickname A');assert.equal(names.length,4,'source lookup remains bounded');
+ const same=plain(aliases.searchNames({...subject,name:'正式标题'},{'41':['正式标题','A','B','C','D']}));assert.deepEqual(same,['A','B','C','正式标题']);
+});
+test('manual sibling-line parsing shares its remaining startup budget',async()=>{
+ let clock=1000;const recovery=execute(fs.readFileSync('lib/playback-recovery.ts','utf8')).exports.createPlaybackRecovery(()=>clock),core=dependency('../lib/playback-client');
+ const subject={id:41,name:'Budget test'},lines=Array.from({length:3},(_,i)=>({name:'Line '+i,episodes:[{name:'第1集',number:1,url:'https://source.test/'+i}]})),waits=[],modes=[];
+ const context=execute(parts.resolveSource,{...core,Date:{now:()=>clock},recovery:{current:recovery},roads:lines,playerProgress:{current:0},lastProgress:{current:0},playbackId:{current:1},beginPlayback:()=>({id:1,controller:new AbortController()}),setSourceError(){},setPlayError(){},setPlayMode:mode=>modes.push(mode),setPlayer(){},setActiveRoad(){},setResolveStatus(){},roadsRef:{current:lines},availability:{report(){}},anySignal:signals=>signals.find(signal=>signal.ms),timeoutSignal:ms=>({ms}),api:async(url,options)=>{waits.push(options.signal.ms);clock+=options.signal.ms;return {mode:'unavailable',message:'No usable media'};}});
+ await context.resolveSource(subject,lines[0].episodes[0],{name:'Source'},0,lines);assert.deepEqual(waits,[35000,35000,20000]);assert.equal(clock,91000);assert.equal(modes.at(-1),'unavailable');
+});
+test('cancelling automatic resume cannot replace valid history with a loading placeholder',()=>{
+ const subject={id:41,name:'Watched movie'},record={subject,episode:'第1集',number:1,url:'https://source.test/episode',ruleName:'Working',time:1000,position:82},writes=[],historyRef={current:[record]};
+ const context=execute(parts.saveProgress,{player:{subject,episode:'第1集',number:1,url:'',sourceUrl:''},isCurrentPlayback:dependency('../lib/playback-client').isCurrentPlayback,activePlayerUrl:{current:''},activeMediaUrl:{current:''},playerProgress:{current:82},privatePlaybackRef:{current:false},privacyResume:{current:null},historyRef,lastProgress:{current:0},withEpisodeProgress:dependency('../lib/episode-progress').withEpisodeProgress,setHistory:value=>writes.push(value),writeStorage:()=>true,personal:{ready:true,flush(){}}});
+ context.saveProgress(82,true);assert.equal(writes.length,0);assert.equal(historyRef.current[0].url,record.url);assert.equal(historyRef.current[0].ruleName,'Working');
+ context.player={...context.player,url:'/api/media',sourceUrl:record.url,ruleName:'Working'};context.activePlayerUrl.current=record.url;context.activeMediaUrl.current='/api/media';context.saveProgress(93,true);assert.equal(historyRef.current[0].position,93,'real playback must continue to save');assert.equal(historyRef.current[0].url,record.url);
+ const remembered=[];const observer=execute('this.observe='+initialHistory,{personal:{ready:true},player:{subject,episode:'第1集',number:1,url:'',sourceUrl:''},historyRef:{current:[]},playerProgress:{current:0},remember:(...args)=>remembered.push(args)});observer.observe();assert.equal(remembered.length,0,'a first unsuccessful lookup must not create an invalid record');observer.player={...observer.player,url:'/api/media',sourceUrl:record.url};observer.observe();assert.equal(remembered.length,1);
+});
+function eventTarget(){const handlers=new Map();return {addEventListener:(name,fn)=>handlers.set(name,fn),removeEventListener:name=>handlers.delete(name),fire(name,event={}){handlers.get(name)?.({target:{closest:()=>null},button:0,pointerId:1,clientX:1,clientY:1,type:name,...event});},getBoundingClientRect:()=>({left:0,width:100,height:100})};}
+function holdHarness(setRate){
+ const stage=eventTarget(),surface=eventTarget(),win=eventTarget(),doc=eventTarget(),messages=[],timers=new Map();let timerId=0,rate=1.25;
+ const video={paused:false,ended:false,currentTime:0,volume:.5,get playbackRate(){return rate;},set playbackRate(value){rate=setRate(value,rate);}};
+ const operations=execute(fs.readFileSync('lib/player-operations.ts','utf8'),{window:win,document:doc,setTimeout:fn=>{timers.set(++timerId,fn);return timerId;},clearTimeout:id=>timers.delete(id)}).exports;
+ const release=operations.bindPlayerOperations({video,stage,surface,preferences:()=>({holdSpeed:4}),play(){},seek(){},action(){},message:message=>messages.push(message),brightness(){},suppressClick(){}});
+ return {video,messages,start(){surface.fire('pointerdown');[...timers.values()].at(-1)();},end(){win.fire('pointerup');},release};
+}
+test('unsupported temporary speed does not throw from hold or cleanup handlers',()=>{
+ const rejected=holdHarness((value,previous)=>{if(value===4)throw Error('unsupported rate');return value;});assert.doesNotThrow(()=>rejected.start());assert.equal(rejected.video.playbackRate,1.25);assert.match(rejected.messages.at(-1),/不支持/);assert.doesNotThrow(()=>rejected.end());assert.doesNotThrow(()=>rejected.release());
+ const ignored=holdHarness((value,previous)=>value===4?previous:value);ignored.start();assert.match(ignored.messages.at(-1),/不支持/);assert.ok(!ignored.messages.some(value=>value.startsWith('临时 ')));ignored.release();
+ const restore=holdHarness((value,previous)=>{if(previous===4&&value===1.25)throw Error('restore rejected');return value;});restore.start();assert.doesNotThrow(()=>restore.end());assert.match(restore.messages.at(-1),/恢复/);assert.doesNotThrow(()=>restore.release());
+});
+(async()=>{let failed=0;for(const [name,run] of tests){try{await run();console.log('PASS: '+name);}catch(error){failed++;console.error('FAIL: '+name+'\n'+error.stack);}}if(failed)process.exitCode=1;})().catch(error=>{console.error(error);process.exitCode=1;});

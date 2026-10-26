@@ -3,8 +3,8 @@ import type {PlayerAction,PlayerPreferences} from './player-preferences';
 type Options={video:HTMLVideoElement;stage:HTMLElement;surface:HTMLElement;preferences:()=>PlayerPreferences;play:()=>void;mute?:()=>void;seek:(delta:number)=>unknown;action:(action:PlayerAction)=>void;message:(message:string)=>void;brightness:(n:number)=>void;suppressClick:()=>void};
 export function bindPlayerOperations(o:Options){
  const {video:v,stage,surface}=o;let timer:ReturnType<typeof setTimeout>|undefined,held=false,oldRate=1,key='',pointer:{id:number;x:number;y:number;position:number;volume:number;brightness:number;axis:string}|undefined,brightness=1;
- const stopHold=()=>{clearTimeout(timer);timer=undefined;if(held){v.playbackRate=oldRate;held=false;o.message('');}};
- const beginHold=()=>{stopHold();timer=setTimeout(()=>{if(v.paused||v.ended)return;oldRate=v.playbackRate;held=true;v.playbackRate=o.preferences().holdSpeed;o.message('临时 '+v.playbackRate+'× 倍速');o.suppressClick();},450);};
+ const stopHold=()=>{clearTimeout(timer);timer=undefined;if(held){held=false;try{v.playbackRate=oldRate;if(Math.abs(v.playbackRate-oldRate)>.01)throw Error();o.message('');}catch{o.message('此设备无法恢复原倍速，请在播放设置中重新选择');}}};
+ const beginHold=()=>{stopHold();timer=setTimeout(()=>{timer=undefined;if(v.paused||v.ended)return;const previous=v.playbackRate,next=o.preferences().holdSpeed;o.suppressClick();try{v.playbackRate=next;if(Math.abs(v.playbackRate-next)>.01)throw Error();oldRate=previous;held=true;o.message('临时 '+next+'× 倍速');}catch{try{if(v.playbackRate!==previous)v.playbackRate=previous;}catch{}o.message('此设备不支持临时倍速，请在播放设置中选择可用倍速');}},450);};
  const editable=(target:EventTarget|null)=>typeof (target as Element|null)?.closest==='function'&&!!(target as Element).closest('input,textarea,select,button,summary,[contenteditable=true],[role=slider]');
  const down=(e:KeyboardEvent)=>{
   if(editable(e.target)||e.altKey||e.ctrlKey||e.metaKey||e.shiftKey)return;const code=e.code||({' ':'Space',f:'KeyF',F:'KeyF'} as Record<string,string>)[e.key]||e.key;

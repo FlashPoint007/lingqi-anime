@@ -20,7 +20,7 @@ function chapters(subject=previous,fetcher=async()=>({roads:localRoads})){
 }
 function start(rules=[rule]){
  const automatic=[],chapters=[],resolved=[],errors=[],remembered=[];let selectedValue;
- const ctx=execute(parts.start,{rules,ruleIdx:0,player:null,selected:previous,roads:[],knownEpisodeNumber:core.knownEpisodeNumber,ruleForPlayback:core.ruleForPlayback,stopSource(){},stopPlayback(){},setPlayError:v=>errors.push(v),setSourceTerm(){},setEpisodes(){},setSelected:v=>selectedValue=v,setRoads(){},setSourceResults(){},setChapterSource(){},setRuleIdx(){},title:s=>s.name,sourceChapters:(...args)=>chapters.push(args),resolveSource:(...args)=>resolved.push(args),playEpisode:(...args)=>automatic.push(args),setPlayMode(){},setPlayer(){},setDirect(){},remember:(...args)=>remembered.push(args),playerProgress:{current:0},lastProgress:{current:0}});
+ const ctx=execute(parts.start,{playResume:true,rules,ruleIdx:0,player:null,selected:previous,roads:[],knownEpisodeNumber:core.knownEpisodeNumber,ruleForPlayback:core.ruleForPlayback,stopSource(){},stopPlayback(){},setPlayError:v=>errors.push(v),setSourceTerm(){},setEpisodes(){},setSelected:v=>selectedValue=v,setRoads(){},setSourceResults(){},setChapterSource(){},setRuleIdx(){},title:s=>s.name,sourceChapters:(...args)=>chapters.push(args),resolveSource:(...args)=>resolved.push(args),playEpisode:(...args)=>automatic.push(args),setPlayMode(){},setPlayer(){},setDirect(){},remember:(...args)=>remembered.push(args),playerProgress:{current:0},lastProgress:{current:0}});
  return {ctx,automatic,chapters,resolved,errors,remembered,selected:()=>selectedValue};
 }
 const tests=[];function test(name,run){tests.push([name,run]);}

@@ -26,6 +26,10 @@ slider().onPointerDown(pointer(30));slider().onKeyDown({key:'Escape',preventDefa
 slider().onPointerDown(pointer(30));slider().onPointerMove(pointer(70,150));slider().onPointerUp(pointer(70,150));assert.equal(seeks.length,1,'releasing outside cancels a drag');
 slider().onPointerDown(pointer(30));slider().onPointerCancel();slider().onPointerUp(pointer(80));assert.equal(seeks.length,1);
 slider().onKeyDown({key:'ArrowRight',preventDefault(){},stopPropagation(){}});assert.equal(seeks.at(-1),10);props.duration=0;slider().onPointerDown(pointer(50));slider().onPointerUp(pointer(50));assert.equal(seeks.length,2);assert.equal(slider()['aria-disabled'],true);progress.stop();
+const configuredSteps=[],configured=mount('components/PlayerProgress.tsx',{'../lib/player-controls':controls},{},{current:30,duration:120,buffered:80,step:25,onSeek(){},onStep:n=>{configuredSteps.push(n);return 30+n;}});
+const configuredSlider=nodes(configured.render(),'div').find(n=>n.props.role==='slider').props;
+for(const key of ['ArrowRight','ArrowLeft','ArrowUp','ArrowDown','PageUp','PageDown'])configuredSlider.onKeyDown({key,preventDefault(){},stopPropagation(){}});
+assert.deepEqual(configuredSteps,[25,-25,25,-25,60,-60],'timeline arrow keys must honor the same seek interval as the toolbar');configured.stop();
 console.log('PASS: hover/drag time preview, stable drag geometry, release-only commit, Escape/outside/pointer cancellation, keyboard and unknown-duration controls');
 (async()=>{
  let requests=[];const jpeg=fs.readFileSync('public/art/frieren-key-visual.jpg');

@@ -6,8 +6,17 @@ import {anySignal,timeoutSignal,requestJson} from './request-client';
 
 export type SourceResult={name:string;url:string};
 export type AvailabilityState='queued'|'checking'|'found'|'possible'|'not-found'|'error'|'playing'|'episode-error';
-export type SourceAvailability={state:AvailabilityState;message:string;results:SourceResult[];source?:string;roads?:Road[];checkedAt?:number};
+export type SourceAvailability={state:AvailabilityState;message:string;results:SourceResult[];source?:string;roads?:Road[];checkedAt?:number;episodeNumber?:number};
 export const availabilityLabels:Record<AvailabilityState,string>={queued:'待检测',checking:'检测中',found:'有分集',possible:'待确认', 'not-found':'未匹配',error:'检测失败',playing:'已播放', 'episode-error':'本集失败'};
+// Keep catalogue work reusable while limiting a playback outcome to its episode.
+// Project the rows without mutating the shared source cache or restarting scans.
+export function episodeAvailability(checks:Record<string,SourceAvailability>,number?:number):Record<string,SourceAvailability>{
+ return Object.fromEntries(Object.entries(checks).map(([name,check])=>{
+  if(!['playing','episode-error'].includes(check.state)||Number.isFinite(number)&&check.episodeNumber===number)return [name,check];
+  const roads=check.roads||[],found=roads.some(road=>road.episodes.length>0);
+  return [name,{...check,state:found?'found':'possible',message:found?roads.length+' 条线路 · 最多 '+Math.max(...roads.map(road=>road.episodes.length))+' 集；当前集尚未验证播放':'有其他剧集的播放记录，当前集尚未验证'}];
+ }));
+}
 export function cachedAvailability(cache:Map<string,SourceAvailability>,key:string,now=Date.now()){
  const value=cache.get(key),age=now-(value?.checkedAt??0);const ttl=value?.state==='error'||value?.state==='episode-error'?60000:600000;
  return value?.checkedAt&&age>=0&&age<ttl?value:undefined;

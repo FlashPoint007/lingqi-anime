@@ -37,7 +37,7 @@ import {modalKey} from '../lib/modal-focus';
 import {readSeasonCache,saveSeasonCache,seasonCacheFresh,seasonData,seasonNotice} from '../lib/calendar-client';
 import {browseData,readBrowseCache,saveBrowseCache,browseCacheFresh} from '../lib/browse-client';
 import SourceAvailabilityList,{useSourceAvailability} from '../components/SourceAvailability';
-import {availabilityLabels,matchesTitle,checkSource,type SourceAvailability} from '../lib/source-availability';
+import {availabilityLabels,matchesTitle,checkSource,episodeAvailability,type SourceAvailability} from '../lib/source-availability';
 import {sourceCatalogueIssue} from '../lib/source-identity';
 import {PAGE_SIZE,animeTags,categories,currentSeason,currentWeekday,seasonNames,scoreLabel,catalogYears,type Subject} from '../lib/catalog';
 import {initialRules,mergeSubscribed,ruleCompatibility,RULE_REPOSITORY,SubscriptionEntry} from '../lib/subscriptions';
@@ -99,7 +99,8 @@ export default function Home(){
  // Partial card metadata would start a scan and immediately cancel/restart it
  // when episode count or platform arrives. Known metadata can scan in parallel.
  const availabilityDeferred=!player&&detailLoading&&!selected?.eps&&!selected?.platform;
- const availability=useSourceAvailability(availabilitySubject?.name==='正在读取番剧…'?null:availabilitySubject,rules,subjectAliases,availabilityDeferred);
+ const availabilityRaw=useSourceAvailability(availabilitySubject?.name==='正在读取番剧…'?null:availabilitySubject,rules,subjectAliases,availabilityDeferred);
+ const availability={...availabilityRaw,checks:episodeAvailability(availabilityRaw.checks,player?.number)};
  useEffect(()=>{setRules(mergeSubscribed(cleanRules(stored('kw-rules',[])),initialRules.map(r=>({file:String(r.subscriptionFile),rule:r}))));setDark(stored<boolean>('kw-dark',false)===true);privatePlaybackRef.current=stored<boolean>('kw-private-playback',false)===true;setPrivatePlayback(privatePlaybackRef.current);setDay(currentWeekday());setReady(true);document.documentElement.dataset.lingqiHydrated='1';window.dispatchEvent(new Event('lingqi:ready'));},[]);
  function persist(key:string,value:unknown){
   if(writeStorage(key,JSON.stringify(value)))storageFailures.current.delete(key);else storageFailures.current.add(key);
@@ -210,7 +211,7 @@ export default function Home(){
  function closePlayer(){recovery.current.cancel();saveProgress(playerProgress.current,true);stopPlayback();stopSource();setPlayer(null);if(location.hash.startsWith('#watch/')){if(window.history.state?.lingqiWatch)window.history.back();else window.history.replaceState(null,'',location.pathname+location.search);}}
  function changeRule(i:number){stopSource();if(playMode==='resolving')cancelPlayback();setRuleIdx(i);setSourceResults([]);setRoads([]);setChapterSource('');setSourceError('');}
  function retryCatalog(){forceCatalogReload.current=true;setReload(n=>n+1);}
- function runSearch(input:string){let parsed:ReturnType<typeof parseSearchQuery>;try{const link=shareInputHash(input,location.origin);if(link){navigationHash.current=undefined;window.history.pushState(null,'',link);routeHandler.current();return;}parsed=parseSearchQuery(input.trim());}catch(error){setError((error as Error).message);setToast((error as Error).message);return;}const text=parsed.keyword;markNavigation();setQuery(text);setOffset(0);setSort(parsed.sort||(text?'date':'popular'));setActiveQuery(text);setTag('');setCategory('');setCatalogYear('');if(parsed.syntax)setAdvanced(parsed.filters);if(/^(?:#|id:)\d{1,10}$/i.test(text))setAdvanced({...emptySearchFilters,weekdays:[]});if(input.trim()&&!privatePlaybackRef.current){const next=searchHistory([input.trim(),...recentSearches]);setRecentSearches(next);persist(searchHistoryKey,next);}setView('discover');setReload(n=>n+1);}
+ function runSearch(input:string){let parsed:ReturnType<typeof parseSearchQuery>;try{const link=shareInputHash(input,location.origin);if(link){navigationHash.current=undefined;window.history.pushState(null,'',link);routeHandler.current();return;}parsed=parseSearchQuery(input.trim());}catch(error){setError((error as Error).message);setToast((error as Error).message);return;}const text=parsed.keyword;markNavigation();setQuery(text);setOffset(0);setSort(parsed.sort||(text?'date':'popular'));setActiveQuery(text);setTag('');setCategory('');setCatalogYear('');setAdvanced(parsed.filters);if(/^(?:#|id:)\d{1,10}$/i.test(text))setAdvanced({...emptySearchFilters,weekdays:[]});if(input.trim()&&!privatePlaybackRef.current){const next=searchHistory([input.trim(),...recentSearches]);setRecentSearches(next);persist(searchHistoryKey,next);}setView('discover');setReload(n=>n+1);}
  function search(e:React.FormEvent){e.preventDefault();runSearch(query);}
  function clearSearch(){setQuery('');setActiveQuery('');if(!category)setSort('popular');setOffset(0);setReload(n=>n+1);}
  function resetFilters(){setAdvanced({...emptySearchFilters,weekdays:[]});clearSearch();setTag('');setCategory('');setCatalogYear('');setSort('popular');}
@@ -239,7 +240,7 @@ export default function Home(){
   else setSourceError(check.message);
  }
  function selectRule(index:number){const check=availability.checks[rules[index]?.name];if(check?.source&&check.roads)chooseAvailableSource(index,check);else changeRule(index);}
- function playbackReport(state:'playing'|'episode-error',message:string){const rule=rules.find(r=>r.name===player?.ruleName);if(rule)availability.report(rule,{state,message});}
+ function playbackReport(state:'playing'|'episode-error',message:string){const rule=rules.find(r=>r.name===player?.ruleName);if(rule)availability.report(rule,{state,message,episodeNumber:player?.number??knownEpisodeNumber({name:player?.episode||''})});}
  async function sourceSearch(){
   const r=rules[ruleIdx];if(!r||sourceBusy)return;const keyword=sourceTerm.trim();if(!keyword){setSourceError('请输入番剧名称');return;}stopSource();const operation=sourceOperation.current,controller=new AbortController();sourceRequestRef.current=controller;setSourceBusy(true);setSourceError('');setSourceResults([]);setRoads([]);setChapterSource('');
   try{const url=r.searchMode==='api'?r.baseURL:r.searchURL.replaceAll('@keyword',encodeURIComponent(keyword));const d=await api('/api/source',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rule:r,url,search:true,operation:'search',keyword}),signal:anySignal([controller.signal,timeoutSignal(15000)])});if(operation!==sourceOperation.current)return;const results=d.results||parseSearch(d.html,r,d.url||url);setSourceResults(results);if(!results.length)setSourceError('没有同名资源，请尝试原名或更换视频源。');}
@@ -276,7 +277,7 @@ export default function Home(){
     setActiveRoad(Math.max(0,roadsRef.current.findIndex(line=>line.episodes.some(ep=>ep.url===attempt.episode.url))));setPlayMode('video');setPlayer({subject:s,episode:attempt.episode.name,url:d.url,sourceUrl:attempt.episode.url,source:attempt.episode.source,position,number:attempt.episode.number,ruleName:r.name,preferDirect:d.preferDirect,mediaUrl:d.mediaUrl,mediaType:d.mediaType});remember(s,attempt.episode,position,r.name);return;
    }catch(error){message=(error as Error).message;}
   }
-  if(id===playbackId.current){setPlayMode('unavailable');const explanation=r.name+'：'+message+'。可在右侧选择已找到分集的源，或自动寻找其他源。';setPlayError(explanation);availability.report(r,{state:'episode-error',message:'第 '+(number??1)+' 集：'+message});}
+  if(id===playbackId.current){setPlayMode('unavailable');const explanation=r.name+'：'+message+'。可在右侧选择已找到分集的源，或自动寻找其他源。';setPlayError(explanation);availability.report(r,{state:'episode-error',message:'第 '+(number??1)+' 集：'+message,episodeNumber:number});}
  }
  function handlePlaybackError(message:string){
   if(!player||!isCurrentPlayback(player,{sourceUrl:activePlayerUrl.current,url:activeMediaUrl.current}))return;
@@ -326,7 +327,7 @@ export default function Home(){
      if(data.mode==='video'&&(data.verified||data.preferDirect)){
       setRuleIdx(index);setSourceResults(results);setRoads(lines);setActiveRoad(road);setChapterSource(found.url);setPlayer({subject:s,episode:episode.name,url:data.url,sourceUrl:episode.url,source:found.url,position,number,ruleName:rule.name,preferDirect:data.preferDirect,mediaUrl:data.mediaUrl,mediaType:data.mediaType});setPlayMode('video');setPlayError('');lastProgress.current=0;remember(s,{...episode,source:found.url},position,rule.name,fresh);return;
      }
-     if(data.mode!=='video'){recovery.current.record(identity,rule.name,episode.url);const message=data.message||'当前线路未解析到有效视频';failures.push(rule.name+'：'+message);availability.report(rule,{state:'episode-error',message});}
+     if(data.mode!=='video'){recovery.current.record(identity,rule.name,episode.url);const message=data.message||'当前线路未解析到有效视频';failures.push(rule.name+'：'+message);availability.report(rule,{state:'episode-error',message,episodeNumber:number});}
      if(data.mode==='video'&&!directFallback)directFallback={data,episode:{...episode,source:found.url},index,results,lines,road,source:found.url};
      }catch(error){if(id!==playbackId.current||controller.signal.aborted)return;recovery.current.record(identity,rule.name,episode.url);failures.push(rule.name+' · '+line.name+'：'+(error as Error).message);}
     }

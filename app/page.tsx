@@ -255,8 +255,10 @@ export default function Home(){
  }
  function remember(s:Subject,e:Episode,position:number,ruleName?:string,resetProgress=false){if(!personal.ready||privatePlaybackRef.current)return;const previous=historyRef.current.find(h=>h.subject.id===s.id);const progresses=previous?.progresses&&(resetProgress?Object.fromEntries(Object.entries(previous.progresses).filter(([key])=>key!==String(e.number))):previous.progresses);const next=[withEpisodeProgress({subject:s,episode:e.name,url:e.url,source:e.source,number:e.number,ruleName,time:Date.now(),position,...(progresses?{progresses}:{})}),...historyRef.current.filter(x=>x.subject.id!==s.id)].slice(0,100);historyRef.current=next;setHistory(next);}
  async function resolveSource(s:Subject,e:Episode,r:Rule,position=0,contextRoads=roads,validateCatalogue=false){
-  e={...e,number:e.number??knownEpisodeNumber(e)};
-  recovery.current.begin({subjectId:s.id,number:e.number},true,true);
+  const initialLine=contextRoads.find(line=>line.episodes.some(ep=>ep.url===e.url)),initialIndex=initialLine?.episodes.findIndex(ep=>ep.url===e.url)??-1;
+  e={...e,number:e.number??knownEpisodeNumber(e)??(initialIndex>=0?episodeNumber(e,initialIndex):undefined)};
+  const identity={subjectId:s.id,number:e.number};
+  recovery.current.begin(identity,true,true);
   const deadline=Date.now()+recovery.current.remaining();
   const {id,controller}=beginPlayback();playerProgress.current=position;lastProgress.current=0;setSourceError('');setPlayError('');setPlayMode('resolving');setPlayer({subject:s,episode:e.name,url:'',sourceUrl:e.url,source:e.source,position,number:e.number,ruleName:r.name});
   if(validateCatalogue&&e.source){
@@ -272,14 +274,20 @@ export default function Home(){
   const attempts=[{episode:{...e,number},road:selectedRoad},...contextRoads.flatMap((line,road)=>{if(road===selectedRoad||index<0)return [];const episode=number!==undefined?episodeAtNumber(line.episodes,number):line.episodes.find(ep=>ep.name===e.name);return episode?[{episode:{...episode,number,source:e.source},road}]:[];})].slice(0,3);
   let message='当前线路未解析到视频地址';
   for(const attempt of attempts){
-   if(id!==playbackId.current)return;
+   if(id!==playbackId.current||controller.signal.aborted)return;
    if(Date.now()>=deadline)break;
    try{setResolveStatus(r.name+' · 正在解析 '+attempt.episode.name);const d=await api('/api/source',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rule:r,url:attempt.episode.url,operation:'resolve',source:attempt.episode.source}),signal:anySignal([controller.signal,timeoutSignal(Math.max(1,Math.min(35000,deadline-Date.now())))])});if(id!==playbackId.current)return;
-    if(d.mode!=='video'){message=d.message||message;continue;}
+    if(controller.signal.aborted)return;
+    if(d.mode!=='video'){recovery.current.record(identity,r.name,attempt.episode.url);message=d.message||message;continue;}
     setActiveRoad(Math.max(0,roadsRef.current.findIndex(line=>line.episodes.some(ep=>ep.url===attempt.episode.url))));setPlayMode('video');setPlayer({subject:s,episode:attempt.episode.name,url:d.url,sourceUrl:attempt.episode.url,source:attempt.episode.source,position,number:attempt.episode.number,ruleName:r.name,preferDirect:d.preferDirect,mediaUrl:d.mediaUrl,mediaType:d.mediaType});remember(s,attempt.episode,position,r.name);return;
-   }catch(error){message=(error as Error).message;}
+   }catch(error){if(id!==playbackId.current||controller.signal.aborted)return;recovery.current.record(identity,r.name,attempt.episode.url);message=(error as Error).message;}
   }
-  if(id===playbackId.current){setPlayMode('unavailable');const explanation=r.name+'：'+message+'。可在右侧选择已找到分集的源，或自动寻找其他源。';setPlayError(explanation);availability.report(r,{state:'episode-error',message:'第 '+(number??1)+' 集：'+message,episodeNumber:number});}
+  if(id!==playbackId.current||controller.signal.aborted)return;
+  availability.report(r,{state:'episode-error',message:'第 '+(number??1)+' 集：'+message,episodeNumber:number});
+  // Continue the same attempt across sources, preserving its budget and seek
+  // position even when this async handler captured the previous episode.
+  if(number!==undefined&&recovery.current.claim(identity)){void playEpisode(s,number,true,false,position);return;}
+  setPlayMode('unavailable');setPlayError(r.name+'：'+message+'。自动恢复已停止，可重新解析或手动选择其他线路。');
  }
  function handlePlaybackError(message:string){
   if(!player||!isCurrentPlayback(player,{sourceUrl:activePlayerUrl.current,url:activeMediaUrl.current}))return;
@@ -298,9 +306,9 @@ export default function Home(){
  }
  function episodeResume(s:Subject,number:number|undefined,current:number){if(player?.subject.id===s.id&&number===player.number)return current;if(!playResume)return 0;const progress=number!==undefined?historyRef.current.find(h=>h.subject.id===s.id)?.progresses?.[String(number)]:undefined;return progress&&!progress.completed?progress.position:current;}
  function startSource(s:Subject,e:Episode){const r=rules[ruleIdx];if(r){const line=roads.find(line=>line.episodes.some(ep=>ep.url===e.url));const index=line?.episodes.findIndex(ep=>ep.url===e.url)??-1;const number=e.number??(index>=0?episodeNumber(e,index):undefined);const playingLine=roadsRef.current.find(line=>line.episodes.some(ep=>ep.url===player?.sourceUrl));const playingIndex=playingLine?.episodes.findIndex(ep=>ep.url===player?.sourceUrl)??-1;const playingNumber=player?.number??(playingIndex>=0?episodeNumber(playingLine!.episodes[playingIndex],playingIndex):undefined);const position=episodeResume(s,number,resumeEpisodePosition(player?{subjectId:player.subject.id,number:playingNumber,sourceUrl:player.sourceUrl}:undefined,{subjectId:s.id,number,sourceUrl:e.url},playerProgress.current));saveProgress(playerProgress.current,true);void resolveSource(s,{...e,number,source:e.source||chapterSource},r,position);}}
- async function playEpisode(s:Subject,number:number,automatic=false,fresh=false){
+ async function playEpisode(s:Subject,number:number,automatic=false,fresh=false,resumePosition?:number){
   const identity={subjectId:s.id,number};recovery.current.begin(identity,!automatic);
-  const position=fresh?0:episodeResume(s,number,resumeEpisodePosition(player?{subjectId:player.subject.id,number:player.number??knownEpisodeNumber({name:player.episode})}:undefined,{subjectId:s.id,number},playerProgress.current));saveProgress(playerProgress.current,true);const {id,controller}=beginPlayback();stopSource();setSourceError('');playerProgress.current=position;setPlayError(automatic?'上一条线路播放失败，正在尝试同集的其他线路。':'');setPlayMode('resolving');setPlayer({subject:s,episode:'第 '+number+' 集',url:'',sourceUrl:'',position,number});
+  const position=fresh?0:resumePosition??episodeResume(s,number,resumeEpisodePosition(player?{subjectId:player.subject.id,number:player.number??knownEpisodeNumber({name:player.episode})}:undefined,{subjectId:s.id,number},playerProgress.current));saveProgress(playerProgress.current,true);const {id,controller}=beginPlayback();stopSource();setSourceError('');playerProgress.current=position;setPlayError(automatic?'上一条线路播放失败，正在尝试同集的其他线路。':'');setPlayMode('resolving');setPlayer({subject:s,episode:'第 '+number+' 集',url:'',sourceUrl:'',position,number});
   const candidates=rules.map((rule,index)=>({rule,index})).filter(e=>e.rule.enabled!==false&&!ruleCompatibility(e.rule)).sort((a,b)=>{const preferred=readStorage('kw-last-good-source')||'xfdmnext';const rank=(e:typeof a)=>{const state=availability.checks[e.rule.name]?.state;return state==='playing'?-5:state==='found'?-4:state==='episode-error'||state==='error'?5:e.index===ruleIdx?-2:e.rule.name===preferred?-1:e.rule.name==='xfdmnext'?0:1;};const preference=(e:typeof a)=>e.index===ruleIdx?0:e.rule.name===preferred?1:e.rule.name==='xfdmnext'?2:3;return rank(a)-rank(b)||preference(a)-preference(b);});const deadline=Date.now()+recovery.current.remaining();
   let metadataNumbers=selected?.id===s.id?episodes.map(e=>e.sort):[];
   // A history entry may use global sequel numbering while its old source is

@@ -3,7 +3,8 @@ import {parseOfflinePlaylist} from './offline-hls';
 import {offlineIdentity,responseValidator,validResume} from './offline-resume';
 import type {Subject} from './catalog';
 import type {Rule} from './web-core';
-const CHUNK_SIZE=2*1024*1024,storeModule='/offline-transfer-v2.mjs';
+import {captureOfflineDanmaku,type OfflineDanmaku} from './offline-danmaku';
+const CHUNK_SIZE=2*1024*1024,storeModule='/offline-transfer-v3.mjs';
 let store:Promise<any>|undefined;
 const offlineStore=()=>store??=import(/* @vite-ignore */ storeModule);
 const readOffline=async(name:string,key:unknown)=>(await offlineStore()).readOffline(name,key);
@@ -13,7 +14,7 @@ const removeOffline=async(id:string)=>(await offlineStore()).removeOffline(id);
 const assetsFor=async(id:string):Promise<Asset[]>=>(await offlineStore()).listOfflineAssets(id);
 const removeAsset=async(id:string,asset:string)=>(await offlineStore()).removeOfflineAsset(id,asset);
 const localURL=(id:string,asset:string)=>'/__offline_media/'+encodeURIComponent(id)+'/'+asset;
-export type OfflineDownload={id:string;owner:string;subject:Pick<Subject,'id'|'name'|'name_cn'>;episode:string;number?:number;sourceUrl:string;source?:string;ruleName?:string;createdAt:number;bytes:number;status:'queued'|'paused'|'downloading'|'complete'|'interrupted';type:'hls'|'video';entry:string;position:number;progressAt?:number;historyPending?:boolean;duration?:number;error?:string;totalBytes?:number;segmentsDone?:number;segmentsTotal?:number;speed?:number;updatedAt?:number;fingerprint?:string;downloadUrl?:string;identity?:string};
+export type OfflineDownload={danmaku?:OfflineDanmaku;id:string;owner:string;subject:Pick<Subject,'id'|'name'|'name_cn'>;episode:string;number?:number;sourceUrl:string;source?:string;ruleName?:string;createdAt:number;bytes:number;status:'queued'|'paused'|'downloading'|'complete'|'interrupted';type:'hls'|'video';entry:string;position:number;progressAt?:number;historyPending?:boolean;duration?:number;error?:string;totalBytes?:number;segmentsDone?:number;segmentsTotal?:number;speed?:number;updatedAt?:number;fingerprint?:string;downloadUrl?:string;identity?:string};
 type Asset={download:string;id:string;size:number;type:string;chunks:number;complete?:boolean;validator?:string;total?:number};
 type Input={owner:string;subject:Pick<Subject,'id'|'name'|'name_cn'>;episode:string;number?:number;sourceUrl:string;source?:string;ruleName?:string;url:string;mediaType?:'hls'|'video';rule?:Rule};
 const LIMIT=1024*1024*1024,MAX_RECORDS=100;
@@ -24,6 +25,12 @@ export const activeDownload=()=>running?.id;
 export function pauseOwnerDownloads(owner:string){if(running?.owner===owner)running.controller.abort(new DOMException('个人空间已切换，下载已暂停','AbortError'));}
 export async function downloads(owner:string){return (await listOffline() as OfflineDownload[]).filter(item=>item.owner===owner);}
 async function owned(id:string,owner:string){const item=await readOffline('downloads',id) as OfflineDownload|undefined;if(!item||item.owner!==owner)throw Error('当前个人空间中没有这个下载');return item;}
+export async function saveOfflineDanmaku(id:string,owner:string,signal:AbortSignal=new AbortController().signal){
+ const item=await owned(id,owner);if(item.status!=='complete')throw Error('请等待视频下载完成后补存弹幕');
+ const data=await captureOfflineDanmaku(item,signal);throwIfAborted(signal);
+ const updated=await (await offlineStore()).updateOfflineDanmaku(id,owner,data) as OfflineDownload|undefined;
+ if(!updated)throw Error('下载已删除或个人空间已变化，未写入弹幕');notify();return updated;
+}
 export async function pauseDownload(id:string,owner:string){await owned(id,owner);if(running?.id===id)running.controller.abort(new DOMException('下载已暂停','AbortError'));downloadChannel()?.postMessage({type:'pause',id,owner});await navigator.locks.request('lingqi-offline-download',async()=>{const item=await owned(id,owner);if(item.status!=='complete')await writeOffline('downloads',{...item,status:'paused',speed:0});});notify();}
 export async function deleteDownload(id:string,owner:string){await pauseDownload(id,owner);await navigator.locks.request('lingqi-offline-download',async()=>{await owned(id,owner);await removeOffline(id);});notify();}
 export async function markOfflineProgressSaved(id:string,expectedTime:number,owner:string){await (await offlineStore()).updateOfflineProgress(id,owner,{ackTime:expectedTime});}
@@ -98,7 +105,10 @@ async function performDownload(input:Input,old?:OfflineDownload,onStatus?:(messa
    const results=await Promise.allSettled(workers),failure=results.find((r):r is PromiseRejectedResult=>r.status==='rejected'&&r.reason?.name!=='AbortError')||results.find((r):r is PromiseRejectedResult=>r.status==='rejected');if(failure)throw failure.reason;
    const payload=new TextEncoder().encode(playlist.text);await saveResponse('0',new Response(payload),'application/vnd.apple.mpegurl');
   }
-  abort();item={...item,bytes:totalBytes,status:'complete',speed:0};await writeOffline('downloads',item);notify();onStatus?.('下载完成，可从离线列表断网播放');return item;
+  abort();item={...item,bytes:totalBytes,status:'complete',speed:0};await writeOffline('downloads',item);notify();onStatus?.('视频已下载，正在保存对应集数的弹幕…');
+  // Optional comment retrieval cannot turn a completed video into an interrupted download.
+  try{item=await saveOfflineDanmaku(id,input.owner,controller.signal);onStatus?.(item.danmaku?.status==='saved'?'视频与 '+item.danmaku.comments.length+' 条弹幕已保存，可断网播放':'视频已下载；'+(item.danmaku?.notes[0]||'这一集暂无可保存的弹幕'));}catch{onStatus?.('视频已下载；弹幕暂未保存，可在离线列表补存或导入');}
+  return item;
  }catch(error){controller.abort();if(item){const saved=await assetsFor(id);for(const asset of saved)if(item.type==='hls'&&!asset.complete||item.type==='video'&&!asset.complete&&(asset.size%CHUNK_SIZE!==0||!asset.validator||!asset.total))await removeAsset(id,asset.id);const retained=await assetsFor(id);await writeOffline('downloads',{...item,status:(error as Error).name==='AbortError'?'paused':'interrupted',bytes:retained.reduce((n,a)=>n+a.size,0),segmentsDone:retained.filter(a=>a.id!=='0'&&a.complete).length,speed:0,error:(error as Error).name==='AbortError'?undefined:(error as Error).name==='QuotaExceededError'?'本机空间不足，请清理后继续':(error as Error).message});}notify();throw error;
  }finally{window.removeEventListener('pagehide',hide);if(running?.id===id)running=undefined;notify();}
 }

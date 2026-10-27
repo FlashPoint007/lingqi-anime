@@ -9,6 +9,7 @@ import SubjectAliases from './SubjectAliases';
 import {useEffect,useMemo,useRef,useState,type ReactNode} from 'react';
 import {ArrowLeft,ChevronLeft,ChevronRight,PanelRightClose,PanelRightOpen,Play,RefreshCw,Search,X,ChevronDown,Radio,SlidersHorizontal} from 'lucide-react';
 import Player from './Player';
+import BangumiRating from './BangumiRating';
 import {DownloadEpisode} from './OfflineDownloads';
 import Discussions from './Discussions';
 import type {EpisodeProgresses} from '../lib/episode-progress';
@@ -56,7 +57,7 @@ export default function WatchPage(p:Props){
  return <div className={'watch-page '+(!panel?'watch-theater':'')}>
   <header className="watch-header">
    <button className="watch-back" aria-label="返回番剧" title="返回番剧" onClick={p.onBack}><span className="watch-brand-mark" aria-hidden="true">07</span><span className="watch-brand-copy"><b>零柒番剧</b><small>放映室 / WATCH</small></span><ArrowLeft size={16}/></button>
-   <div className="watch-title">{p.privatePlayback&&<span className="private-playback-badge" role="status">隐身观看 · 不保存本站记录</span>}<h1>{p.player.subject.name_cn||p.player.subject.name}</h1><p>{episodeLabel(p.player.episode,currentNumber)} · {p.mode==='resolving'?'正在寻找播放线路':p.mode==='video'?'本站播放':'当前线路'}</p></div>
+   <div className="watch-title">{p.privatePlayback&&<span className="private-playback-badge" role="status">隐身观看 · 不保存本站记录</span>}<h1>{p.player.subject.name_cn||p.player.subject.name}</h1><p>{episodeLabel(p.player.episode,currentNumber)} · {p.mode==='resolving'?'正在寻找播放线路':p.mode==='video'?'本站播放':'当前线路'}</p>{p.player.subject.id>0&&<BangumiRating subject={p.player.subject} compact/>}</div>
    <div className="watch-header-actions">{p.player.subject.id>0&&<ShareButton hash={subjectHash(p.player.subject.id)} label="分享番剧"/>}
     <button className="watch-next watch-previous" disabled={!previous||p.mode==='resolving'} onClick={()=>go(previous)}><ChevronLeft size={16}/><span>上一集</span></button>
     <button className="watch-next" disabled={!next||p.mode==='resolving'} onClick={()=>go(next)}>下一集 <ChevronRight size={16}/></button>

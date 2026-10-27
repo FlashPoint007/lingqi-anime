@@ -2,6 +2,7 @@ import {env} from 'cloudflare:workers';
 import {getSiteUser} from './email-auth';
 import {readRequestText,RequestLimitError} from './request-guard';
 import {siteDanmakuScope,siteDanmakuDraft,type SiteDanmakuPost} from './site-danmaku';
+import {limitDanmaku,type DanmakuComment} from './danmaku';
 type Row={id:string;subject_id:number;episode:string;user_id:string;time_ms:number;mode:1|4|5;color:number;body:string;created_at:number;deleted_at:number|null};
 const response=(value:unknown,status=200)=>Response.json(value,{status,headers:{'Cache-Control':'private, no-store',Vary:'Cookie'}});
 const uuid=(value:unknown):value is string=>typeof value==='string'&&/^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/i.test(value);
@@ -20,6 +21,12 @@ export async function siteDanmakuResponse(req:Request){
   const db=env.DB;if(!db)return response({error:'本站弹幕数据库暂不可用'},503);
   const identity=await getSiteUser(req),user=identity?.provider==='email'?identity:undefined;
   if(req.method==='GET'){
+   if(url.searchParams.get('offline')==='1'){
+    // Public, bounded per-episode snapshot. Never include authors or management fields.
+    const rows=await db.prepare('SELECT time_ms,mode,color,body FROM site_danmaku WHERE subject_id=? AND episode=? AND deleted_at IS NULL ORDER BY time_ms,id LIMIT 5001').bind(scope!.subjectId,scope!.episode).all<Row>();
+    const data=limitDanmaku(rows.results.slice(0,5000).map(row=>[row.time_ms/1000,row.mode,row.color,row.body,'site'] as DanmakuComment));
+    return response({...data,sampled:data.sampled||rows.results.length>5000,total:rows.results.length>5000?Math.max(5001,data.total):data.total});
+   }
    const mine=url.searchParams.get('mine')==='1',page=Number(url.searchParams.get('page')||1),time=Number(url.searchParams.get('time')||0);
    if(!Number.isInteger(page)||page<1||page>500||!Number.isFinite(time)||time<0||time>86400)return response({error:'弹幕时间或页码无效'},400);
    if(mine&&!user)return response({error:'请先登录本站邮箱账户'},401);

@@ -1,5 +1,5 @@
 import {readOffline,CHUNK_SIZE,byteRange} from './offline-db.mjs';
-const SHELL='lingqi-offline-shell-7',FILES=['/offline','/offline-transfer-v2.mjs','/offline-db.mjs','/offline-player.js','/offline-hls.js','/offline-hls.LICENSE.txt'];
+const SHELL='lingqi-offline-shell-8',FILES=['/offline','/offline-transfer-v2.mjs','/offline-transfer-v3.mjs','/offline-db.mjs','/offline-player.js','/offline-danmaku.mjs','/offline-hls.js','/offline-hls.LICENSE.txt'];
 async function offlinePage(){
  const cached=await (await caches.open(SHELL)).match('/offline');if(!cached)return new Response('离线页面尚未准备好',{status:503});
  // A cached response fetched through a canonical .html redirect cannot be

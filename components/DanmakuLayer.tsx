@@ -1,8 +1,10 @@
 'use client';
 import type {DanmakuSettings} from '../lib/danmaku';
-import {useMemo,useState,type RefObject} from 'react';
+import {useEffect,useMemo,useState,type RefObject} from 'react';
+import {rememberOfflineDanmaku} from '../lib/offline-danmaku';
 import {createPortal} from 'react-dom';
 import DanmakuComposer from './DanmakuComposer';
+import DanmakuSearch from './DanmakuSearch';
 import {useSiteDanmaku} from './useSiteDanmaku';
 import {siteDanmakuComments,type DanmakuSession} from '../lib/site-danmaku';
 import {MessageSquare,Settings2,X,RefreshCw} from 'lucide-react';
@@ -11,7 +13,7 @@ import DanmakuBlocks from './DanmakuBlocks';
 import {advancedDanmaku} from '../lib/danmaku-blocks';
 import DanmakuOverlay from './DanmakuOverlay';
 import {useDanmakuConversion} from './useDanmakuConversion';
-import {danmakuNames,type DanmakuSource} from '../lib/danmaku';
+import {danmakuNames,danmakuXml,type DanmakuSource} from '../lib/danmaku';
 export default function DanmakuLayer({media,subjectId,number,danmakuPreferences,onDanmakuPreferences,danmakuSync,danmakuSession,composerHost,mayResume}:{danmakuPreferences?:DanmakuSettings;onDanmakuPreferences?:(settings:DanmakuSettings)=>void;danmakuSync?:string;danmakuSession?:DanmakuSession;composerHost:RefObject<HTMLElement|null>;mayResume:()=>boolean;media:RefObject<HTMLVideoElement|null>;subjectId:number;number:number|undefined}){
  const d=useDanmaku(subjectId,number,danmakuPreferences,onDanmakuPreferences),[open,setOpen]=useState(false),[link,setLink]=useState(''),[composer,setComposer]=useState(false),[sent,setSent]=useState('');
  const site=useSiteDanmaku(subjectId,number,media,d.settings.enabled&&d.settings.sources.site,danmakuSession);
@@ -19,7 +21,9 @@ export default function DanmakuLayer({media,subjectId,number,danmakuPreferences,
  // Filter the original and displayed text so conversion cannot undo blocking.
  const eligible=useMemo(()=>advancedDanmaku(comments,d.settings),[comments,d.settings]);
  const converted=useDanmakuConversion(eligible,d.settings.conversion,d.settings.enabled);
+ useEffect(()=>{rememberOfflineDanmaku(danmakuSession?.owner||'anonymous',subjectId,number,converted.comments.filter(row=>row[4]!=='site'),d.total,d.sampled,d.isLocal?'本地导入':(d.title||'已选弹幕')+(d.episode?' · '+d.episode.title:''),d.settings);},[subjectId,number,danmakuSession?.owner,converted.comments,d.total,d.sampled,d.title,d.isLocal,d.episode?.id,d.settings]);
  const change=<K extends keyof DanmakuSettings>(key:K,value:DanmakuSettings[K])=>d.setSettings(current=>({...current,[key]:value}));
+ const exportComments=()=>{const blob=new Blob([danmakuXml(converted.comments,d.settings.offset)],{type:'application/xml;charset=utf-8'}),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='弹幕-'+subjectId+'-'+(number??'当前集')+'.xml';document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);};
  return <><DanmakuOverlay media={media} comments={converted.comments} settings={d.settings}/>
   <div className="danmaku-switches" onClick={e=>e.stopPropagation()} onDoubleClick={e=>e.stopPropagation()}>
    <button type="button" aria-label="弹幕开关" aria-pressed={d.settings.enabled} onClick={()=>change('enabled',!d.settings.enabled)}><MessageSquare size={15}/>{d.settings.enabled?'弹幕':'弹幕关'}{comments.length>0&&<small>{comments.length.toLocaleString()}</small>}</button>
@@ -31,6 +35,8 @@ export default function DanmakuLayer({media,subjectId,number,danmakuPreferences,
    <header><h2>弹幕</h2><button type="button" aria-label="关闭弹幕设置" onClick={()=>setOpen(false)}><X size={17}/></button></header>
    <p role="status" className="danmaku-status">{d.status||('已加载 '+d.comments.length.toLocaleString()+' 条弹幕')}{d.sampled?' · 已按整集均匀精简':''}</p>
    {d.comments.length>0&&<p className="danmaku-caption">{d.isLocal?'本地文件':d.title}{!d.isLocal&&d.episode?' · '+d.episode.title:''}{d.total>d.comments.length?' · 原始 '+d.total.toLocaleString()+' 条':''}</p>}
+   <DanmakuSearch subjectId={subjectId} owner={danmakuSession?.owner||'anonymous'} onChoose={d.addMatch}/>
+   {converted.comments.length>0&&<button type="button" className="danmaku-reload" onClick={exportComments}>导出当前弹幕 XML</button>}<p className="danmaku-caption">站内离线下载会保存本集弹幕；已有下载可在离线库补存。XML 可与浏览器下载的视频一起在本地播放器打开，导出保留当前过滤与时间偏移。</p>
    <label className="danmaku-field">弹幕匹配<select aria-label="弹幕来源" value={d.selected} onChange={e=>d.choose(e.target.value)}><option value="">选择弹幕来源</option>{d.matches.map(m=><option key={m.provider+':'+m.key} value={m.provider+':'+m.key}>{danmakuNames[m.provider]} · {m.title}</option>)}</select></label>
    {d.episodes.length>0&&<label className="danmaku-field">弹幕分集<select aria-label="弹幕分集" value={d.episode?.id||''} onChange={e=>d.chooseEpisode(e.target.value)}><option value="">请选择对应分集</option>{d.episodes.map(ep=><option key={ep.id} value={ep.id}>{ep.title}</option>)}</select></label>}
    {d.notices.map(n=><p className="danmaku-caption" key={n.provider}>{danmakuNames[n.provider]}：{n.message}</p>)}
@@ -51,7 +57,7 @@ export default function DanmakuLayer({media,subjectId,number,danmakuPreferences,
    <label className="danmaku-field">屏蔽关键词<textarea aria-label="弹幕屏蔽关键词" maxLength={2000} rows={2} value={d.settings.keywords} onChange={e=>change('keywords',e.target.value)} placeholder="每行一个词，或用逗号分隔"/></label>
    <DanmakuBlocks settings={d.settings} onChange={d.setSettings} sync={danmakuSync}/><details className="danmaku-manual"><summary>手动匹配 / 导入弹幕</summary><form onSubmit={e=>{e.preventDefault();if(d.manualMatch(link))setLink('');}}><input aria-label="弹幕来源链接" maxLength={300} value={link} onChange={e=>setLink(e.target.value)} placeholder="BiliBili 番剧或 Gamer 链接"/><button type="submit">匹配</button></form><p className="danmaku-caption">核对番剧、季度和分集后再加载。支持 md / ss / ep 标识，也可粘贴 BiliBili XML 弹幕链接（cid）。</p><label className="danmaku-import">导入 XML / JSON<input type="file" accept=".xml,.json" onChange={e=>{const file=e.currentTarget.files?.[0];e.currentTarget.value='';if(file)void d.importFile(file);}}/></label>{d.isLocal&&<button type="button" onClick={d.clearImport}>移除本地弹幕</button>}<p role="status" className="danmaku-caption">{d.fileStatus}</p></details>
    <button className="danmaku-reload" type="button" disabled={d.loading||!d.settings.enabled} onClick={d.reload}><RefreshCw size={14} className={d.loading?'spin':''}/>重新获取弹幕</button>
-   <p className="danmaku-credit">番剧索引 <a href="https://github.com/bangumi-data/bangumi-data" target="_blank" rel="noreferrer">bangumi-data · CC BY 4.0</a>。弹幕来自所选公开来源；画中画和投屏显示原视频。</p>
+   <p className="danmaku-credit">番剧索引 <a href="https://github.com/bangumi-data/bangumi-data" target="_blank" rel="noreferrer">bangumi-data · CC BY 4.0</a>。接入 <a href="https://www.dandanplay.com/" target="_blank" rel="noreferrer">弹弹play开放弹幕网络</a>。弹幕来自所选公开来源；画中画和投屏显示原视频。</p>
   </section>}
  </>;
 }

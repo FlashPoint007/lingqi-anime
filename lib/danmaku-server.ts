@@ -127,9 +127,47 @@ async function dandanEpisodes(key:string){
  const episodes:DanmakuEpisode[]=bangumi.episodes.slice(0,1000).flatMap((ep:any)=>{if(!id(String(ep.episodeId)))return [];const title=String(ep.episodeTitle||'').slice(0,180),match=title.match(/^(?:第\s*)?(\d+(?:\.\d+)?)(?:\s*[话話集]|\s|$)/);return [{id:String(ep.episodeId),...(match?{number:Number(match[1])}:{}),title:title||'未命名分集'}];});
  return {title:String(bangumi.animeTitle||'弹弹play').slice(0,180),episodes};
 }
+const searchTitle=(value:unknown)=>typeof value==='string'?value.replace(/<[^>]{0,500}>/g,'').replace(/&(?:amp|lt|gt|quot|#39);/g,key=>({'&amp;':'&','&lt;':'<','&gt;':'>','&quot;':'"','&#39;':"'"}[key]||key)).replace(/[\u0000-\u001f\u007f]/g,' ').trim().slice(0,180):'';
+async function searchDanmaku(provider:string,keyword:string,subjectId:string){
+ let sources:DanmakuMatch[]=[],hasMore=false,notice='';
+ if(provider==='index'){
+  const subject=await remote('https://api.bgm.tv/v0/subjects/'+subjectId),date=String(subject?.date||'');
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(date))throw new DanmakuError('番剧未收录首播日期，请切换其他检索来源',400);
+  const base=new Date(date.slice(0,7)+'-15T12:00:00Z'),term=keyword.toLocaleLowerCase().replace(/\s+/g,'');
+  const months=await Promise.allSettled([0,-1,1].map(async delta=>{const month=new Date(base);month.setUTCMonth(month.getUTCMonth()+delta);const items=await remote('https://raw.githubusercontent.com/bangumi-data/bangumi-data/master/data/items/'+month.toISOString().slice(0,7).replace('-','/')+'.json');if(!Array.isArray(items))throw new DanmakuError('番剧索引格式不正确');return items;}));
+  if(months.every(result=>result.status==='rejected'))throw (months[0] as PromiseRejectedResult).reason;
+  notice=months.some(result=>result.status==='rejected')?'部分月份索引暂不可用':'';
+  for(const result of months)if(result.status==='fulfilled')for(const item of result.value.slice(0,3000)){
+   const names=[item.title,...Object.values(item.titleTranslate||{}).flat()].filter((name):name is string=>typeof name==='string');if(!names.some(name=>name.toLocaleLowerCase().replace(/\s+/g,'').includes(term)))continue;
+   const title=searchTitle(item.titleTranslate?.['zh-Hans']?.[0]||item.title);
+   for(const site of Array.isArray(item.sites)?item.sites:[]){if(!id(String(site.id)))continue;if(site.site==='bilibili')sources.push({provider:'bilibili',key:'md'+site.id,title});else if(site.site==='gamer'&&id(String(site.video_sn)))sources.push({provider:'gamer',key:String(site.video_sn),title});}
+  }
+ }else if(provider==='bilibili'){
+  const data=await remote('https://api.bilibili.com/x/web-interface/search/type?'+new URLSearchParams({search_type:'media_bangumi',keyword,page:'1'}));
+  if(data?.code!==0)throw new DanmakuError('BiliBili 检索暂不可用'+(data?.code?'（'+data.code+'）':''),502,'UPSTREAM_ERROR');
+  if(!Array.isArray(data.data?.result))throw new DanmakuError('BiliBili 检索数据格式不正确',502,'UPSTREAM_FORMAT');
+  sources=data.data.result.slice(0,60).flatMap((item:any)=>id(String(item.season_id))?[{provider:'bilibili' as const,key:'ss'+item.season_id,title:searchTitle(item.title)}]:[]);hasMore=Number(data.data.numPages)>1;
+ }else if(provider==='gamer'){
+  const data=gamerPayload(await remote('https://api.gamer.com.tw/mobile_app/anime/v1/search.php?'+new URLSearchParams({kw:keyword})),'search');
+  sources=data.anime.slice(0,60).flatMap((item:any)=>id(String(item.video_sn))?[{provider:'gamer' as const,key:String(item.video_sn),title:searchTitle(item.title)}]:[]);
+ }else{
+  // Same v2 search used upstream: fetch the full episode catalogue only after selection.
+  const data=await dandanRequest('/api/v2/search/episodes','?'+new URLSearchParams({anime:keyword,v2:'true'}));
+  if(!Array.isArray(data?.animes))throw new DanmakuError('弹弹play 检索数据格式不正确',502,'UPSTREAM_FORMAT');
+  sources=data.animes.slice(0,60).flatMap((item:any)=>id(String(item.animeId))?[{provider:'dandan' as const,key:String(item.animeId),title:searchTitle(item.animeTitle)}]:[]);hasMore=data.hasMore===true;
+ }
+ const unique=[...new Map(sources.filter(source=>source.title).map(source=>[source.provider+':'+source.key,source])).values()];
+ return {sources:unique.slice(0,40),hasMore:hasMore||unique.length>40,...(notice?{notice}:{})};
+}
 export async function danmakuResponse(params:URLSearchParams){
  try{
   const op=params.get('op')||'match',provider=params.get('provider') as DanmakuProvider,key=params.get('key')||'';
+  if(op==='search'){
+   const searchProvider=params.get('provider')||'',keyword=(params.get('keyword')||'').normalize('NFC').trim(),subjectId=params.get('id')||'';
+   if(!['index','bilibili','gamer','dandan'].includes(searchProvider)||!keyword||keyword.length>100||/[\u0000-\u001f\u007f]/.test(keyword)||searchProvider==='index'&&!id(subjectId))throw new DanmakuError('请输入 1 至 100 字的番剧名称并选择有效来源',400);
+   if(searchProvider==='dandan'&&!credentials())throw new DanmakuError('弹弹play 需站长申请并配置本站应用凭证；可切换季度索引、BiliBili 或 Gamer',503,'DANDAN_NOT_CONFIGURED');
+   return await cachedJson('danmaku-search','v1:'+searchProvider+':'+(searchProvider==='index'?subjectId+':':'')+keyword,()=>searchDanmaku(searchProvider,keyword,subjectId),{ttl:600000,stale:3600000,timeout:30000,background:true});
+  }
   if(op==='match'){
    const subjectId=params.get('id')||'';if(!id(subjectId))throw new DanmakuError('请选择有效番剧；测试视频可手动匹配弹幕',400);
    return await cachedJson('danmaku-match','v3:'+subjectId+':'+!!credentials(),()=>match(subjectId),{ttl:86400000,stale:7*86400000,background:true,refresh:params.get('refresh')==='1'});

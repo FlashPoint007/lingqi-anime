@@ -50,6 +50,10 @@ export function importDanmaku(text:string){
  let data;try{data=JSON.parse(text);}catch{throw new Error('请选择 BiliBili XML 或弹弹play JSON 弹幕');}
  return limitDanmaku(parseDandanComments(Array.isArray(data)?data:data?.comments,true));
 }
+export function danmakuXml(comments:DanmakuComment[],offset=0){
+ const escape=(text:string)=>text.replace(/[&<>"']/g,key=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[key]!));
+ return '<?xml version="1.0" encoding="UTF-8"?>\n<i>\n'+comments.filter(row=>Number.isFinite(row[0]+offset)&&row[0]+offset>=0&&row[0]+offset<=86400).map(row=>'<d p="'+[Math.round((row[0]+offset)*1000)/1000,row[1],25,row[2],0,0,0,0].join(',')+'">'+escape(row[3])+'</d>').join('\n')+'\n</i>\n';
+}
 export function limitDanmaku(input:DanmakuComment[]){
  const sorted=input.slice().sort((a,b)=>a[0]-b[0]),seen=new Set<string>();
  const unique=sorted.filter(row=>{const key=Math.round(row[0]*2)+':'+row[1]+':'+row[3];if(seen.has(key))return false;seen.add(key);return true;});

@@ -59,11 +59,13 @@ export function useDanmaku(subjectId:number,number:number|undefined,controlled?:
   return()=>{live=false;controller.abort();};
  },[episodeKey,selected,revision,settings.enabled,hydrated,!!local]);
  const data=local||(loaded?.key===episodeKey?loaded.data:undefined);
- const choose=(key:string)=>{fileGeneration.current++;automaticMode.current=false;setAutomatic(false);setLocal(undefined);setFileStatus('');setSelected(key);setLoaded(undefined);setManualEpisode(undefined);setEpisodeStatus('');setCommentStatus('');};
+ const choose=(key:string)=>{fileGeneration.current++;automaticMode.current=false;setAutomatic(false);setLocal(undefined);setFileStatus('');setSelected(key);setManualEpisode(undefined);setEpisodeStatus('');setCommentStatus('');};
+ const addMatch=(match:DanmakuMatch)=>{
+  manualMatches.current=[...manualMatches.current.filter(m=>!(m.provider===match.provider&&m.key===match.key)),match].slice(-12);setMatches(current=>[...current.filter(m=>!(m.provider===match.provider&&m.key===match.key)),match].slice(-16));choose(match.provider+':'+match.key);setSettings(current=>({...current,enabled:true}));return true;
+ };
  const manualMatch=(raw:string)=>{
   const target=parseDanmakuLink(raw);if(!target){setFileStatus('请粘贴 BiliBili 番剧链接（md / ss / ep），或 Gamer 动画链接');return false;}
-  const match={...target,title:target.provider==='bilibili'?'手动匹配 · '+target.key:target.provider==='gamer'?'手动匹配 · Gamer':'手动匹配 · 弹弹play'};
-  manualMatches.current=[...manualMatches.current.filter(m=>!(m.provider===target.provider&&m.key===target.key)),match].slice(-12);setMatches(current=>[...current.filter(m=>!(m.provider===target.provider&&m.key===target.key)),match].slice(-16));choose(target.provider+':'+target.key);setSettings(current=>({...current,enabled:true}));return true;
+  return addMatch({...target,title:target.provider==='bilibili'?'手动匹配 · '+target.key:target.provider==='gamer'?'手动匹配 · Gamer':'手动匹配 · 弹弹play'});
  };
  const importFile=async(file:File)=>{
   const generation=++fileGeneration.current;
@@ -71,7 +73,7 @@ export function useDanmaku(subjectId:number,number:number|undefined,controlled?:
    const result=importDanmaku(text);if(!result.comments.length)throw Error('文件中没有可显示的弹幕');setLocal(result);setFileStatus('已导入 '+file.name.slice(0,100));setSettings(current=>({...current,enabled:true}));
   }catch(error){if(mounted.current&&generation===fileGeneration.current)setFileStatus(error instanceof Error?error.message:'弹幕文件读取失败');}
  };
- return {settings,setSettings,matches,notices,selected,choose,automatic,failures,autoSelect:()=>{fileGeneration.current++;attempted.current.clear();setFailures({});automaticMode.current=true;setAutomatic(true);setLocal(undefined);setFileStatus('');setSelected(automaticMatches.current.map(matchKey)[0]||'');setCatalogue(undefined);setLoaded(undefined);setManualEpisode(undefined);setRevision(n=>n+1);},episodes,episode,chooseEpisode:(id:string)=>{fileGeneration.current++;automaticMode.current=false;setAutomatic(false);setLocal(undefined);setFileStatus('');setManualEpisode({key:selected,id});setLoaded(undefined);setEpisodeStatus('');setCommentStatus('');},title:catalogue?.key===selected?catalogue.title:source?.title,
+ return {settings,setSettings,matches,notices,selected,choose,automatic,failures,autoSelect:()=>{fileGeneration.current++;attempted.current.clear();setFailures({});automaticMode.current=true;setAutomatic(true);setLocal(undefined);setFileStatus('');setSelected(automaticMatches.current.map(matchKey)[0]||'');setCatalogue(undefined);setLoaded(undefined);setManualEpisode(undefined);setRevision(n=>n+1);},episodes,episode,chooseEpisode:(id:string)=>{fileGeneration.current++;automaticMode.current=false;setAutomatic(false);setLocal(undefined);setFileStatus('');setManualEpisode({key:selected,id});setEpisodeStatus('');setCommentStatus('');},title:catalogue?.key===selected?catalogue.title:source?.title,
   comments:data?.comments||emptyComments,total:data?.total||0,sampled:data?.sampled||false,loading,isLocal:!!local,importFile,clearImport:()=>{fileGeneration.current++;setLocal(undefined);setFileStatus('');},fileStatus,
-  status:!settings.enabled?'弹幕已关闭':local?'本地弹幕已加载 · '+local.comments.length.toLocaleString()+' 条':!hydrated?'准备弹幕…':episodeStatus||(!source?(subjectId>0?matchStatus:'测试视频可手动匹配或导入弹幕'):!episode?'请选择与视频对应的弹幕分集':commentStatus),manualMatch,reload:()=>{attempted.current.clear();setFailures({});setLoaded(undefined);setCatalogue(undefined);setEpisodeStatus('');setCommentStatus('');setRevision(n=>n+1);}};
+  status:!settings.enabled?'弹幕已关闭':local?'本地弹幕已加载 · '+local.comments.length.toLocaleString()+' 条':!hydrated?'准备弹幕…':episodeStatus||(!source?(subjectId>0?matchStatus:'测试视频可手动匹配或导入弹幕'):!episode?'请选择与视频对应的弹幕分集':commentStatus),manualMatch,addMatch,reload:()=>{attempted.current.clear();setFailures({});setLoaded(undefined);setCatalogue(undefined);setEpisodeStatus('');setCommentStatus('');setRevision(n=>n+1);}};
 }

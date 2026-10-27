@@ -12,7 +12,7 @@ import {emailAuthResponse} from '../../../lib/email-auth';
 import {cachedJson} from '../../../lib/server-cache';
 import {libraryResponse} from '../../../lib/library-server';
 import {readRequestText,RequestLimitError} from '../../../lib/request-guard';
-import {apiRequest,apiSearch,apiChapters,extractMedia} from '../../../lib/rule-api';
+import {apiRequest,apiSearch,apiChapters,extractMedia,mediaUrl,isMedia} from '../../../lib/rule-api';
 import {publicUrl,validateRule,sourcePageError} from '../../../lib/web-core';
 import {browseCatalog,seasonCatalog} from '../../../lib/catalog-server';
 import {currentSeason,normalizeSubject,normalizeEpisodes,normalizeRelatedSubjects} from '../../../lib/catalog';
@@ -84,20 +84,23 @@ export async function POST(req:Request) {
   const body=JSON.parse(raw);const rule=validateRule(body.rule);
   body.operation??=body.search?'search':'chapters';
   if(body.operation==='resolve'){
-   const page=publicUrl(String(body.url));if(page.origin!==publicUrl(rule.baseURL).origin)throw new Error('播放页面必须与规则同源');
-   let declared:string|undefined;
+   const page=rule.chapterMode==='api'?mediaUrl(String(body.url)):publicUrl(String(body.url)),base=publicUrl(rule.baseURL);
+   const external=page.origin!==base.origin;
+   if(external&&(rule.chapterMode!=='api'||!body.source||!isMedia(page.href)))throw new Error('播放页面必须与规则同源，或为源站目录中的视频直链');
+   let declared:string|undefined,referer=page.href;
    if(rule.chapterMode==='api'&&body.source&&page.hostname!=='next.xifanacg.com'){
     const spec=apiRequest(rule,'chapters',{source:String(body.source).slice(0,200),keyword:''});const response=await fetch(spec.url,{...spec.init,redirect:'manual',signal:AbortSignal.any([req.signal,AbortSignal.timeout(12000)])});if(!response.ok){discard(response);throw new Error('源站 API 响应 '+response.status);}
-    const data=JSON.parse(await boundedText(response));const roads=apiChapters(data,spec.config,String(body.source));declared=roads.flatMap(road=>road.episodes).find(ep=>ep.url===page.href)?.mediaUrl;
+    const data=JSON.parse(await boundedText(response));const roads=apiChapters(data,spec.config,String(body.source),rule.baseURL);declared=roads.flatMap(road=>road.episodes).find(ep=>ep.url===page.href)?.mediaUrl;
+    if(external){if(declared!==page.href)throw new Error('视频地址不在所选源站分集目录中');referer=base.href;}
    }
-   const resolved=await resolvePlayback(rule,page.href,declared,req.signal);
+   const resolved=await resolvePlayback(rule,referer,declared,req.signal);
    if(!resolved.media)return json({mode:'unavailable',sourceUrl:page.href,message:resolved.reason||'当前线路暂不能在本站解析，请切换线路或视频源'});
    return json({mode:'video',url:await signedMediaUrl(resolved.media,resolved.referer),mediaUrl:resolved.media,sourceUrl:page.href,verified:resolved.verified,preferDirect:new URL(resolved.referer).hostname==='next.xifanacg.com'&&resolved.mediaType!=='hls',mediaType:resolved.mediaType});
   }
   if(!['search','chapters'].includes(body.operation))throw new Error('无效的源查询操作');
   const sensitive=/authorization|api[-_]?key|password|access[-_]?token|bearer/i.test(JSON.stringify([rule,body.url]));
   if(sensitive)return json(await loadSourceData(body,rule));
-  const identity=JSON.stringify({rule,url:body.url,operation:body.operation,keyword:body.keyword||'',source:body.source||''});
+   const identity=JSON.stringify({parser:2,rule,url:body.url,operation:body.operation,keyword:body.keyword||'',source:body.source||''});
   return await cachedJson('source-'+body.operation,identity,()=>loadSourceData(body,rule),{ttl:body.operation==='chapters'?600000:120000,stale:3600000,refresh:body.refresh===true});
  }catch(e){return json({error:e instanceof Error?e.message:'源站访问失败'},e instanceof RequestLimitError?e.status:400);}
 }
@@ -105,7 +108,7 @@ async function loadSourceData(body:any,rule:ReturnType<typeof validateRule>){
   const signal=AbortSignal.timeout(15000);
   if((body.operation==='search'?rule.searchMode:rule.chapterMode)==='api'){
    const operation=body.operation as 'search'|'chapters';const vars={keyword:String(body.keyword||'').slice(0,120),source:String(body.source||'').slice(0,200)};const request=apiRequest(rule,operation,vars);
-   const response=await fetch(request.url,{...request.init,redirect:'manual',signal});if(!response.ok){discard(response);throw new Error('源站 API 响应 '+response.status);}const data=JSON.parse(await boundedText(response));return operation==='search'?{results:apiSearch(data,request.config,rule)}:{roads:apiChapters(data,request.config,vars.source)};
+   const response=await fetch(request.url,{...request.init,redirect:'manual',signal});if(!response.ok){discard(response);throw new Error('源站 API 响应 '+response.status);}const data=JSON.parse(await boundedText(response));return operation==='search'?{results:apiSearch(data,request.config,rule)}:{roads:apiChapters(data,request.config,vars.source,rule.baseURL)};
   }
   let target=publicUrl(body.url); const base=publicUrl(rule.baseURL);
   if(target.origin!==base.origin)throw new Error('地址必须与规则站点同源');

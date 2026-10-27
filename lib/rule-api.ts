@@ -1,8 +1,16 @@
 import {publicUrl,Rule} from './web-core';
 export function selectJson(data:unknown,path:string):any[] {
  if(!path)return [];
- if(!/^\$(?:\.[\w-]+|\[\*\]|\[\d+\])*$/.test(path))throw new Error('不支持的 JSONPath：'+path);
- let nodes:any[]=[data];for(const token of path.slice(1).match(/\.[\w-]+|\[\*\]|\[\d+\]/g)||[]){nodes=nodes.flatMap(n=>token==='[*]'?(Array.isArray(n)?n:[]):token[0]==='.'?(n?.[token.slice(1)]===undefined?[]:[n[token.slice(1)]]):(n?.[Number(token.slice(1,-1))]===undefined?[]:[n[Number(token.slice(1,-1))]]));}return nodes;
+ if(typeof path!=='string'||path[0]!=='$'||path.length>1000)throw new Error('不支持的 JSONPath：'+path);
+ const token=/(?:\.([\w$-]+)|\[(\*|\d+|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')\])/y;
+ let nodes:any[]=[data],at=1;
+ while(at<path.length){
+  token.lastIndex=at;const match=token.exec(path);if(!match)throw new Error('不支持的 JSONPath：'+path);at=token.lastIndex;
+  const raw=match[2];let key:string|number=match[1];
+  if(raw&&raw!=='*'){if(/^\d+$/.test(raw)){key=Number(raw);if(!Number.isSafeInteger(key))throw new Error('JSONPath 下标过大');}else key=raw[0]==='"'?JSON.parse(raw):raw.slice(1,-1).replace(/\\(['\\])/g,'$1');}
+  const next:any[]=[];for(const node of nodes){const values=raw==='*'?(Array.isArray(node)?node:[]):node!=null&&Object.prototype.hasOwnProperty.call(node,key)?[node[key]]:[];for(const value of values){if(next.length>=20000)throw new Error('JSONPath 匹配结果过多');next.push(value);}}nodes=next;
+ }
+ return nodes;
 }
 export const substitute=(text:string,vars:Record<string,string>,encode=false)=>text.replace(/@([a-zA-Z]+)/g,(_,k)=>encode?encodeURIComponent(vars[k]??''):vars[k]??'');
 export function apiRequest(rule:Rule,kind:'search'|'chapters',vars:Record<string,string>){
@@ -11,7 +19,11 @@ export function apiRequest(rule:Rule,kind:'search'|'chapters',vars:Record<string
  for(const [k,v] of Object.entries(request.query||{}))url.searchParams.set(k,substitute(String(v),vars));
  const headers:Record<string,string>={'Accept':'application/json'};
  for(const [k,v] of Object.entries(request.headers||{})){if(!['accept','content-type','authorization','apikey','connect-protocol-version'].includes(k.toLowerCase()))continue;headers[k]=String(v).slice(0,2048);}
- let body:string|undefined;if(request.body){const replace=(v:any):any=>typeof v==='string'?substitute(v,vars):Array.isArray(v)?v.map(replace):v&&typeof v==='object'?Object.fromEntries(Object.entries(v).map(([k,x])=>[k,replace(x)])):v;body=JSON.stringify(replace(request.body));headers['Content-Type']='application/json';}
+ let body:string|undefined;if(request.method==='POST'&&request.body!=null&&request.bodyType!=='none'){
+  const replace=(v:any):any=>typeof v==='string'?substitute(v,vars):Array.isArray(v)?v.map(replace):v&&typeof v==='object'?Object.fromEntries(Object.entries(v).map(([k,x])=>[k,replace(x)])):v;
+  const value=replace(request.body);if(request.bodyType==='form'){body=typeof value==='string'?value:new URLSearchParams(Object.entries(value).map(([key,value])=>[key,String(value)])).toString();headers['Content-Type']='application/x-www-form-urlencoded';}
+  else{body=JSON.stringify(value);headers['Content-Type']='application/json';}
+ }
  return {url:url.href,config,init:{method:request.method==='POST'?'POST':'GET',headers,...(request.method==='POST'&&body?{body}:{})}};
 }
 export function apiSearch(data:any,c:any,rule?:Rule){
@@ -23,9 +35,32 @@ export function apiSearch(data:any,c:any,rule?:Rule){
   return [{name,url}];
  });
 }
-export function apiChapters(data:any,c:any,source:string){
- const vars:Record<string,string>={source};for(const [k,path] of Object.entries(c.variables||{}))vars[k]=String(selectJson(data,String(path))[0]??'');
- return selectJson(data,c.roadsPath||'$').map((road,i)=>({name:String(selectJson(road,c.roadNamePath)[0]??'线路 '+(i+1)),episodes:selectJson(road,c.episodesPath||'$.episodes[*]').map((ep,j)=>{const v={...vars,roadIndex:String(i),episodeIndex:String(j),episodeUrl:String(selectJson(ep,c.episodeUrlPath)[0]??'')};const url=publicUrl(substitute(c.episodePage.url,v,true));for(const [k,value] of Object.entries(c.episodePage.query||{}))url.searchParams.set(k,substitute(String(value),v));if(url.hostname==='next.xifanacg.com'&&typeof road.code==='string')url.searchParams.set('source',road.code);return {name:String(selectJson(ep,c.episodeNamePath)[0]??'第 '+(j+1)+' 集'),url:url.href,number:Number.isFinite(ep.episode_number)?ep.episode_number:undefined,mediaUrl:declaredMedia(ep)[0]};})})).filter(r=>r.episodes.length);
+export function apiChapters(data:any,c:any,source:string,base=c.request?.url):{name:string;episodes:{name:string;url:string;number?:number;mediaUrl?:string}[]}[]{
+ const vars:Record<string,string>={source};for(const [key,path] of Object.entries(c.variables||{})){const value=selectJson(data,String(path))[0];if(value==null)throw Error('章节响应变量未匹配：'+key);vars[key]=String(value);}
+ const episode=(name:string,raw:string,i:number,j:number,media?:string,number?:number)=>{
+  const values={...vars,roadIndex:String(i),roadNumber:String(i+1),episodeIndex:String(j),episodeNumber:String(j+1),episodeUrl:raw};
+  if(!c.episodePage&&!raw.trim())return [];
+  if(c.episodePage&&(!c.episodePage.url||typeof c.episodePage.url!=='string'))throw Error('播放页地址模板不能为空');
+  try{
+   const url=mediaUrl(c.episodePage?substitute(c.episodePage.url,values,true):raw,base);
+   for(const [key,value] of Object.entries(c.episodePage?.query||{}))url.searchParams.set(key,substitute(String(value),values));
+   return [{name:name.trim()||'第 '+(j+1)+' 集',url:url.href,number,mediaUrl:isMedia(url.href)?url.href:media}];
+  }catch{return [];}
+ };
+ if(c.format==='delimited'){
+  const separators=[c.roadSeparator??'$$$',c.episodeSeparator??'#',c.fieldSeparator??'$'];if(separators.some(value=>typeof value!=='string'||!value||value.length>32))throw Error('章节分隔符必须为非空字符串');
+  const [roadSeparator,episodeSeparator,fieldSeparator]=separators,names=String(selectJson(data,c.roadNamesPath)[0]??'').split(roadSeparator),raw=String(selectJson(data,c.roadEpisodesPath)[0]??'');if(!raw)return [];
+  const groups=raw.split(roadSeparator);if(groups.length>64)throw Error('分集线路过多');
+  return groups.map((group,i)=>{const entries=group.split(episodeSeparator);if(entries.length>5000)throw Error('分集数量过多');return {name:names[i]?.trim()||'线路 '+(i+1),episodes:entries.flatMap((entry,j)=>{const at=entry.indexOf(fieldSeparator);return at<0?[]:episode(entry.slice(0,at),entry.slice(at+fieldSeparator.length).trim(),i,j);})};}).filter(road=>road.episodes.length);
+ }
+ const roads=c.roadsPath===''?[data]:selectJson(data,c.roadsPath??'$.data.roads[*]');if(roads.length>64)throw Error('分集线路过多');
+ return roads.map((road,i)=>{
+  const entries=selectJson(road,c.episodesPath??'$.episodes[*]');if(entries.length>5000)throw Error('分集数量过多');
+  return {name:String(selectJson(road,c.roadNamePath??'$.name')[0]??'').trim()||'线路 '+(i+1),episodes:entries.flatMap((ep,j)=>{
+   const result=episode(String(selectJson(ep,c.episodeNamePath??'$.name')[0]??''),String(selectJson(ep,c.episodeUrlPath??'$.url')[0]??''),i,j,declaredMedia(ep)[0],Number.isFinite(ep?.episode_number)?ep.episode_number:undefined);
+   if(result.length&&new URL(result[0].url).hostname==='next.xifanacg.com'&&typeof road?.code==='string'){const url=new URL(result[0].url);url.searchParams.set('source',road.code);result[0].url=url.href;}return result;
+  })};
+ }).filter(road=>road.episodes.length);
 }
 export function mediaUrl(input:string,base?:string):URL {
  const u=new URL(input,base);const check=new URL(u);check.port='';u.hostname=publicUrl(check.href).hostname;

@@ -1,7 +1,7 @@
 {
   "repository": "Predidit/KazumiRules",
-  "revision": "ba8e10b35b0c3a56bbb6032a12356b0473844c64",
-  "checkedAt": "2026-10-20T03:43:31.603487+00:00",
+  "revision": "0972545266e7ac7cc06e7e522892239824f7d713",
+  "checkedAt": "2026-10-27T05:07:16.559Z",
   "entries": [
     {
       "file": "7sefun.json",
@@ -201,7 +201,7 @@
         "api": "9",
         "type": "anime",
         "name": "giriGiriLove",
-        "version": "2.5",
+        "version": "2.6",
         "muliSources": true,
         "useWebview": true,
         "useNativePlayer": true,
@@ -211,27 +211,43 @@
         "userAgent": "",
         "baseURL": "https://ani.girigirilove.com",
         "searchMode": "api",
-        "chapterMode": "xpath",
+        "chapterMode": "api",
         "searchApiConfig": {
           "request": {
             "method": "GET",
-            "url": "https://ani.girigirilove.com/index.php/ajax/suggest",
+            "url": "https://m3u8.girigirilove.com/api.php/Vod/get_list",
             "query": {
-              "mid": "1",
-              "wd": "@keyword"
+              "vod_name": "@keyword",
+              "offset": "0",
+              "limit": "24"
             }
           },
-          "listPath": "$.list[*]",
-          "namePath": "$.name",
-          "sourcePath": "$.id",
-          "sourceTemplate": "https://ani.girigirilove.com/GV@source/"
+          "listPath": "$.info.rows[*]",
+          "namePath": "$.vod_name",
+          "sourcePath": "$.vod_id",
+          "sourceTemplate": ""
+        },
+        "chapterApiConfig": {
+          "request": {
+            "method": "GET",
+            "url": "https://m3u8.girigirilove.com/api.php/Vod/get_detail",
+            "query": {
+              "vod_id": "@source"
+            }
+          },
+          "format": "delimited",
+          "roadNamesPath": "$.info.vod_play_from",
+          "roadEpisodesPath": "$.info.vod_play_url",
+          "roadSeparator": "$$$",
+          "episodeSeparator": "#",
+          "fieldSeparator": "$"
         },
         "searchURL": "",
         "searchList": "",
         "searchName": "",
         "searchResult": "",
-        "chapterRoads": "//ul[@class='anthology-list-play size']",
-        "chapterResult": "//li/a",
+        "chapterRoads": "",
+        "chapterResult": "",
         "referer": ""
       }
     },

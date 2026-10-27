@@ -193,7 +193,9 @@ const apiRule=JSON.parse(readFileSync('lib/rules-snapshot.json','utf8')).entries
 assert.equal(core.validateRule(apiRule).searchMode,'api');
 const requestSpec=ruleApi.apiRequest(apiRule,'search',{keyword:'a"b',source:'1'});assert.equal(JSON.parse(requestSpec.init.body).search_term,'a"b');
 const mixedRules=subscription.initialRules.filter(r=>r.searchMode==='api'&&r.chapterMode==='xpath');
-assert.deepEqual(mixedRules.map(r=>r.name).sort(),['LMM','dalvdm','giriGiriLove','mgnacg','moonci','mutefun'].sort());
+assert.deepEqual(mixedRules.map(r=>r.name).sort(),['LMM','dalvdm','mgnacg','moonci','mutefun'].sort());
+const giriRule=subscription.initialRules.find(r=>r.name==='giriGiriLove');assert.equal(giriRule.version,'2.6');assert.equal(giriRule.chapterMode,'api');assert.equal(giriRule.chapterApiConfig.format,'delimited');
+assert.equal(ruleApi.apiSearch({info:{rows:[{vod_name:'番剧',vod_id:123}]}},giriRule.searchApiConfig,giriRule)[0].url,'123','current Giri API passes the raw ID to its chapter API');
 for(const rule of mixedRules){assert.doesNotThrow(()=>core.validateRule(rule));const results=ruleApi.apiSearch({list:[{name:'番剧',id:123}]},rule.searchApiConfig,rule);const raw=rule.searchApiConfig.sourceTemplate?.replaceAll('@source','123')||'123';assert.equal(results[0].url,new URL(raw,rule.baseURL).href);}
 const mixed=mixedRules.find(r=>r.name==='moonci');
 assert.equal(ruleApi.apiSearch({list:[{name:'番剧',id:'a/b ?'}]},mixed.searchApiConfig,mixed)[0].url,'https://www.moonci.com/anime/a%2Fb%20%3F.html');
@@ -216,7 +218,7 @@ mixedResponse=await route.POST(sourcePost({rule:{...valid,chapterMode:'api',chap
 mixedCalls=[];globalThis.fetch=async url=>{mixedCalls.push(String(url));return String(url).startsWith(mixed.baseURL)?new Response('<video src="https://media.example/clip.mp4"></video>',{headers:{'Content-Type':'text/html'}}):new Response('bytes',{status:206,headers:{'Content-Type':'video/mp4'}});};
 mixedResponse=await route.POST(sourcePost({rule:mixed,url:'https://www.moonci.com/play/123-1-1.html',source:mixedResults[0].url,operation:'resolve'}));assert.equal(mixedResponse.status,200);assert.equal((await mixedResponse.json()).mode,'video');assert.equal(mixedCalls[0],'https://www.moonci.com/play/123-1-1.html','mixed playback must not request a nonexistent chapter API');
 globalThis.fetch=originalFetch;
-console.log('PASS: all 17 active rules, six mixed-mode rules, source templates, safe detail URLs, HTML chapters and playback');
+console.log('PASS: all 17 active rules, five mixed-mode rules, current Giri API mode, source templates, safe detail URLs, HTML chapters and playback');
 const request=(url,rule=valid)=>new Request('https://site.example/api/source',{method:'POST',headers:{origin:'https://site.example','Content-Type':'application/json'},body:JSON.stringify({url,rule})});
 let fetchCalls=0;
 globalThis.fetch=async()=>{fetchCalls++;return new Response('<ul><li><a href="/ep/1">Episode 1</a></li></ul>',{headers:{'Content-Type':'text/html; charset=utf-8'}});};

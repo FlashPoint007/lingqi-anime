@@ -1,0 +1,54 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),ts=require('typescript');
+const tick=async()=>{for(let n=0;n<8;n++)await new Promise(resolve=>setImmediate(resolve));};
+function load(file,deps={},globals={}){const context={exports:{},URL,URLSearchParams,Request,Response,Headers,AbortController,AbortSignal,DOMException,TextEncoder,Date,setTimeout,clearTimeout,console,queueMicrotask,...globals,require:name=>{if(name in deps)return deps[name];throw Error('Unexpected import '+name);}};vm.runInNewContext(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText,context,{filename:file});return context.exports;}
+function target(extra={}){const events=new Map();return {hidden:false,dataset:{},style:{},children:[],textContent:'',...extra,addEventListener(name,fn){const list=events.get(name)||[];list.push(fn);events.set(name,list);},removeEventListener(name,fn){events.set(name,(events.get(name)||[]).filter(f=>f!==fn));},fire(name,event={}){return Promise.all((events.get(name)||[]).map(fn=>fn(event)));},append(...nodes){this.children.push(...nodes);},replaceChildren(...nodes){this.children=nodes;},scrollIntoView(){}};}
+let clock=1000;class Clock extends Date{static now(){return clock;}}
+const core=load('lib/danmaku.ts'),local=load('public/offline-danmaku.mjs');
+function persistence(rows){const db={transaction(){const tx={objectStore(){return {get(id){const request={};queueMicrotask(()=>{request.result=structuredClone(rows.get(id));request.onsuccess?.();queueMicrotask(()=>tx.oncomplete?.());});return request;},put(row){rows.set(row.id,structuredClone(row));}};}};return tx;}};return load('public/offline-transfer-v4.mjs',{'./offline-db.mjs':{openOfflineDB:async()=>db},'./offline-transfer-v2.mjs':{},'./offline-danmaku.mjs':local});}
+const bundle=(body,savedAt=1000)=>({version:1,status:'saved',comments:[[1,1,0xffffff,body,'local']],total:1,sampled:false,source:'本地导入',notes:[],savedAt,style:{opacity:.85,fontSize:22,area:.5,speed:1}});
+async function retainOnFailure(){
+ const previous=bundle('Valuable saved comments'),rows=new Map([['id',{id:'id',owner:'alice',status:'complete',position:37,danmaku:previous}]]),writer=persistence(rows);
+ for(const failure of [{...bundle(''),comments:[],status:'unavailable',notes:['Provider 412'],savedAt:2000},{...bundle('Partial source only',2000),notes:['Other provider timed out']}]){
+  await assert.rejects(()=>writer.updateOfflineDanmaku('id','alice',failure),/保留/);assert.equal(rows.get('id').danmaku.comments[0][3],'Valuable saved comments','failed/partial refresh must not replace a good offline snapshot');assert.equal(rows.get('id').position,37);
+ }
+ await writer.updateOfflineDanmaku('id','alice',bundle('Successful newer snapshot',3000));assert.equal(rows.get('id').danmaku.comments[0][3],'Successful newer snapshot');
+ const legacy=load('public/offline-transfer-v3.mjs',{'./offline-transfer-v4.mjs':writer});assert.equal(legacy.updateOfflineDanmaku,writer.updateOfflineDanmaku,'earlier clients retain the same compatible API');
+ const emptyRows=new Map([['new',{id:'new',owner:'alice',status:'complete'}]]);await persistence(emptyRows).updateOfflineDanmaku('new','alice',{...bundle(''),comments:[],status:'unavailable',notes:['Provider offline'],savedAt:2000});assert.equal(emptyRows.get('new').danmaku.status,'unavailable','first-time failures remain visible without changing completed video status');
+}
+async function captureIntent(){
+ clock=1000;let finish;const client={anySignal:s=>AbortSignal.any(s),timeoutSignal:()=>new AbortController().signal,throwIfAborted:s=>{if(s.aborted)throw s.reason;},requestJson:async url=>url.startsWith('/api/site-danmaku')?new Promise(resolve=>finish=resolve):{sources:[]}};
+ const capture=load('lib/offline-danmaku.ts',{'./danmaku':core,'./request-client':client},{Date:Clock}),task=capture.captureOfflineDanmaku({owner:'alice',subject:{id:1},number:1},new AbortController().signal);await tick();clock=5000;finish({comments:[],total:0});const value=await task;assert.equal(value.savedAt,1000,'a late request must keep its original intent time so it cannot supersede a later explicit import');
+}
+async function offline({resume=true}={}){
+ const one='00000000-0000-4000-8000-000000000001',two='00000000-0000-4000-8000-000000000002',rows=new Map([one,two].map((id,i)=>[id,{id,owner:'anonymous',subject:{id:i+1,name:'Show '+(i+1)},episode:'第1集',type:'video',entry:'0',bytes:100,status:'complete',position:30,createdAt:i+1}])),writer=persistence(rows),nodes=new Map(),timers=new Map();let timer=0;
+ const video=target({paused:true,seeking:false,readyState:0,videoWidth:0,videoHeight:0,currentTime:0,duration:120,error:null,canPlayType:()=>'',play(){this.paused=false;return Promise.resolve();},pause(){this.paused=true;},load(){this.readyState=0;this.currentTime=0;},removeAttribute(name){if(name==='src')this.src='';}});nodes.set('video',video);
+ const document=target({visibilityState:'visible',getElementById(id){if(!nodes.has(id))nodes.set(id,target());return nodes.get(id);},createElement:()=>target()}),window=target(),location={hash:'#'+one};
+ const db={readOffline:async(_store,id)=>structuredClone(rows.get(id)),listOffline:async()=>[...rows.values()].map(row=>structuredClone(row)),updateOfflineProgress:async(id,owner,change)=>{const row=rows.get(id);if(row?.owner!==owner)return;const value={...row,...change};rows.set(id,value);return value;},removeOffline:async id=>rows.delete(id),offlineAssetURL:(id,entry)=>'/__offline_media/'+id+'/'+entry};
+ load('public/offline-player.js',{'./offline-db.mjs':db,'./offline-transfer-v3.mjs':writer,'./offline-transfer-v4.mjs':writer,'./offline-danmaku.mjs':{...local,createOfflineDanmakuRenderer:()=>({set(){},toggle(){}})}},{Date:Clock,document,window,location,navigator:{serviceWorker:{controller:{},ready:Promise.resolve(),register:async()=>({})}},localStorage:{getItem:key=>key==='kw-play-resume'?JSON.stringify(resume):null},setTimeout:(fn)=>{timers.set(++timer,fn);return timer;},clearTimeout:id=>timers.delete(id)});await tick();
+ return {rows,one,two,nodes,window,video,location,db,async ready(){video.readyState=4;video.videoWidth=1280;video.videoHeight=720;await video.fire('loadedmetadata');await tick();}};
+}
+async function importOrder(){
+ clock=1000;const app=await offline(),input=app.nodes.get('danmaku-import');let finish;
+ input.files=[{size:100,text:()=>new Promise(resolve=>finish=resolve)}];const first=input.fire('change');await tick();clock=2000;input.files=[{size:100,text:async()=>'<i><d p="1,1,25,1">Newer chosen file</d></i>'}];await input.fire('change');await tick();clock=5000;finish('<i><d p="1,1,25,1">OLD slow file</d></i>');await first;await tick();assert.equal(app.rows.get(app.one).danmaku.comments[0][3],'Newer chosen file','last selected file must win independently of file read completion order');
+}
+async function offlineNavigation(){
+ const app=await offline();assert.match(app.nodes.get('player-title').textContent,/Show 1/);app.location.hash='#'+app.two;await app.window.fire('hashchange');await tick();assert.match(app.nodes.get('player-title').textContent,/Show 2/,'offline URL navigation must switch the actual playing download');assert.ok(app.video.src.includes(app.two));app.location.hash='';await app.window.fire('hashchange');await tick();assert.equal(app.nodes.get('playback').hidden,true,'returning to the bare library URL must close the old playback');
+ let finish;app.db.readOffline=async()=>new Promise(resolve=>finish=resolve);app.location.hash='#'+app.two;const stale=app.window.fire('hashchange');await tick();app.location.hash='';await app.window.fire('hashchange');await tick();finish(app.rows.get(app.two));await stale;await tick();assert.equal(app.nodes.get('playback').hidden,true,'a slow old lookup cannot reopen playback after returning to the library');
+
+}
+async function disabledResume(){const app=await offline({resume:false});await app.ready();assert.equal(app.video.currentTime,0,'offline playback must respect disabled automatic resume');}
+async function readRecovery(){
+ const busy=()=>Response.json({error:'服务繁忙，请稍后重试'},{status:503,headers:{'Retry-After':'3'}}),timers=[];let calls=0;
+ const client=load('lib/request-client.ts',{}, {fetch:async()=>++calls===1?busy():Response.json({recovered:true}),setTimeout(fn,ms){timers.push(ms);queueMicrotask(fn);return 1;},clearTimeout(){}});
+ assert.equal((await client.requestJson('/api/catalog?mode=calendar')).recovered,true);assert.equal(calls,2);assert.deepEqual(timers,[3000]);
+ calls=0;const persistent=load('lib/request-client.ts',{}, {fetch:async()=>{calls++;return busy();},setTimeout(fn){queueMicrotask(fn);return 1;},clearTimeout(){}});await assert.rejects(()=>persistent.requestJson('/api/subject?id=1'),/服务繁忙/);assert.equal(calls,2,'one retry only, never a loop');
+ calls=0;await assert.rejects(()=>persistent.requestJson('/api/library',{method:'POST',body:'{}'}),/服务繁忙/);assert.equal(calls,1,'mutations must not be retried');
+ calls=0;const quota=load('lib/request-client.ts',{}, {fetch:async()=>{calls++;return Response.json({error:'访问过于频繁，请稍后重试'},{status:429,headers:{'Retry-After':'3'}});}});await assert.rejects(()=>quota.requestJson('/api/catalog'),/过于频繁/);assert.equal(calls,1,'quota exhaustion stays enforced');
+ calls=0;const controller=new AbortController(),cancelled=load('lib/request-client.ts',{}, {fetch:async()=>{calls++;return busy();},setTimeout(){return 1;},clearTimeout(){}});const waiting=cancelled.requestJson('/api/catalog',{signal:controller.signal}),rejected=assert.rejects(()=>waiting,e=>e.name==='AbortError');await tick();controller.abort(new DOMException('Left the page','AbortError'));await rejected;assert.equal(calls,1,'navigation cancels the queued read retry');
+}
+async function staticModules(){
+ let calls=0;const db={prepare(){calls++;throw Error('Static modules must not read quota storage');}},guard=load('lib/request-guard.ts');
+ for(const file of ['offline-db.mjs','offline-transfer-v4.mjs','offline-danmaku.mjs']){const result=await guard.guardRequest(new Request('https://site.example/'+file),db);assert.equal(result.response,undefined);result.release();}
+ assert.equal(calls,0,'offline JavaScript modules must have the same static-asset treatment as .js files');assert.equal((await guard.guardRequest(new Request('https://site.example/offline-db.mjs',{method:'POST'}),db)).response.status,405);assert.equal((await guard.guardRequest(new Request('https://site.example/api/fake.mjs'),db)).response.status,404);
+}
+(async()=>{let failed=0;for(const [name,run] of Object.entries({retainOnFailure,captureIntent,importOrder,offlineNavigation,disabledResume,readRecovery,staticModules})){try{await run();console.log('PASS',name);}catch(error){failed++;console.error('FAIL',name,error.message);}}process.exitCode=failed?1:0;})();

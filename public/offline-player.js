@@ -1,9 +1,10 @@
 import {readOffline,listOffline,updateOfflineProgress,removeOffline,offlineAssetURL} from './offline-db.mjs';
 import {createOfflineDanmakuRenderer,offlineDanmakuLabel,importOfflineDanmaku} from './offline-danmaku.mjs';
-import {updateOfflineDanmaku} from './offline-transfer-v3.mjs';
-const library=document.getElementById('library'),video=document.getElementById('video'),message=document.getElementById('message'),retry=document.getElementById('retry');let current,hls,lastSave=0,restored=false,playRequest=0,serviceReady=false,initializing=false,renderRequest=0,nativeRetried=false,knownPosition=0,hasDecoded=false;
+import {updateOfflineDanmaku} from './offline-transfer-v4.mjs';
+const library=document.getElementById('library'),video=document.getElementById('video'),message=document.getElementById('message'),retry=document.getElementById('retry');let current,hls,lastSave=0,restored=false,playRequest=0,serviceReady=false,initializing=false,renderRequest=0,nativeRetried=false,knownPosition=0,hasDecoded=false,danmakuImportRequest=0;
 const owner=()=>{try{return JSON.parse(localStorage.getItem('kw-library-owner')||'null')||'anonymous';}catch{return 'anonymous';}};
 const privatePlayback=()=>{try{return JSON.parse(localStorage.getItem('kw-private-playback')||'false')===true;}catch{return true;}};
+const resumeEnabled=()=>{try{return JSON.parse(localStorage.getItem('kw-play-resume')||'true')!==false;}catch{return true;}};
 const say=text=>{message.textContent=text;};
 const size=n=>n<1048576?(n/1024).toFixed(0)+' KB':(n/1048576).toFixed(1)+' MB';
 const hasVideoFrame=()=>video.readyState>=2&&video.videoWidth>0&&video.videoHeight>0;
@@ -12,8 +13,9 @@ const showDanmaku=item=>{danmakuRenderer.set(item?.danmaku);danmakuStatus.textCo
 danmakuToggle.addEventListener('change',()=>danmakuRenderer.toggle(danmakuToggle.checked));
 document.getElementById('stage-fullscreen').addEventListener('click',async()=>{try{const stage=document.getElementById('stage');if(document.fullscreenElement===stage)await document.exitFullscreen();else if(stage.requestFullscreen)await stage.requestFullscreen();else say('此浏览器不支持页面全屏，可使用播放器自带全屏');}catch{say('无法切换全屏，请重试');}});
 danmakuImport.addEventListener('change',async()=>{
- const file=danmakuImport.files?.[0];danmakuImport.value='';if(!file||!current)return;const item=current,request=playRequest;
- try{if(file.size>5*1024*1024)throw Error('请选择不超过 5 MB 的 XML / JSON 弹幕文件');const data=importOfflineDanmaku(await file.text());if(request!==playRequest||item.owner!==owner())return;const updated=await updateOfflineDanmaku(item.id,item.owner,data);if(!updated)throw Error('下载已被删除，未保存弹幕');if(request!==playRequest||item.owner!==owner())return;current=updated;showDanmaku(current);say('弹幕已保存到本机，断网也可显示');await render();}catch(error){if(request===playRequest&&item.owner===owner())say(error.message||'离线弹幕导入失败');}
+ const file=danmakuImport.files?.[0];danmakuImport.value='';if(!file||!current)return;const item=current,request=playRequest,importRequest=++danmakuImportRequest,startedAt=Date.now();
+ const relevant=()=>request===playRequest&&importRequest===danmakuImportRequest&&item.owner===owner();
+ try{if(file.size>5*1024*1024)throw Error('请选择不超过 5 MB 的 XML / JSON 弹幕文件');const text=await file.text();if(!relevant())return;const data={...importOfflineDanmaku(text),savedAt:startedAt};const updated=await updateOfflineDanmaku(item.id,item.owner,data);if(!updated)throw Error('下载已被删除，未保存弹幕');if(!relevant())return;current=updated;showDanmaku(current);say('弹幕已保存到本机，断网也可显示');await render();}catch(error){if(relevant())say(error.message||'离线弹幕导入失败');}
 });
 function attachHls(address,request){
  if(!window.Hls?.isSupported())return false;
@@ -28,7 +30,7 @@ async function save(flush=false){
 async function play(item){
  const request=++playRequest;await save(true);if(request!==playRequest||item.owner!==owner())return;
  const saved=await readOffline('downloads',item.id);if(request!==playRequest||item.owner!==owner())return;if(!saved||saved.owner!==owner()||saved.status!=='complete'){say('这个下载已删除或尚未完成，请刷新列表');return;}item=saved;
- restored=false;hls?.destroy();hls=undefined;nativeRetried=false;knownPosition=item.position||0;hasDecoded=false;video.pause();video.removeAttribute('src');video.load();current=item;lastSave=0;document.getElementById('playback').hidden=false;document.getElementById('player-title').textContent=(item.subject.name_cn||item.subject.name)+' · '+item.episode;showDanmaku(item);say('正在读取本机视频…');
+ restored=false;hls?.destroy();hls=undefined;nativeRetried=false;knownPosition=resumeEnabled()?item.position||0:0;hasDecoded=false;video.pause();video.removeAttribute('src');video.load();current=item;lastSave=0;document.getElementById('playback').hidden=false;document.getElementById('player-title').textContent=(item.subject.name_cn||item.subject.name)+' · '+item.episode;showDanmaku(item);say('正在读取本机视频…');
  const address=offlineAssetURL(item.id,item.entry);
  if(item.type==='hls'&&!video.canPlayType('application/vnd.apple.mpegurl')){if(!attachHls(address,request)){say('此浏览器不支持离线 HLS，请使用新版 Chrome、Edge 或 Safari');return;}}else video.src=address;
  location.hash=item.id;video.scrollIntoView({block:'center',behavior:'smooth'});
@@ -38,7 +40,7 @@ video.addEventListener('seeked',()=>{if(current&&video.readyState>=1&&!video.see
 video.addEventListener('timeupdate',()=>{if(restored&&!video.seeking&&hasVideoFrame()){knownPosition=video.currentTime;hasDecoded=true;}void save();});video.addEventListener('pause',()=>void save(true));video.addEventListener('ended',()=>void save(true));video.addEventListener('error',()=>{
  if(video.error?.code===1)return;
  if(current?.owner===owner()&&current.type==='hls'&&!nativeRetried&&window.Hls?.isSupported()){
-  nativeRetried=true;restored=false;if(!hasDecoded)knownPosition=current.position||0;video.pause();video.removeAttribute('src');video.load();
+  nativeRetried=true;restored=false;if(!hasDecoded)knownPosition=resumeEnabled()?current.position||0:0;video.pause();video.removeAttribute('src');video.load();
   try{if(attachHls(offlineAssetURL(current.id,current.entry),playRequest)){say('正在使用兼容内核读取本机 HLS…');return;}}catch{}
  }
  say('本机视频无法播放，文件可能已被浏览器清理，请重新下载');
@@ -53,6 +55,17 @@ async function render(){
  const selected=items.find(item=>item.id===location.hash.slice(1)&&item.status==='complete');if(serviceReady&&selected&&!current)await play(selected);
 }
 window.addEventListener('storage',event=>{if(event.key==='kw-library-owner'){playRequest++;void save(true);current=undefined;showDanmaku(undefined);restored=false;video.pause();hls?.destroy();hls=undefined;video.removeAttribute('src');video.load();document.getElementById('playback').hidden=true;void render();}});
+async function navigateOffline(){
+ const id=location.hash.slice(1);if(current?.id===id)return;
+ const request=++playRequest,who=owner();
+ try{
+  await save(true);if(request!==playRequest||who!==owner())return;
+  current=undefined;restored=false;showDanmaku(undefined);video.pause();hls?.destroy();hls=undefined;video.removeAttribute('src');video.load();document.getElementById('playback').hidden=true;
+  const item=/^[-a-f0-9]{36}$/i.test(id)?await readOffline('downloads',id):undefined;if(request!==playRequest||who!==owner())return;
+  if(serviceReady&&item?.owner===who&&item.status==='complete')await play(item);else{await render();if(request===playRequest&&who===owner()&&id)say('这个下载已删除、未完成或不在当前个人空间中');}
+ }catch{if(request===playRequest&&who===owner())say('离线列表暂不可用，请重试');}
+}
+window.addEventListener('hashchange',()=>void navigateOffline());
 async function initialize(){
  if(initializing)return;initializing=true;retry.hidden=true;say('正在准备离线服务…');let timer,controlled,abandoned=false;
  try{

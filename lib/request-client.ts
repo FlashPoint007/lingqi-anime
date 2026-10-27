@@ -32,7 +32,11 @@ export async function requestJson(url:string,options:RequestInit={}) {
  // coalesced server lookup running briefly, so honor a short concurrency wait
  // without retrying quota exhaustion, mutations or unrelated failures.
  const retry=Number(response.headers.get('Retry-After'));
- if(url==='/api/source'&&response.status===429&&data?.error==='当前请求较多，请稍后重试'&&attempt<2&&retry>0&&retry<=3){
+ const retryRead=(options.method||'GET').toUpperCase()==='GET'&&url.startsWith('/api/')&&response.status===503&&data?.error==='服务繁忙，请稍后重试'&&attempt<1;
+ const retrySource=url==='/api/source'&&response.status===429&&data?.error==='当前请求较多，请稍后重试'&&attempt<2;
+ // A transient quota-storage timeout still passes through the normal guard on
+ // the next read. Never replay mutations, quota rejection or arbitrary failures.
+ if((retryRead||retrySource)&&retry>0&&retry<=3){
   await new Promise<void>((resolve,reject)=>{const abort=()=>{clearTimeout(timer);signal.removeEventListener('abort',abort);reject(signal.reason);},timer=setTimeout(()=>{signal.removeEventListener('abort',abort);resolve();},retry*1000);signal.addEventListener('abort',abort,{once:true});if(signal.aborted)abort();});continue;
  }
  if(!response.ok)throw new Error(typeof data?.error==='string'?data.error:'请求失败（'+response.status+'），请重试');

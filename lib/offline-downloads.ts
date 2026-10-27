@@ -4,7 +4,7 @@ import {offlineIdentity,responseValidator,validResume} from './offline-resume';
 import type {Subject} from './catalog';
 import type {Rule} from './web-core';
 import {captureOfflineDanmaku,type OfflineDanmaku} from './offline-danmaku';
-const CHUNK_SIZE=2*1024*1024,storeModule='/offline-transfer-v3.mjs';
+const CHUNK_SIZE=2*1024*1024,storeModule='/offline-transfer-v4.mjs';
 let store:Promise<any>|undefined;
 const offlineStore=()=>store??=import(/* @vite-ignore */ storeModule);
 const readOffline=async(name:string,key:unknown)=>(await offlineStore()).readOffline(name,key);

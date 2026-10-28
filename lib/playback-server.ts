@@ -98,6 +98,30 @@ export async function readTicket(raw:string):Promise<Ticket>{
  const data=JSON.parse(new TextDecoder().decode(unbase64(parts[0]))) as Ticket;
  if(!Number.isFinite(data.expires)||data.expires<Date.now()||data.expires>Date.now()+8*3600000+60000)throw new Error('媒体授权已过期，请重新点击剧集');mediaUrl(data.url);mediaUrl(data.referer);return data;
 }
+function mediaBody(body:ReadableStream<Uint8Array>|null,signal:AbortSignal){
+ if(!body)return null;
+ const reader=body.getReader();let ended=false;
+ const release=()=>{try{reader.releaseLock();}catch{/* A pending read will settle after cancellation. */}};
+ return new ReadableStream<Uint8Array>({
+  async pull(controller){
+   if(ended)return;
+   let timer:ReturnType<typeof setTimeout>|undefined,onAbort:()=>void=()=>{};
+   try{
+    signal.throwIfAborted();
+    const part=await Promise.race([reader.read(),new Promise<never>((_,reject)=>{
+     timer=setTimeout(()=>reject(new Error('源站视频读取超时，请重试或切换线路')),30000);
+     onAbort=()=>reject(signal.reason||new DOMException('视频请求已取消','AbortError'));
+     signal.addEventListener('abort',onAbort,{once:true});if(signal.aborted)onAbort();
+    })]);
+    if(ended)return;signal.throwIfAborted();
+    if(part.done){ended=true;release();controller.close();}else controller.enqueue(part.value);
+   }catch(error){
+    if(!ended){ended=true;void reader.cancel(error).catch(()=>{});release();controller.error(error);}
+   }finally{clearTimeout(timer);signal.removeEventListener('abort',onAbort);}
+  },
+  cancel(reason){ended=true;return reader.cancel(reason).finally(release);},
+ },{highWaterMark:0});
+}
 export async function proxyMedia(req:Request){
  let ticket:Ticket;try{ticket=await readTicket(new URL(req.url).searchParams.get('ticket')||'');}catch(e){return Response.json({error:(e as Error).message},{status:403});}
  const headers:Record<string,string>={'User-Agent':UA,...mediaReferer(ticket.referer),Accept:'*/*'};const range=req.headers.get('range');if(range){const match=range.match(/^bytes=(\d{0,16})-(\d{0,16})$/);if(!match||!match[1]&&!match[2]||[match[1],match[2]].some(n=>n&&!Number.isSafeInteger(Number(n)))||match[1]&&match[2]&&Number(match[1])>Number(match[2])||!match[1]&&Number(match[2])===0)return new Response('Invalid range',{status:416});headers.Range=range;}
@@ -118,6 +142,6 @@ export async function proxyMedia(req:Request){
   }
   if(/text\/html|json|javascript|xml/i.test(type)){discard(res);throw new Error('源站返回了网页，无法作为视频播放');}
   for(const h of ['content-type','content-length','content-range','accept-ranges','etag','last-modified']){const value=res.headers.get(h);if(value)output.set(h,value);}if(!output.has('Content-Type'))output.set('Content-Type','application/octet-stream');
-  if(req.method==='HEAD')discard(res);return new Response(req.method==='HEAD'?null:res.body,{status:res.status,headers:output});
+  if(req.method==='HEAD')discard(res);return new Response(req.method==='HEAD'?null:mediaBody(res.body,req.signal),{status:res.status,headers:output});
  }catch(e){return Response.json({error:(e as Error).message},{status:502});}
 }

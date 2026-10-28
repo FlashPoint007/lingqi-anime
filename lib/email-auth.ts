@@ -47,6 +47,7 @@ async function bucket(key:string,windowMs:number,limit:number,now=Date.now()){
  return !!result&&result.hits<=limit;
 }
 async function reserveMail(email:string){
+ reclaimAuthData();
  const now=Date.now(),key=await digest(email),db=database();
  const reserved=await db.prepare('INSERT INTO email_attempts(key,expires_at,hits) VALUES(?,?,1) ON CONFLICT(key) DO UPDATE SET expires_at=excluded.expires_at,hits=1 WHERE email_attempts.expires_at<=? RETURNING hits').bind('mail-cooldown:'+key,now+60000,now).first();
  if(!reserved||!await bucket('mail-email:'+key,3600000,5,now))return response({error:'邮件请求过于频繁，请至少一分钟后重试',code:'MAIL_RATE_LIMIT'},429);
@@ -57,6 +58,11 @@ async function cleanup(){
   db.prepare('DELETE FROM email_attempts WHERE key IN (SELECT key FROM email_attempts WHERE expires_at<=? LIMIT 500)').bind(now),
   db.prepare('DELETE FROM email_action_tokens WHERE token_hash IN (SELECT token_hash FROM email_action_tokens WHERE expires_at<=? LIMIT 500)').bind(now),
  ]);
+}
+let cleaning=false;
+function reclaimAuthData(){
+ if(cleaning)return;cleaning=true;
+ background(cleanup().finally(()=>{cleaning=false;}),'lingqi_auth_cleanup_failed');
 }
 const escapeHtml=(s:string)=>s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
 async function sendMail(config:MailConfig,email:string,subject:string,message:string,link?:string,id=random()){
@@ -92,7 +98,6 @@ async function requestMail(action:string,email:string,config:MailConfig,req:Requ
   const deliver=sendMail(config,email,title,message,link,hash).catch(async()=>{await db.prepare('DELETE FROM email_action_tokens WHERE token_hash=? AND used_at IS NULL').bind(hash).run();throw Error('MAIL_DELIVERY_FAILED');});
   await background(deliver);
  }
- background(cleanup(),'lingqi_auth_cleanup_failed');
  return response({ok:true,message:action==='register'?'如果此邮箱可用于注册，你将收到验证邮件；已有账号请直接登录或找回密码。':'如果此邮箱符合条件，你将收到邮件。请检查收件箱和垃圾邮件，至少一分钟后再试。'});
 }
 async function finishMail(body:Record<string,unknown>){
@@ -149,6 +154,9 @@ export async function emailAuthResponse(req:Request){
   }
   const password=body.password;
   if(typeof password!=='string'||password.length<12||password.length>128)return response({error:'密码长度需为 12 至 128 个字符'},400);
+  // Reclaim expired buckets on failed and quota-rejected attempts too. A success-only
+  // cleanup lets unauthenticated traffic accumulate obsolete rows indefinitely.
+  reclaimAuthData();
   if(!await bucket('email-auth:'+await digest(email),900000,10))return response({error:'该账号尝试过于频繁，请 15 分钟后重试'},429);
   const user=await database().prepare(accountQuery).bind(email).first<Account>(),parts=user?.password_hash.split('$')||[];
   const actual=await passwordHash(password,parts[1]||'unregistered-email-dummy-salt');
@@ -158,9 +166,9 @@ export async function emailAuthResponse(req:Request){
   if(!inserted)return response({error:'账号状态已变化，请使用新密码重新登录'},401);
   await db.batch([
    db.prepare('DELETE FROM email_sessions WHERE expires_at<=? OR token_hash=?').bind(now,previous?await digest(previous):''),
-   db.prepare('DELETE FROM email_sessions WHERE token_hash IN (SELECT token_hash FROM email_sessions WHERE user_id=? ORDER BY expires_at DESC LIMIT -1 OFFSET 10)').bind(user.id),
+   // Preserve the token returned to this caller even when multiple sessions expire together.
+   db.prepare('DELETE FROM email_sessions WHERE token_hash IN (SELECT token_hash FROM email_sessions WHERE user_id=? AND token_hash<>? ORDER BY expires_at DESC,token_hash DESC LIMIT -1 OFFSET 9)').bind(user.id,hash),
   ]);
-  background(cleanup(),'lingqi_auth_cleanup_failed');
   return response({ok:true,account:{id:user.id,displayName:email},emailVerified:user.email_verified_at!==null},200,sessionCookie(raw));
  }catch(error){if(error instanceof RequestLimitError)return response({error:error.message},error.status);if(error instanceof SyntaxError)return response({error:'账号请求格式不正确'},400);return response({error:'账号服务暂不可用，请稍后再试'},503);}
  finally{working--;}

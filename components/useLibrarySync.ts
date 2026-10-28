@@ -11,7 +11,7 @@ import type {LibraryChange,LibrarySnapshot} from '../lib/library-model';
 const read=(key:string,fallback:any)=>{try{return JSON.parse(readStorage(key)||'null')??fallback;}catch{return fallback;}};
 const emptyAliases:SubjectAliases={};
 export default function useLibrarySync(ready:boolean,collection:Subject[],history:WatchRecord[],apply:(collection:Subject[],history:WatchRecord[],aliases:SubjectAliases,settings:DanmakuSettings)=>void,aliases:SubjectAliases=emptyAliases,settings?:DanmakuSettings){
- const [state,setState]=useState<{ready:boolean;phase:SyncPhase|'checking'|'anonymous';message:string;account?:{id:string;displayName:string;provider?:'email'|'chatgpt'}}>({ready:false,phase:'checking',message:'正在读取个人数据库…'});
+ const [state,setState]=useState<{ready:boolean;phase:SyncPhase|'checking'|'anonymous';message:string;account?:LibrarySnapshot['account']}>({ready:false,phase:'checking',message:'正在读取个人数据库…'});
  const engine=useRef<LibrarySync|null>(null),latest=useRef({collection,history,apply,aliases,settings}),retryRef=useRef<()=>void>(()=>{}),owner=useRef<string|null>(null),timer=useRef<ReturnType<typeof setTimeout>|undefined>(undefined),storageFailed=useRef(false);
  latest.current={collection,history,apply,aliases,settings};
  const save=(key:string,value:unknown)=>{if(!writeStorage(key,JSON.stringify(value))){storageFailed.current=true;setState(old=>({...old,message:'浏览器暂存失败，请保持页面打开，待数据库同步完成后再离开'}));}};
@@ -30,10 +30,11 @@ export default function useLibrarySync(ready:boolean,collection:Subject[],histor
    save('kw-library-owner',id);
    const outbox=restoreChanges(read('kw-library-outbox:'+id,[]));
    let knownPending=new Set(outbox.map(change=>change.mutationId));
+   let syncedAccount:LibrarySnapshot['account']=snapshot.account;
    const sync=new LibrarySync(snapshot,{
     request,apply:(collection,history,aliases,settings)=>{if(!alive)return;save('kw-library-cache:'+id,{collection,history,aliases,settings});save('kw-collection',collection);save('kw-history',history);latest.current.apply(collection,history,aliases,settings);},
-    persist:(pending,snapshot)=>{if(alive){const foreign=restoreChanges(read('kw-library-outbox:'+id,[])).filter(change=>!knownPending.has(change.mutationId));const merged=restoreChanges([...foreign,...pending]);save('kw-library-outbox:'+id,merged);save('kw-library-snapshot:'+id,snapshot);knownPending=new Set(pending.map(change=>change.mutationId));}},
-    status:(phase,message)=>{if(alive)setState({ready:true,account:snapshot.account,phase,message:storageFailed.current&&phase!=='saved'?'浏览器暂存失败，请保持页面打开，等待数据库保存':message||(phase==='saved'?'追番、记录与弹幕偏好已保存到数据库':phase==='saving'?'正在保存到数据库…':'有更新等待同步…')});},
+    persist:(pending,snapshot)=>{if(alive){syncedAccount=snapshot.account;const foreign=restoreChanges(read('kw-library-outbox:'+id,[])).filter(change=>!knownPending.has(change.mutationId));const merged=restoreChanges([...foreign,...pending]);save('kw-library-outbox:'+id,merged);save('kw-library-snapshot:'+id,snapshot);knownPending=new Set(pending.map(change=>change.mutationId));}},
+    status:(phase,message)=>{if(alive)setState({ready:true,account:syncedAccount,phase,message:storageFailed.current&&phase!=='saved'?'浏览器暂存失败，请保持页面打开，等待数据库保存':message||(phase==='saved'?'追番、记录与弹幕偏好已保存到数据库':phase==='saving'?'正在保存到数据库…':'有更新等待同步…')});},
     accountChanged:next=>{if(alive)activate(next);},
    },legacy,outbox);engine.current=sync;
    // Migration transfers these records to this account's durable outbox. Leave

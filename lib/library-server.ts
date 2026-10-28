@@ -32,7 +32,7 @@ export async function libraryResponse(req:Request){
  try{
   const extended=['2','3'].includes(new URL(req.url).searchParams.get('version')||'')?Number(new URL(req.url).searchParams.get('version')):1;const user=await getSiteUser(req);if(!user)return response({authenticated:false,entries:[],...(req.method==='POST'?{error:'请先登录，再同步追番和观看记录'}:{})},req.method==='POST'?401:200);
   const db=env.DB;if(!db)return response({error:'个人数据库暂不可用，请稍后重试'},503);
-  const account={id:user.userId,displayName:user.displayName,provider:user.provider};
+  const account={id:user.userId,displayName:user.displayName,provider:user.provider,...(user.provider==='email'?{emailVerified:user.emailVerified}:{})};
   if(req.method!=='POST')return response({authenticated:true,account,entries:await entries(db,user.userId,extended)});
   if(req.headers.get('origin')!==new URL(req.url).origin||req.headers.get('sec-fetch-site')==='cross-site')return response({error:'跨站请求被拒绝'},403);
   if(!/^application\/json(?:;|$)/i.test(req.headers.get('content-type')||''))return response({error:'请使用 JSON 请求'},415);

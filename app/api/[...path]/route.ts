@@ -29,6 +29,7 @@ async function upstream(url:string,init:RequestInit={}) {
 export async function GET(req:Request) {
  const u=new URL(req.url); const kind=u.pathname.split('/').pop();
  try {
+  if(kind==='auth')return await emailAuthResponse(req);
   if(kind==='site-danmaku')return await siteDanmakuResponse(req);
   if(kind==='danmaku')return await danmakuResponse(u.searchParams);
   if(kind==='library')return await libraryResponse(req);

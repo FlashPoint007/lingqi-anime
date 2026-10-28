@@ -4,6 +4,8 @@ A browser adaptation of [Predidit/Kazumi](https://github.com/Predidit/Kazumi), b
 
 ## Features
 
+- Email verification before registration, legacy-account mailbox verification, and single-use password recovery with all-session revocation. Requires an authorized transactional mail sender; see [configuration and validation](docs/email-accounts.md).
+
 - Bangumi search, filters, calendar, episode metadata and clearly marked offline fallback.
 - Account-owned D1 watchlists and resume history with cross-device sync, automatic migration of browser records, offline retry and JSON backup. Anonymous viewing remains available; themes and custom source rules stay browser-local.
 - Default subscription to [Predidit/KazumiRules](https://github.com/Predidit/KazumiRules): only rules named in the upstream active `index.json` are bundled and enabled (17 at this revision). Deprecated, removed and malformed managed rules are pruned after a complete successful synchronization. Custom rules and explicit user switches survive updates; temporary upstream failures retain cached data. The server caches the complete repository archive for one hour and the browser checks for updates every hour during visits.

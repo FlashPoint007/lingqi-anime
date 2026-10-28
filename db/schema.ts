@@ -14,8 +14,13 @@ export const personalItems=sqliteTable('personal_items',{
  valueJson:text('value_json'),version:integer('version').notNull(),updatedAt:integer('updated_at').notNull(),sortAt:integer('sort_at').notNull(),mutationId:text('mutation_id').notNull(),
 },table=>[primaryKey({columns:[table.userId,table.kind,table.subjectId]}),index('personal_items_owner_sort').on(table.userId,table.kind,table.sortAt)]);
 export const emailAccounts=sqliteTable('email_accounts',{
- id:text('id').primaryKey(),email:text('email').notNull().unique(),passwordHash:text('password_hash').notNull(),createdAt:integer('created_at').notNull(),
+ id:text('id').primaryKey(),email:text('email').notNull().unique(),passwordHash:text('password_hash').notNull(),createdAt:integer('created_at').notNull(),emailVerifiedAt:integer('email_verified_at'),
 });
+// Only hashes of single-use mail links are stored; account creation waits for mailbox proof.
+export const emailActionTokens=sqliteTable('email_action_tokens',{
+ tokenHash:text('token_hash').primaryKey(),email:text('email').notNull(),purpose:text('purpose').notNull(),userId:text('user_id'),credentialHash:text('credential_hash'),
+ createdAt:integer('created_at').notNull(),expiresAt:integer('expires_at').notNull(),usedAt:integer('used_at'),claimId:text('claim_id'),
+},table=>[index('email_action_expiry').on(table.expiresAt),index('email_action_owner').on(table.email,table.purpose)]);
 export const emailSessions=sqliteTable('email_sessions',{
  tokenHash:text('token_hash').primaryKey(),userId:text('user_id').notNull(),expiresAt:integer('expires_at').notNull(),
 },table=>[index('email_sessions_expiry').on(table.expiresAt),index('email_sessions_user').on(table.userId)]);

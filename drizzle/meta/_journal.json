@@ -43,6 +43,13 @@
       "when": 1792740347174,
       "tag": "0005_puzzling_zarda",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1793177827666,
+      "tag": "0006_far_hawkeye",
+      "breakpoints": true
     }
   ]
 }

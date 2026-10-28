@@ -14,7 +14,8 @@ import {libraryResponse} from '../../../lib/library-server';
 import {readRequestText,RequestLimitError} from '../../../lib/request-guard';
 import {apiRequest,apiSearch,apiChapters,extractMedia,mediaUrl,isMedia} from '../../../lib/rule-api';
 import {publicUrl,validateRule,sourcePageError} from '../../../lib/web-core';
-import {browseCatalog,seasonCatalog} from '../../../lib/catalog-server';
+import {browseCatalog,seasonCatalog,seasonFeatures} from '../../../lib/catalog-server';
+import {featureRange,featureToday} from '../../../lib/home-feature';
 import {currentSeason,normalizeSubject,normalizeEpisodes,normalizeRelatedSubjects} from '../../../lib/catalog';
 import {boundedText,proxyMedia,resolvePlayback,signedMediaUrl} from '../../../lib/playback-server';
 function discard(response:Response){void response.body?.cancel().catch(()=>{});}
@@ -46,6 +47,11 @@ export async function GET(req:Request) {
   if(kind==='download')return browserDownload(req);
   if(kind==='cover')return await subjectCover(u.searchParams.get('id')||'',req.signal);
   if(kind==='catalog') {
+   if(u.searchParams.get('mode')==='featured'){
+    const now=currentSeason(),year=Number(u.searchParams.get('year')||now.year),quarter=Number(u.searchParams.get('quarter')||now.quarter);
+    try{featureRange(year,quarter);}catch{return json({error:'无效的推荐季度'},400);}
+    return await cachedJson('home-feature','v1:'+year+':'+quarter+':'+featureToday(),()=>seasonFeatures(year,quarter,upstream),{background:true,timeout:16000,ttl:3600000,stale:86400000,refresh:u.searchParams.get('refresh')==='1'});
+   }
    let params=new URLSearchParams();for(const key of ['mode','year','quarter','q','literal','tag','cat','page','offset',...searchFilterKeys])if(u.searchParams.has(key))params.set(key,u.searchParams.get(key)!);params.sort();
    try{params=shortcutSearchParams(params);parseSearchFilters(params);}catch(e){return json({error:e instanceof Error?e.message:'筛选条件无效'},400);}
    // Include the current quarter so a weekly cache cannot survive into an archive.

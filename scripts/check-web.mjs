@@ -53,7 +53,8 @@ assert.deepEqual(catalog.seasonRange(2026,4),{start:'2026-09-01',end:'2026-12-01
 assert.deepEqual(catalog.pageNumbers(8,30),[1,6,7,8,9,10,30]);
 const filterUrl=mod(compile(readFileSync('lib/search-filters.ts','utf8')));
 const queryUrl=mod(compile(readFileSync('lib/search-query.ts','utf8').replace("'./search-filters'",JSON.stringify(filterUrl))));
-const catalogServerUrl=mod(compile(readFileSync('lib/catalog-server.ts','utf8').replace("import snapshot from './catalog-snapshot.json';",'const snapshot='+readFileSync('lib/catalog-snapshot.json','utf8')+';').replace("'./catalog'",JSON.stringify(catalogUrl)).replace("'./search-filters'",JSON.stringify(filterUrl)).replace("'./search-query'",JSON.stringify(queryUrl))));
+const homeFeatureUrl=mod(compile(readFileSync('lib/home-feature.ts','utf8').replace("'./catalog'",JSON.stringify(catalogUrl))));
+const catalogServerUrl=mod(compile(readFileSync('lib/catalog-server.ts','utf8').replace("import snapshot from './catalog-snapshot.json';",'const snapshot='+readFileSync('lib/catalog-snapshot.json','utf8')+';').replace("'./catalog'",JSON.stringify(catalogUrl)).replace("'./home-feature'",JSON.stringify(homeFeatureUrl)).replace("'./search-filters'",JSON.stringify(filterUrl)).replace("'./search-query'",JSON.stringify(queryUrl))));
 const catalogServer=await import(catalogServerUrl);
 let requested='';
 const pageResult=await catalogServer.browseCatalog(new URLSearchParams('mode=date&page=52&cat=1&year=2024'),async url=>{requested=url;return {data:[{id:123,name:'Example',date:'2024-04-01'}],total:1234};});
@@ -104,7 +105,7 @@ source=source.replace("import {libraryResponse} from '../../../lib/library-serve
 const guardUrl=mod(compile(readFileSync('lib/request-guard.ts','utf8')));
 const cacheUrl=mod(compile(readFileSync('lib/server-cache.ts','utf8').replace("import {env,waitUntil} from 'cloudflare:workers';",'const env={};const waitUntil=()=>{};')));
 source=source.replace("'../../../lib/request-guard'",JSON.stringify(guardUrl)).replace("'../../../lib/server-cache'",JSON.stringify(cacheUrl));
-source=source.replace("'../../../lib/catalog'",JSON.stringify(catalogUrl));
+source=source.replace("'../../../lib/catalog'",JSON.stringify(catalogUrl)).replace("'../../../lib/home-feature'",JSON.stringify(homeFeatureUrl));
 const apiUrl=mod(compile(readFileSync('lib/rule-api.ts','utf8').replace("'./web-core'",JSON.stringify(coreUrl))));
 const subscriptionServerUrl=mod(compile(readFileSync('lib/rule-subscription-server.ts','utf8').replace("import snapshot from './rules-snapshot.json';",'const snapshot='+readFileSync('lib/rules-snapshot.json','utf8')+';')));
 source=source.replace("'../../../lib/rule-api'",JSON.stringify(apiUrl)).replace("'../../../lib/rule-subscription-server'",JSON.stringify(subscriptionServerUrl));

@@ -6,6 +6,7 @@ import "./feature-theme.css";
 import "./watch-features.css";
 import "./danmaku-composer.css";
 import "./ratings-danmaku.css";
+import "./home-features.css";
 
 export const metadata: Metadata = {
   title: "零柒番剧 · 动画索引与追番",

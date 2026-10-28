@@ -2,8 +2,15 @@ import {shortcutSearchParams} from './search-query';
 import snapshot from './catalog-snapshot.json';
 import {parseSearchFilters} from './search-filters';
 import {PAGE_SIZE,currentSeason,seasonRange,normalizeSubjects,normalizeCalendar,normalizeSubject} from './catalog';
+import {featureRange,featureToday,featureSubjects} from './home-feature';
 type Upstream=(url:string,init?:RequestInit)=>Promise<any>;
 const categoryCodes=new Set(['0','1','2','3','5']);
+export async function seasonFeatures(year:number,quarter:number,upstream:Upstream){
+ const range=featureRange(year,quarter);
+ const raw=await upstream('https://api.bgm.tv/v0/search/subjects?limit='+PAGE_SIZE+'&offset=0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keyword:'',sort:'heat',filter:{type:[2],nsfw:false,air_date:['>='+range.start,'<'+range.end,'<='+featureToday()]}})});
+ // Keep upstream heat order; a high rating does not promote a less popular show.
+ return {year,quarter,data:featureSubjects(raw?.data,year,quarter)};
+}
 function premiereDate(subject:any){
  const value=subject.date||subject.air_date;if(!/^\d{4}-\d{2}-\d{2}$/.test(value||''))return;
  const date=new Date(value+'T12:00:00Z');return Number.isFinite(date.getTime())&&date.toISOString().slice(0,10)===value?value:undefined;

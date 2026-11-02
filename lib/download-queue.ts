@@ -1,4 +1,4 @@
-import {prepareLocalDownload,handToBrowser,type BrowserDownload} from './browser-download-client';
+import {prepareLocalDownload,handToBrowser,downloadExpired,type BrowserDownload} from './browser-download-client';
 import {throwIfAborted,requestJson,anySignal,timeoutSignal} from './request-client';
 import {validateRule,publicUrl,type Rule} from './web-core';
 import type {Subject} from './catalog';
@@ -17,14 +17,17 @@ export function enqueueDownloads(owner:string,subject:Subject,episodes:Episode[]
  for(const episode of episodes){publicUrl(episode.url);if(book.tasks.some(task=>task.subject.id===subject.id&&task.episode.url===episode.url&&task.rule?.name===rule.name&&!['cancelled','failed'].includes(task.state)))continue;if(book.tasks.length>=100)throw Error('下载队列最多保留 100 项，请先移除旧任务');book.tasks.push({id:crypto.randomUUID(),subject:{id:subject.id,name:subject.name.slice(0,200),name_cn:subject.name_cn?.slice(0,200)},episode:{name:episode.name.slice(0,200),url:episode.url,number:episode.number},source,rule:validRule,state:'queued',createdAt:Date.now(),updatedAt:Date.now()});added++;}
  write(owner,book);return added;
 }
-export function recordHandedDownload(owner:string,subject:Subject,episode:string,url:string,download:BrowserDownload){const book=readDownloadQueue(owner);if(book.tasks.length>=100)return;book.tasks.push({id:crypto.randomUUID(),subject:{id:subject.id,name:subject.name,name_cn:subject.name_cn},episode:{name:episode,url},directUrl:url,state:'handed',createdAt:Date.now(),updatedAt:Date.now(),preparedAt:Date.now(),download});write(owner,book);}
+export function recordHandedDownload(owner:string,subject:Subject,episode:string,url:string,download:BrowserDownload,context?:{sourceUrl:string;number?:number;source?:string;rule?:Rule;mediaType?:'hls'|'video'}){
+ const book=readDownloadQueue(owner);if(book.tasks.length>=100)return;const rule=context?.rule?validateRule(context.rule):undefined;if(rule)publicUrl(context!.sourceUrl);
+ book.tasks.push({id:crypto.randomUUID(),subject:{id:subject.id,name:subject.name,name_cn:subject.name_cn},episode:{name:episode,url:rule?context!.sourceUrl:url,number:context?.number},source:context?.source,rule,directUrl:rule?undefined:url,mediaType:context?.mediaType,state:'handed',createdAt:Date.now(),updatedAt:Date.now(),preparedAt:Date.now(),download});write(owner,book);
+}
 export function pauseDownloadQueue(owner:string,paused:boolean){const book=readDownloadQueue(owner);book.paused=paused;write(owner,book);if(paused)active.get(owner)?.controller.abort();}
 export function changeDownloadTask(owner:string,id:string,action:'cancel'|'retry'|'remove'){
  if(action==='remove'){const book=readDownloadQueue(owner);book.tasks=book.tasks.filter(task=>task.id!==id);write(owner,book);}else edit(owner,id,{state:action==='retry'?'queued':'cancelled',error:undefined,download:undefined});if(active.get(owner)?.id===id)active.get(owner)?.controller.abort();
 }
 export function handReadyDownloads(owner:string,ids?:string[]){
  const book=readDownloadQueue(owner);const tasks=book.tasks.filter(task=>task.state==='ready'&&task.download&&(!ids||ids.includes(task.id))).slice(0,3);let sent=0;
- for(const task of tasks){if(!task.preparedAt||Date.now()-task.preparedAt>7*3600000){edit(owner,task.id,{state:'queued',download:undefined,error:'链接已过期，正在重新准备'});continue;}handToBrowser(task.download!);edit(owner,task.id,{state:'handed',error:undefined});sent++;}return sent;
+ for(const task of tasks){if(downloadExpired(task.download!)){edit(owner,task.id,{state:'queued',download:undefined,error:'链接已过期，正在重新准备'});continue;}handToBrowser(task.download!);edit(owner,task.id,{state:'handed',error:undefined});sent++;}return sent;
 }
 const wait=(ms:number,signal:AbortSignal)=>new Promise<void>((resolve,reject)=>{if(signal.aborted){reject(signal.reason);return;}const abort=()=>{clearTimeout(timer);reject(signal.reason);},timer=setTimeout(()=>{signal.removeEventListener('abort',abort);resolve();},ms);signal.addEventListener('abort',abort,{once:true});});
 export async function runDownloadQueue(owner:string,signal:AbortSignal){

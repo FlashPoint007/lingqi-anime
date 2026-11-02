@@ -81,7 +81,7 @@ export default function WatchPage(p:Props){
     </div>
     {screenshots.panel}
     <BatchDownloadPicker owner={p.viewerKey||'anonymous'} subject={p.player.subject} episodes={p.roads[p.road]?.episodes||[]} rule={p.rules[p.ruleIdx]} source={p.sourceContext||p.player.source}/>
-    {p.mode==='video'&&<DownloadEpisode key={p.player.sourceUrl} owner={p.viewerKey||'anonymous'} subject={p.player.subject} episode={p.player.episode} number={currentNumber} nativeUrl={p.player.url} url={urls.url} sourceUrl={p.player.sourceUrl} source={p.player.source} ruleName={p.player.ruleName} mediaType={p.player.mediaType}/>}
+    {p.mode==='video'&&<DownloadEpisode key={p.player.sourceUrl} owner={p.viewerKey||'anonymous'} subject={p.player.subject} episode={p.player.episode} number={currentNumber} nativeUrl={p.player.url} url={urls.url} sourceUrl={p.player.sourceUrl} source={p.player.source} rule={p.rules.find(rule=>rule.name===p.player.ruleName&&rule.enabled!==false)} ruleName={p.player.ruleName} mediaType={p.player.mediaType}/>}
     <Discussions key={p.viewerKey||'anonymous'} accountId={p.danmakuSession?.emailAccount?p.danmakuSession.owner:undefined} onAccountChange={p.danmakuSession?.refresh} subjectId={p.player.subject.id} episodeNumber={currentNumber} episodeId={p.episodes.find(e=>e.sort===currentNumber)?.id}/>
     {p.error&&<div className="watch-error" role="alert" data-source-url={p.player.sourceUrl}>{p.error}</div>}
     <div className="watch-now">

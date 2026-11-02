@@ -1,0 +1,32 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),ts=require('typescript'),{webcrypto}=require('node:crypto');
+const tests=[],test=(name,run)=>tests.push([name,run]);
+const rule={name:'Test',baseURL:'https://source.example',searchURL:'https://source.example/search?wd=@keyword',searchList:'//a',searchName:'.',searchResult:'@href',chapterRoads:'//div',chapterResult:'.//a'},subject={id:1,name:'Sample'},episode={name:'EP 2',number:2,url:'https://source.example/play/2'};
+function fixture(){
+ let now=1800000000000,expiresIn=30000;const storage=new Map(),calls=[],anchors=[],timeouts=[];
+ class Clock extends Date{static now(){return now;}}
+ const signals={any:AbortSignal.any.bind(AbortSignal),timeout(ms){timeouts.push(ms);return AbortSignal.timeout(15);}};
+ let fetcher=async(url,init)=>{const body=JSON.parse(init.body);calls.push({url,body});return Response.json(url==='/api/source'?{mode:'video',url:'/api/media?ticket=fresh',mediaType:'video'}:{url:'/api/download?ticket=prepared',format:'mp4',filename:body.name+'.mp4',expiresAt:now+expiresIn});};
+ const globals={URL,URLSearchParams,Request,Response,Headers,ReadableStream,TextEncoder,TextDecoder,AbortController,AbortSignal:signals,DOMException,Date:Clock,crypto:webcrypto,Event,location:new URL('https://site.example/'),localStorage:{getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,value)},window:{dispatchEvent(){}},navigator:{locks:{request:async(_name,_options,run)=>run({})}},document:{createElement(){return {click(){anchors.push(this.href);},remove(){}};},body:{appendChild(){}}},setTimeout,clearTimeout,console,fetch:(...args)=>fetcher(...args)};
+ const modules=new Map();function load(file){file=path.resolve(file);if(modules.has(file))return modules.get(file);const exports={};modules.set(file,exports);vm.runInNewContext(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{...globals,exports,require:name=>load(path.resolve(path.dirname(file),name+'.ts'))},{filename:file});return exports;}
+ return {queue:load('lib/download-queue.ts'),client:load('lib/browser-download-client.ts'),storage,calls,anchors,timeouts,advance:ms=>{now+=ms;},setExpiry:ms=>{expiresIn=ms;},setFetch:fn=>{fetcher=fn;},now:()=>now};
+}
+test('a freshly prepared link expires with its original media authorization',async()=>{
+ const f=fixture();f.queue.enqueueDownloads('a',subject,[episode],rule);await f.queue.runDownloadQueue('a',new AbortController().signal);assert.equal(f.queue.readDownloadQueue('a').tasks[0].state,'ready');f.advance(31000);assert.equal(f.queue.handReadyDownloads('a'),0);assert.equal(f.anchors.length,0);assert.equal(f.queue.readDownloadQueue('a').tasks[0].state,'queued');await f.queue.runDownloadQueue('a',new AbortController().signal);assert.equal(f.queue.handReadyDownloads('a'),1);assert.equal(f.anchors.length,1);
+});
+test('legacy prepared links without reliable expiry are prepared again',async()=>{
+ const f=fixture();f.queue.enqueueDownloads('a',subject,[episode],rule);await f.queue.runDownloadQueue('a',new AbortController().signal);const book=f.queue.readDownloadQueue('a');delete book.tasks[0].download.expiresAt;f.storage.set('kw-download-queue:a',JSON.stringify(book));assert.equal(f.queue.handReadyDownloads('a'),0);assert.equal(f.queue.readDownloadQueue('a').tasks[0].state,'queued');assert.equal(f.anchors.length,0);
+});
+test('single episode retries resolve the source page instead of replaying an expired ticket',async()=>{
+ const f=fixture(),download=await f.client.prepareLocalDownload({url:'/api/media?ticket=old',name:'EP 2'},new AbortController().signal);f.queue.recordHandedDownload('a',subject,episode.name,'/api/media?ticket=old',download,{sourceUrl:episode.url,number:episode.number,source:'https://source.example/show/1',rule,mediaType:'video'});const task=f.queue.readDownloadQueue('a').tasks[0];assert.equal(task.directUrl,undefined);assert.equal(task.episode.url,episode.url);assert.equal(task.episode.number,2);f.advance(3600000);f.calls.length=0;f.queue.changeDownloadTask('a',task.id,'retry');await f.queue.runDownloadQueue('a',new AbortController().signal);assert.equal(f.calls[0].url,'/api/source');assert.equal(f.calls[0].body.source,'https://source.example/show/1');assert.equal(f.calls[0].body.rule.name,'Test');assert.equal(f.calls[1].body.url,'/api/media?ticket=fresh');assert.equal(f.queue.handReadyDownloads('a'),1);
+});
+test('custom direct downloads retain their media type and can be prepared again',async()=>{
+ const f=fixture(),download=await f.client.prepareLocalDownload({url:'https://video.example/file.mp4',name:'Custom'},new AbortController().signal);f.queue.recordHandedDownload('a',subject,'Custom','https://video.example/file.mp4',download,{sourceUrl:'https://video.example/file.mp4',mediaType:'video'});const task=f.queue.readDownloadQueue('a').tasks[0];f.queue.changeDownloadTask('a',task.id,'retry');await f.queue.runDownloadQueue('a',new AbortController().signal);assert.equal(f.calls.at(-1).body.url,'https://video.example/file.mp4');assert.equal(f.calls.at(-1).body.mediaType,'video');
+});
+test('a native preparation request has a deadline even if the network never responds',async()=>{
+ const f=fixture(),controller=new AbortController();f.setFetch((_url,init)=>new Promise((_,reject)=>init.signal.addEventListener('abort',()=>reject(init.signal.reason),{once:true})));
+ const result=await Promise.race([f.client.prepareLocalDownload({url:'/api/media?ticket=old',name:'Test'},controller.signal).then(()=>'',error=>error.message),new Promise(resolve=>setTimeout(()=>resolve('NO_TIMEOUT'),120))]);controller.abort();assert.match(result,/超时/);assert.ok(f.timeouts.includes(30000));
+});
+test('a gateway error is understandable and an expired handoff never starts a file',async()=>{
+ const f=fixture();f.setFetch(async()=>new Response('<html>unavailable</html>',{status:503}));await assert.rejects(f.client.prepareLocalDownload({url:'/api/media?ticket=old',name:'Test'},new AbortController().signal),/网关.*503/);assert.throws(()=>f.client.handToBrowser({url:'/api/download?ticket=old',format:'mp4',filename:'old.mp4',expiresAt:f.now()-1}),/过期/);assert.equal(f.anchors.length,0);
+});
+(async()=>{let failed=0;for(const [name,run]of tests){try{await run();console.log('PASS: '+name);}catch(error){failed++;console.error('FAIL: '+name+'\n'+error.stack);}}if(failed)process.exitCode=1;})().catch(error=>{console.error(error);process.exitCode=1;});

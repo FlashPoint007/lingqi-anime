@@ -58,7 +58,7 @@ export async function prepareBrowserDownload(req:Request){
   if(bundle)await hlsBundle(ticket,signal,current);else{validMedia(current.res,true);discard(current.res);}
   const signed=new URL(await signedMediaUrl(ticket.url,ticket.referer,ticket.expires),req.url),params=new URLSearchParams({ticket:signed.searchParams.get('ticket')!,name:basename(body.name),...(bundle?{format:'hls'}:{})});
   const extension=bundle?'zip':/webm/i.test(current.res.headers.get('content-type')||'')||/\.webm(?:[?#]|$)/i.test(current.url)?'webm':'mp4';
-  return Response.json({url:'/api/download?'+params,format:extension,filename:basename(body.name)+'.'+extension},{headers:{'Cache-Control':'no-store'}});
+  return Response.json({url:'/api/download?'+params,format:extension,filename:basename(body.name)+'.'+extension,expiresAt:ticket.expires},{headers:{'Cache-Control':'no-store'}});
  }catch(error){return errorResponse(error,error instanceof RequestLimitError?error.status:400);}
 }
 export async function browserDownload(req:Request){

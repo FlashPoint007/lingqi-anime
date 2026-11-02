@@ -5,9 +5,9 @@ export {normalizeTitle,matchesTitle,sourceCatalogueIssue} from './source-identit
 import {anySignal,timeoutSignal,requestJson} from './request-client';
 
 export type SourceResult={name:string;url:string};
-export type AvailabilityState='queued'|'checking'|'found'|'possible'|'not-found'|'error'|'playing'|'episode-error';
+export type AvailabilityState='queued'|'checking'|'paused'|'found'|'possible'|'not-found'|'error'|'playing'|'episode-error';
 export type SourceAvailability={state:AvailabilityState;message:string;results:SourceResult[];source?:string;roads?:Road[];checkedAt?:number;episodeNumber?:number};
-export const availabilityLabels:Record<AvailabilityState,string>={queued:'待检测',checking:'检测中',found:'有分集',possible:'待确认', 'not-found':'未匹配',error:'检测失败',playing:'已播放', 'episode-error':'本集失败'};
+export const availabilityLabels:Record<AvailabilityState,string>={queued:'待检测',checking:'检测中',paused:'已暂停',found:'有分集',possible:'待确认', 'not-found':'未匹配',error:'检测失败',playing:'已播放', 'episode-error':'本集失败'};
 // Keep catalogue work reusable while limiting a playback outcome to its episode.
 // Project the rows without mutating the shared source cache or restarting scans.
 export function episodeAvailability(checks:Record<string,SourceAvailability>,number?:number):Record<string,SourceAvailability>{

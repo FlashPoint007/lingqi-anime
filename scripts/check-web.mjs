@@ -180,7 +180,7 @@ assert.deepEqual(ruleApi.selectJson({data:{items:[{n:1},{n:2}]}},'$.data.items[*
 assert.deepEqual(ruleApi.extractMedia('<video src="/clip.mp4"></video><script>var player_test={"url":"https://media.example/stream.m3u8","encrypt":0}</script>','https://example.com').sort(),['https://example.com/clip.mp4','https://media.example/stream.m3u8']);
 const subSource=readFileSync('lib/subscriptions.ts','utf8').replace("import snapshot from './rules-snapshot.json';",'const snapshot='+readFileSync('lib/rules-snapshot.json','utf8')+';');
 const subscription=await import(mod(compile(subSource.replace("'./web-core'",JSON.stringify(coreUrl)))));
-assert.equal(subscription.initialRules.length,17);
+assert.equal(subscription.initialRules.length,18);
 const a=subscription.initialRules.find(r=>r.enabled);
 const merged=subscription.mergeSubscribed([{...a,enabled:false,userDisabled:true},{...valid,name:'Custom'}],[{file:a.subscriptionFile,rule:{...a,version:'999'}}]);
 assert.equal(merged[0].version,'999');assert.equal(merged[0].enabled,false);assert.equal(merged[1].name,'Custom');
@@ -194,10 +194,10 @@ const apiRule=JSON.parse(readFileSync('lib/rules-snapshot.json','utf8')).entries
 assert.equal(core.validateRule(apiRule).searchMode,'api');
 const requestSpec=ruleApi.apiRequest(apiRule,'search',{keyword:'a"b',source:'1'});assert.equal(JSON.parse(requestSpec.init.body).search_term,'a"b');
 const mixedRules=subscription.initialRules.filter(r=>r.searchMode==='api'&&r.chapterMode==='xpath');
-assert.deepEqual(mixedRules.map(r=>r.name).sort(),['LMM','dalvdm','mgnacg','moonci','mutefun'].sort());
+assert.deepEqual(mixedRules.map(r=>r.name).sort(),['LMM','dalvdm','mgnacg','moonci','TvTFun'].sort());
 const giriRule=subscription.initialRules.find(r=>r.name==='giriGiriLove');assert.equal(giriRule.version,'2.6');assert.equal(giriRule.chapterMode,'api');assert.equal(giriRule.chapterApiConfig.format,'delimited');
 assert.equal(ruleApi.apiSearch({info:{rows:[{vod_name:'番剧',vod_id:123}]}},giriRule.searchApiConfig,giriRule)[0].url,'123','current Giri API passes the raw ID to its chapter API');
-for(const rule of mixedRules){assert.doesNotThrow(()=>core.validateRule(rule));const results=ruleApi.apiSearch({list:[{name:'番剧',id:123}]},rule.searchApiConfig,rule);const raw=rule.searchApiConfig.sourceTemplate?.replaceAll('@source','123')||'123';assert.equal(results[0].url,new URL(raw,rule.baseURL).href);}
+for(const rule of mixedRules){assert.doesNotThrow(()=>core.validateRule(rule));const data=rule.name==='TvTFun'?{data:{items:[{name:'番剧',slug:'123'}]}}:{list:[{name:'番剧',id:123}]};const results=ruleApi.apiSearch(data,rule.searchApiConfig,rule);const raw=rule.searchApiConfig.sourceTemplate?.replaceAll('@source','123')||'123';assert.equal(results[0].url,new URL(raw,rule.baseURL).href);}
 const mixed=mixedRules.find(r=>r.name==='moonci');
 assert.equal(ruleApi.apiSearch({list:[{name:'番剧',id:'a/b ?'}]},mixed.searchApiConfig,mixed)[0].url,'https://www.moonci.com/anime/a%2Fb%20%3F.html');
 assert.equal(ruleApi.apiSearch({list:[{name:'Unsafe',id:'https://evil.example/'}]},{...mixed.searchApiConfig,sourceTemplate:undefined},mixed).length,0);
@@ -219,7 +219,7 @@ mixedResponse=await route.POST(sourcePost({rule:{...valid,chapterMode:'api',chap
 mixedCalls=[];globalThis.fetch=async url=>{mixedCalls.push(String(url));return String(url).startsWith(mixed.baseURL)?new Response('<video src="https://media.example/clip.mp4"></video>',{headers:{'Content-Type':'text/html'}}):new Response('bytes',{status:206,headers:{'Content-Type':'video/mp4'}});};
 mixedResponse=await route.POST(sourcePost({rule:mixed,url:'https://www.moonci.com/play/123-1-1.html',source:mixedResults[0].url,operation:'resolve'}));assert.equal(mixedResponse.status,200);assert.equal((await mixedResponse.json()).mode,'video');assert.equal(mixedCalls[0],'https://www.moonci.com/play/123-1-1.html','mixed playback must not request a nonexistent chapter API');
 globalThis.fetch=originalFetch;
-console.log('PASS: all 17 active rules, five mixed-mode rules, current Giri API mode, source templates, safe detail URLs, HTML chapters and playback');
+console.log('PASS: all 18 active rules, five mixed-mode rules, current Giri API mode, TvTFun API/XPath and mutefun XPath modes, source templates, safe detail URLs, HTML chapters and playback');
 const request=(url,rule=valid)=>new Request('https://site.example/api/source',{method:'POST',headers:{origin:'https://site.example','Content-Type':'application/json'},body:JSON.stringify({url,rule})});
 let fetchCalls=0;
 globalThis.fetch=async()=>{fetchCalls++;return new Response('<ul><li><a href="/ep/1">Episode 1</a></li></ul>',{headers:{'Content-Type':'text/html; charset=utf-8'}});};

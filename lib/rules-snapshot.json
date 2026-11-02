@@ -1,7 +1,7 @@
 {
   "repository": "Predidit/KazumiRules",
-  "revision": "0972545266e7ac7cc06e7e522892239824f7d713",
-  "checkedAt": "2026-10-27T05:07:16.559Z",
+  "revision": "2967d7babafffa92dbf35fbcb69d0fd964139e63",
+  "checkedAt": "2026-11-02T09:17:04.300Z",
   "entries": [
     {
       "file": "7sefun.json",
@@ -46,11 +46,12 @@
     {
       "file": "AGE.json",
       "rule": {
-        "api": "1",
+        "api": "5",
         "type": "anime",
         "name": "AGE",
-        "version": "1.5",
+        "version": "1.6",
         "muliSources": true,
+        "adBlocker": true,
         "useWebview": true,
         "useNativePlayer": true,
         "userAgent": "",
@@ -386,37 +387,34 @@
         "api": "9",
         "type": "anime",
         "name": "mutefun",
-        "version": "1.4",
+        "version": "1.6",
         "muliSources": true,
         "useWebview": true,
         "useNativePlayer": true,
         "usePost": false,
         "useLegacyParser": false,
-        "adBlocker": false,
+        "adBlocker": true,
         "userAgent": "",
-        "baseURL": "https://www.2kdm.com/voddetail/",
-        "searchMode": "api",
+        "baseURL": "https://www.mutedm.com",
+        "searchURL": "https://www.mutedm.com/search?q=@keyword",
+        "searchList": "//section[contains(@class,'search-results-section')]//a[contains(@class,'video-card')]",
+        "searchName": "//span[contains(@class,'video-card-title')]",
+        "searchResult": ".",
+        "chapterRoads": "//div[contains(@class,'episode-panel')]//div[contains(@class,'episode-list')]",
+        "chapterResult": "//a",
+        "referer": "",
+        "searchMode": "xpath",
         "chapterMode": "xpath",
-        "searchApiConfig": {
-          "request": {
-            "method": "GET",
-            "url": "https://www.2kdm.com/index.php/ajax/suggest",
-            "query": {
-              "mid": "1",
-              "wd": "@keyword"
-            }
-          },
-          "listPath": "$.list[*]",
-          "namePath": "$.name",
-          "sourcePath": "$.id"
-        },
-        "searchURL": "",
-        "searchList": "",
-        "searchName": "",
-        "searchResult": "",
-        "chapterRoads": "//div[contains(@class,'module-play-list-content')]",
-        "chapterResult": ".//a[contains(@class,'module-play-list-link')]",
-        "referer": ""
+        "antiCrawlerConfig": {
+          "enabled": true,
+          "captchaType": 1,
+          "captchaImage": "//form[contains(@action,'/captcha/verify')]//img",
+          "captchaInput": "//input[@id='gate-answer']",
+          "captchaButton": "//form[contains(@action,'/captcha/verify')]//button[@type='submit']",
+          "captchaDetectType": 1,
+          "captchaDetectValue": "//form[contains(@action,'/captcha/verify')]",
+          "captchaScript": ""
+        }
       }
     },
     {
@@ -498,6 +496,57 @@
             "url": "https://www.sorani.net/anime/mal/@source/episode/@episodeUrl",
             "query": {}
           }
+        },
+        "antiCrawlerConfig": {
+          "enabled": false,
+          "captchaType": 1,
+          "captchaImage": "",
+          "captchaInput": "",
+          "captchaButton": "",
+          "captchaDetectType": 1,
+          "captchaDetectValue": "",
+          "captchaScript": ""
+        }
+      }
+    },
+    {
+      "file": "TvTFun.json",
+      "rule": {
+        "api": "9",
+        "type": "anime",
+        "name": "TvTFun",
+        "version": "1.3",
+        "muliSources": true,
+        "useWebview": true,
+        "useNativePlayer": true,
+        "usePost": false,
+        "useLegacyParser": false,
+        "adBlocker": true,
+        "userAgent": "",
+        "baseURL": "https://www.tvtfun.net",
+        "searchURL": "",
+        "searchList": "",
+        "searchName": "",
+        "searchResult": "",
+        "chapterRoads": "//ol[@class*='tvt-watch-episodes']",
+        "chapterResult": "//li/a",
+        "referer": "",
+        "searchMode": "api",
+        "chapterMode": "xpath",
+        "searchApiConfig": {
+          "request": {
+            "method": "GET",
+            "url": "https://www.tvtfun.net/api/client/anime",
+            "query": {
+              "keyword": "@keyword",
+              "page": 1,
+              "pageSize": 24
+            }
+          },
+          "listPath": "$.data.items[*]",
+          "namePath": "$.name",
+          "sourcePath": "$.slug",
+          "sourceTemplate": "https://www.tvtfun.net/watch/@source/1"
         },
         "antiCrawlerConfig": {
           "enabled": false,

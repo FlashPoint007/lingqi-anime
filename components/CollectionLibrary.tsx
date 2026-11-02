@@ -7,13 +7,17 @@ import AnimeCover from './AnimeCover';
 import {bangumiRating} from '../lib/bangumi-rating';
 import {collectionStates,collectionState,type CollectionState} from '../lib/collection-state';
 import type {Subject} from '../lib/catalog';
-export default function CollectionLibrary({items,historyCount,onOpen,onState,disabled,aliases={}}:{items:Subject[];aliases?:SubjectAliases;historyCount:number;onOpen:(s:Subject)=>void;onState:(s:Subject,state:CollectionState|'')=>void;disabled:boolean}){
+const emptyAliases:SubjectAliases={};
+export default function CollectionLibrary({items,historyCount,onOpen,onState,disabled,aliases=emptyAliases}:{items:Subject[];aliases?:SubjectAliases;historyCount:number;onOpen:(s:Subject)=>void;onState:(s:Subject,state:CollectionState|'')=>void;disabled:boolean}){
  const [state,setState]=useState<CollectionState|''>(''),[query,setQuery]=useState(''),[sort,setSort]=useState('recent');
  const [layout,setLayout]=useState<'cards'|'list'>('cards');
  useEffect(()=>{try{if(localStorage.getItem('kw-collection-layout')==='list')setLayout('list');}catch{}},[]);
  const chooseLayout=(value:'cards'|'list')=>{setLayout(value);try{localStorage.setItem('kw-collection-layout',value);}catch{}};
- const counts=Object.fromEntries(Object.keys(collectionStates).map(key=>[key,items.filter(s=>collectionState(s.collectionStatus)===key).length]));
- const visible=useMemo(()=>collectionResults(items,query,state,sort,aliases),[items,state,query,sort,aliases]);
+ const counts=useMemo(()=>{const result=Object.fromEntries(Object.keys(collectionStates).map(key=>[key,0]));for(const item of items)result[collectionState(item.collectionStatus)]++;return result;},[items]);
+ // Category changes only filter the already matched/sorted list. Keep title
+ // normalization, alias lookup and sorting independent of tab/layout changes.
+ const matched=useMemo(()=>collectionResults(items,query,'',sort,aliases),[items,query,sort,aliases]);
+ const visible=useMemo(()=>state?matched.filter(s=>collectionState(s.collectionStatus)===state):matched,[matched,state]);
  return <section className="collection-library" aria-label="追番管理">
   <div className="library-stats"><div><b>{items.length}</b><span>收藏动画</span></div><div><b>{counts.watching}</b><span>正在追番</span></div><div><b>{counts.completed}</b><span>标记看过</span></div><div><b>{historyCount}</b><span>最近有观看记录</span></div></div>
   <div className="collection-tabs" aria-label="按追番状态筛选"><button aria-pressed={!state} onClick={()=>setState('')}>全部 {items.length}</button>{Object.entries(collectionStates).map(([key,label])=><button key={key} aria-pressed={state===key} onClick={()=>setState(key as CollectionState)}>{label} {counts[key]}</button>)}</div>

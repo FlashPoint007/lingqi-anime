@@ -9,7 +9,8 @@ function load(file,deps={},globals={},modules=new Map()){
 const core=load('lib/rule-repository.ts'),official=core.OFFICIAL_RULE_ROOT;
 const root=name=>'https://raw.githubusercontent.com/tester/rules/main/'+name+'/';
 const snapshot=JSON.parse(fs.readFileSync('lib/rules-snapshot.json','utf8'));
-const demo=(name='Demo')=>({...snapshot.entries[0].rule,name});
+const fixture=JSON.parse(fs.readFileSync('scripts/fixtures/rule-repository/LingqiRepositoryDemo.json','utf8'));
+const demo=(name='Demo')=>({...fixture,name});
 const testCases=[],test=(name,run)=>testCases.push([name,run]);
 test('repository normalization accepts canonical directories and index variants',()=>{
  for(const value of ['',official,official+'index.json',official+'INDEX.JSON/',official+'%69ndex.json'])assert.equal(core.normalizeRuleRepository(value),official);
@@ -32,14 +33,14 @@ test('local installs cannot overwrite another rule or forge the global subscript
  const subs=load('lib/subscriptions.ts');assert.ok(subs.mergeSubscribed(rules,snapshot.entries,snapshot.entries.map(e=>e.file)).some(r=>r.repositorySource===repository),'official sync preserves local repository installs');
 });
 test('server enforces the current index, name matching, bounded reads and no redirects',async()=>{
- let calls=[],payloads=new Map();const server=load('lib/rule-repository-server.ts',{}, {fetch:async(url,init)=>{calls.push({url,init});assert.equal(init.redirect,'error');const value=payloads.get(url);if(value instanceof Response)return value;return new Response(JSON.stringify(value),{headers:{'Content-Type':'application/json'}});}});
+ let calls=[],payloads=new Map();const server=load('lib/rule-repository-server.ts',{}, {fetch:async(url,init)=>{calls.push({url,init});assert.equal(init.redirect,'manual','Workers does not implement redirect:error');const value=payloads.get(url);if(value instanceof Response)return value;return new Response(JSON.stringify(value),{headers:{'Content-Type':'application/json'}});}});
  const response=(repository,file)=>server.repositoryResponse(new URLSearchParams({repository,...(file?{name:file}:{})}),new AbortController().signal);
  const repository=root('server');payloads.set(repository+'index.json',[{name:'Demo',version:'1'}]);payloads.set(repository+'Demo.json',demo());
  let r=await response(repository);assert.equal(r.status,200);assert.equal((await r.json()).items[0].file,'Demo.json');assert.equal(calls.length,1);
  r=await response(repository,'../secret.json');assert.equal(r.status,404);assert.equal(calls.length,1,'non-indexed paths are never fetched');
  r=await response(repository,'Demo.json');assert.equal(r.status,200);assert.equal((await r.json()).rule.name,'Demo');assert.equal(calls.length,2);await response(repository,'Demo.json');assert.equal(calls.length,2,'validated results use a bounded cache');
  r=await response('https://internal.example/');assert.equal(r.status,400);assert.equal(calls.length,2,'invalid hosts never reach fetch');
- payloads.set(root('redirect')+'index.json',new Response('redirect',{status:302,headers:{Location:'https://internal.example/'}}));r=await response(root('redirect'));assert.equal(r.status,502);
+ const beforeRedirect=calls.length;payloads.set(root('redirect')+'index.json',new Response('redirect',{status:302,headers:{Location:'https://internal.example/'}}));r=await response(root('redirect'));assert.equal(r.status,502);assert.equal(calls.length,beforeRedirect+1,'Location is never fetched');
  payloads.set(root('large')+'index.json',new Response('x'.repeat(1048577)));r=await response(root('large'));assert.equal(r.status,502);assert.match((await r.json()).error,/1 MB/);
  payloads.set(root('mismatch')+'index.json',[{name:'Demo'}]);payloads.set(root('mismatch')+'Demo.json',demo('Wrong'));r=await response(root('mismatch'),'Demo.json');assert.equal(r.status,502);assert.match((await r.json()).error,/不一致/);
  payloads.set(root('broken')+'index.json',[{name:'Demo'}]);payloads.set(root('broken')+'Demo.json',{...demo(),deprecated:true});assert.equal((await response(root('broken'),'Demo.json')).status,502);

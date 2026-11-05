@@ -1,0 +1,11 @@
+{
+  "name": "LingqiRepositoryDemo",
+  "version": "1.0",
+  "baseURL": "https://example.com",
+  "searchURL": "https://example.com/search?q=@keyword",
+  "searchList": "//li",
+  "searchName": ".//a/text()",
+  "searchResult": ".//a/@href",
+  "chapterRoads": "//ul",
+  "chapterResult": ".//a"
+}

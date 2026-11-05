@@ -5,7 +5,9 @@ import {validateRule,type Rule} from './web-core';
 type Cached={at:number;value:RepositoryItem[]|Rule};
 const cache=new Map<string,Cached>();
 async function read(url:string,signal:AbortSignal){
- const response=await fetch(url,{signal,redirect:'error',headers:{Accept:'application/json','User-Agent':'LingqiWeb'}});
+ // Workers supports manual/follow only. Read no redirect body and never
+ // forward to Location; all 3xx responses fail the non-2xx check below.
+ const response=await fetch(url,{signal,redirect:'manual',headers:{Accept:'application/json','User-Agent':'LingqiWeb'}});
  if(!response.ok||!response.body){void response.body?.cancel().catch(()=>{});throw Error('规则仓库响应 '+response.status);}
  const reader=response.body.getReader(),decoder=new TextDecoder();let text='',bytes=0;
  try{while(true){signal.throwIfAborted();const part=await reader.read();if(part.done)break;bytes+=part.value.length;if(bytes>1048576)throw Error('规则文件超过 1 MB');text+=decoder.decode(part.value,{stream:true});}text+=decoder.decode();return JSON.parse(text);}

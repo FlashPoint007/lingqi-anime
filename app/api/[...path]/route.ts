@@ -7,6 +7,7 @@ import {loadSubjectPeople} from '../../../lib/subject-people';
 import {danmakuResponse} from '../../../lib/danmaku-server';
 import {siteDanmakuResponse} from '../../../lib/site-danmaku-server';
 import {siteRules} from '../../../lib/site-rules';
+import {repositoryResponse} from '../../../lib/rule-repository-server';
 import {subjectCover} from '../../../lib/subject-cover';
 import {emailAuthResponse} from '../../../lib/email-auth';
 import {cachedJson} from '../../../lib/server-cache';
@@ -71,6 +72,7 @@ export async function GET(req:Request) {
    },{background:true,ttl:kind==='subject'?21600000:600000,stale:86400000,refresh:u.searchParams.get('refresh')==='1'});
   }
   if(kind==='rules') {
+   if(u.searchParams.has('repository'))return await repositoryResponse(u.searchParams,req.signal);
    const data=await siteRules(u.searchParams.get('refresh')==='1'),batch=u.searchParams.get('batch'),name=u.searchParams.get('name');
    if(batch||name){const names=batch?batch.split(','):[name!];if(names.length>10)return json({error:'规则批次无效'},400);const entries=names.map(file=>{const entry=data.entries.find(e=>e.file===file);return entry?{...entry,fresh:!data.stale}:{file,error:'该规则不在全站有效目录中'};});return json(batch?{entries,checkedAt:data.checkedAt}:entries[0]);}
    return json(data);

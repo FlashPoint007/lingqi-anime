@@ -3,6 +3,7 @@ const ROOT='https://raw.githubusercontent.com/Predidit/KazumiRules/main/';
 // Official Kazumi 2.4.2 mirrors. Never combine partial feeds into a deletion list.
 const RULE_ROOTS=[ROOT,'https://gh-proxy.org/'+ROOT,'https://ghfast.top/'+ROOT,'https://raw.gitcode.com/gh_mirrors/ka/KazumiRules/raw/main/'];
 const cache=new Map<string,{at:number;value:any}>();
+function discard(response:Response){void response.body?.cancel().catch(()=>{});}
 async function read(url:string){const old=cache.get(url);if(old&&Date.now()-old.at<3600000)return old.value;const r=await fetch(url,{signal:AbortSignal.timeout(12000),headers:{Accept:'application/json','User-Agent':'LingqiWeb'}});if(!r.ok)throw new Error('规则仓库响应 '+r.status);const value=await r.json();cache.set(url,{at:Date.now(),value});return value;}
 type ArchiveEntry={file:string;rule:any};
 let archiveCache:{at:number;entries:ArchiveEntry[]}|undefined;
@@ -14,8 +15,10 @@ function indexedNames(index:any):string[]{
 async function indexedRules(root:string,signal:AbortSignal,reserve:()=>void):Promise<ArchiveEntry[]>{
  let total=0;
  const json=async(file:string)=>{
-  signal.throwIfAborted();reserve();const response=await fetch(root+encodeURIComponent(file),{signal,headers:{Accept:'application/json','User-Agent':'LingqiWeb'},redirect:'error'});
-  if(!response.ok||!response.body)throw Error('规则镜像响应 '+response.status);
+  // Workers does not implement redirect:error. Reject 3xx without following
+  // Location, and release unread error bodies before trying the next mirror.
+  signal.throwIfAborted();reserve();const response=await fetch(root+encodeURIComponent(file),{signal,headers:{Accept:'application/json','User-Agent':'LingqiWeb'},redirect:'manual'});
+  if(!response.ok||!response.body){discard(response);throw Error('规则镜像响应 '+response.status);}
   const reader=response.body.getReader(),decoder=new TextDecoder();let text='',size=0;
   try{while(true){const {done,value}=await reader.read();if(done)break;size+=value.length;total+=value.length;if(size>1048576||total>4*1048576)throw Error('规则仓库超过大小限制');text+=decoder.decode(value,{stream:true});}text+=decoder.decode();return JSON.parse(text);}finally{await reader.cancel().catch(()=>{});}
  };
@@ -24,7 +27,9 @@ async function indexedRules(root:string,signal:AbortSignal,reserve:()=>void):Pro
  return entries.filter(e=>!e.rule.deprecated&&e.rule.baseURL.startsWith('https://')).sort((a,b)=>a.file.localeCompare(b.file));
 }
 async function fallbackRules():Promise<ArchiveEntry[]>{
- const requests=new Set<AbortController>(),deadline=AbortSignal.timeout(18000);let next=0,remaining=36,finished=false;
+ // Two complete 18-rule feeds need 2 * (1 index + 18 files) = 38 reads.
+ // Leave four reads for failed candidates while retaining a strict total cap.
+ const requests=new Set<AbortController>(),deadline=AbortSignal.timeout(18000);let next=0,remaining=42,finished=false;
  const reserve=()=>{if(finished||remaining--<=0)throw Error('规则镜像请求已达本次上限');};
  // Two complete feeds at most, three files per feed. Failed or slow mirrors
  // advance to the next upstream endpoint within one shared deadline/budget.
@@ -62,7 +67,7 @@ export async function archiveRules(refresh=false):Promise<ArchiveEntry[]>{
  pendingArchive=(async()=>{
   let entries:ArchiveEntry[];
   try{
-  const response=await fetch('https://codeload.github.com/Predidit/KazumiRules/tar.gz/refs/heads/main',{signal:AbortSignal.timeout(12000)});if(!response.ok||!response.body)throw new Error('规则归档下载失败');
+  const response=await fetch('https://codeload.github.com/Predidit/KazumiRules/tar.gz/refs/heads/main',{signal:AbortSignal.timeout(12000)});if(!response.ok||!response.body){discard(response);throw new Error('规则归档下载失败');}
   const reader=response.body.pipeThrough(new DecompressionStream('gzip')).getReader();const chunks:Uint8Array[]=[];let size=0;
   while(true){const {value,done}=await reader.read();if(done)break;size+=value.length;if(size>4*1024*1024){await reader.cancel();throw new Error('规则仓库超过 4 MB');}chunks.push(value);}
   const bytes=new Uint8Array(size);let offset=0;for(const c of chunks){bytes.set(c,offset);offset+=c.length;}entries=parseRuleArchive(bytes);

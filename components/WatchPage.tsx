@@ -15,6 +15,7 @@ import Discussions from './Discussions';
 import type {EpisodeProgresses} from '../lib/episode-progress';
 import AnimeCover from './AnimeCover';
 import {createPlaybackTimer} from '../lib/player-extras';
+import {revokeDanmakuEditPause} from '../lib/danmaku-edit-pause';
 import SourceAvailabilityList from './SourceAvailability';
 import {availabilityLabels,type SourceAvailability} from '../lib/source-availability';
 import type {Subject} from '../lib/catalog';
@@ -29,7 +30,7 @@ export default function WatchPage(p:Props){
  useEffect(()=>{try{setAutoNext(localStorage.getItem('kw-auto-next')==='true');}catch{}},[]);
  const media=useRef<HTMLVideoElement>(null),sleep=useRef<ReturnType<typeof createPlaybackTimer>|null>(null);
  const [sleepChoice,setSleepChoice]=useState('off'),[remaining,setRemaining]=useState(0),[sleepExpired,setSleepExpired]=useState(false),[sleepMessage,setSleepMessage]=useState('');
- if(!sleep.current)sleep.current=createPlaybackTimer(()=>{media.current?.pause();setSleepChoice('off');setRemaining(0);setSleepExpired(true);setSleepMessage('定时时间已到，视频已暂停，自动连播已停止。');});
+ if(!sleep.current)sleep.current=createPlaybackTimer(()=>{revokeDanmakuEditPause(media.current);media.current?.pause();setSleepChoice('off');setRemaining(0);setSleepExpired(true);setSleepMessage('定时时间已到，视频已暂停，自动连播已停止。');});
  useEffect(()=>{
   if(sleepChoice==='off'||sleepChoice==='episode')return;
   const tick=()=>{sleep.current!.mayPlay();setRemaining(sleep.current!.remaining);};tick();const interval=setInterval(tick,1000);document.addEventListener('visibilitychange',tick);

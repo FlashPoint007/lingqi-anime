@@ -48,10 +48,32 @@ export function sourcePageError(html:string):string {
  if(/(?:cf-chl-|Verify you are human|<title>\s*Human Verification|captcha)/i.test(html))return '源站要求验证，当前无法检测资源';
  return '';
 }
+function browserXPath(expression:string):string {
+  // Kazumi's selector engine also accepts @attr*='text'. Browser XPath 1.0
+  // requires contains(); scan quoted literals intact so their contents never
+  // become selectors. Keep the subscribed rule unchanged for future updates.
+  let result='',index=0;
+  while(index<expression.length){
+    const quote=expression[index];
+    if(quote==='\''||quote==='"'){
+      const end=expression.indexOf(quote,index+1);
+      if(end<0)return result+expression.slice(index);
+      result+=expression.slice(index,end+1);index=end+1;continue;
+    }
+    const match=expression[index]==='@'?expression.slice(index).match(/^@([A-Za-z_][\w.:-]*)\s*\*=\s*(['"])/):null;
+    if(match){
+      const start=index+match[0].length-1,end=expression.indexOf(match[2],start+1);
+      if(end>=0){const attribute='@'+match[1];result+='('+attribute+' and contains('+attribute+','+expression.slice(start,end+1)+'))';index=end+1;continue;}
+    }
+    result+=expression[index++];
+  }
+  return result;
+}
 export function xpath(context:Node,expression:string):Node[] {
   const doc=context.nodeType===9?context as Document:context.ownerDocument!;
   // Kazumi accepts // as the chapter document, and /self::* relative to a road.
-  const expr=expression==='//' ? '.' : context.nodeType!==9&&expression.startsWith('/')?'.'+expression:expression;
+  const native=browserXPath(expression);
+  const expr=native==='//' ? '.' : context.nodeType!==9&&native.startsWith('/')?'.'+native:native;
   const result=doc.evaluate(expr,context,null,7,null); return Array.from({length:result.snapshotLength},(_,i)=>result.snapshotItem(i)!);
 }
 export function link(node:Node,base:string):string|null {

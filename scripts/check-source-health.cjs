@@ -1,0 +1,47 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),ts=require('typescript');
+const compile=s=>ts.transpileModule(s,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText;
+const navigator={onLine:true},context={exports:{},navigator};vm.runInNewContext(compile(fs.readFileSync('lib/source-health.ts','utf8')),context);const api=context.exports;
+const rule={name:'A',baseURL:'https://a.test',searchURL:'https://a.test/?q=@keyword',version:'1'},other={...rule,name:'B',baseURL:'https://b.test'};
+assert.equal(api.sourceHealthKey(rule),api.sourceHealthKey({...rule,enabled:false,subscription:true}));
+for(const change of [{version:'2'},{chapterRoads:'//new'},{baseURL:'https://new.test'}])assert.notEqual(api.sourceHealthKey(rule),api.sourceHealthKey({...rule,...change}),'new rule configurations start fresh');
+let wall=10000000000,clock=1000;const memory=new Map(),writes=[];
+const tracker=api.createSourceHealthTracker(key=>memory.get(key)||null,(key,value)=>{memory.set(key,value);writes.push([key,value]);},()=>{},()=>wall,()=>clock);
+const scope=(owner='guest',privateMode=false,ready=true)=>tracker.context({owner,ready,private:privateMode});scope();
+const begin=(r=rule,generation=1,url='episode')=>tracker.begin(r,generation,url);
+const report=(attempt,ok=true,url='video')=>{tracker.resolve(attempt,true);tracker.activate(attempt,url);tracker.playback(attempt?.generation,attempt?.sourceUrl,url,ok);};
+let attempt=begin();clock+=1200;tracker.resolve(attempt,true);clock+=40000;tracker.activate(attempt,'video');clock+=1800;tracker.playback(1,'episode','video',true);
+let stats=api.sourcePerformance(tracker.load(),rule,wall);assert.equal(stats.attempts,1);assert.equal(stats.startupMs,3000,'waiting for other source candidates must not inflate this source’s startup');
+tracker.playback(1,'episode','video',true);assert.equal(writes.length,1,'duplicate frame callbacks count once');
+tracker.playback(1,'episode','wrong',false);assert.equal(writes.length,1,'stale URL cannot poison the active source');
+tracker.playback(1,'episode','video',false);stats=api.sourcePerformance(tracker.load(),rule,wall);assert.equal(stats.attempts,1);assert.equal(stats.successes,0,'a late failure updates the same attempt');tracker.playback(1,'episode','video',false);assert.equal(writes.length,2,'duplicate errors count once');
+attempt=begin();tracker.cancel();tracker.resolve(attempt,false);report(attempt);assert.equal(writes.length,2,'cancellation invalidates even late resolver callbacks');
+attempt=begin();scope('other');tracker.resolve(attempt,false);scope();report(attempt);assert.equal(writes.length,2,'an old account attempt stays invalid after switching back');
+attempt=begin();scope('guest',true);tracker.resolve(attempt,false);assert.equal(begin(),undefined);scope();report(attempt);assert.equal(writes.length,2,'private-mode toggles invalidate pending attempts');
+scope('guest',false,false);assert.equal(begin(),undefined);scope();
+attempt=begin(other,2);clock+=500;tracker.resolve(attempt,true);tracker.activate(attempt,'video');tracker.wait(2,'episode','video');clock+=50000;tracker.playback(2,'episode','video',true);stats=api.sourcePerformance(tracker.load(),other,wall);assert.equal(stats.successes,1);assert.equal(stats.startupMs,undefined,'user autoplay/pause waits count success but not latency');
+navigator.onLine=false;attempt=begin();tracker.resolve(attempt,false);assert.equal(writes.length,3,'offline device is not a source failure');navigator.onLine=true;
+const raw=JSON.stringify([...memory.values()]);assert.ok(!raw.includes('https:')&&!raw.includes('episode')&&!raw.includes('video'),'stored statistics contain no visited titles or URLs');
+const unknown={...rule,name:'Unknown'},slow={...rule,name:'Slow'},fast={...rule,name:'Fast'},failed={...rule,name:'Failed'};
+const samples=(count,ms,ok=true)=>Array.from({length:count},(_,i)=>({id:String(i),at:wall-i,ok,ms}));
+const health={[api.sourceHealthKey(fast)]:samples(10,1000),[api.sourceHealthKey(slow)]:samples(10,30000),[api.sourceHealthKey(failed)]:samples(10,5000,false)};
+const rules=[failed,slow,unknown,fast],names=rows=>Array.from(rows,r=>r.rule.name);
+assert.deepEqual(names(api.rankSources(rules,health,{},'',wall)),['Fast','Slow','Unknown','Failed']);
+assert.deepEqual(names(api.rankSources(rules,health,{},'Failed',wall)),['Failed','Fast','Slow','Unknown'],'explicit source selection wins over automatic scores');
+assert.deepEqual(Array.from(api.rankSources(rules,health,{},'',wall),r=>r.index),[3,1,2,0],'display sorting keeps the original selection indices');
+assert.equal(api.sourcePerformance(health,failed,wall+31*86400000).attempts,0,'expired failures never permanently bury a source');
+const corrupt=api.cleanSourceHealth({...health,bad:[],[api.sourceHealthKey(rule)]:[...samples(50,1000),{id:'future',at:wall+1,ok:false},{id:'nan',at:wall,ok:true,ms:NaN}]},wall);
+assert.equal(corrupt[api.sourceHealthKey(rule)].length,30);assert.ok(!corrupt[api.sourceHealthKey(rule)].some(x=>x.id==='future'));assert.equal(api.sourcePerformanceLabel(api.sourcePerformance(health,fast,wall)),'本机近期 10/10 次成功 · 起播 1.0 秒');
+console.log('PASS: source health identity, privacy/account/cancel guards, late failures, startup timing, bounded samples, offline and stable ranking');
+// Run the real page entry point from a closed A detail into B's backlog. A's
+// directory/metadata must never become B's media or canonical episode number.
+(async()=>{
+ const feature=require('./check-feature-deps.cjs'),ast=ts.createSourceFile('page.tsx',fs.readFileSync('app/page.tsx','utf8'),ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);let playEpisode;
+ (function visit(node){if(ts.isFunctionDeclaration(node)&&node.name?.text==='playEpisode')playEpisode=node.getText(ast);ts.forEachChild(node,visit);})(ast);
+ const target={id:8,name:'New season',name_cn:'新一季',eps:10},states={},requests=[],oldRoads=[{name:'Old anime',episodes:[{name:'第1集',number:29,url:'https://old.test/wrong'}]}],newRoads=[{name:'New season',episodes:[1,2].map(n=>({name:'第'+n+'集',url:'https://a.test/'+n}))}];
+ let scans=0;
+ const env={...feature.sourceHealthHarness(),...feature.dependency('../lib/playback-client'),...feature.dependency('../lib/source-identity'),Date,AbortController,rules:[rule],availabilitySubject:null,selected:null,episodes:[{sort:99}],player:null,playerProgress:{current:0},lastProgress:{current:0},playbackId:{current:1},subjectAliases:{},recovery:{current:{begin(){},remaining:()=>90000,failed:()=>false,failedMedia:()=>false,record(){}}},availability:{checks:{A:{state:'found',checkedAt:Date.now(),source:'https://old.test/show',roads:oldRoads,results:[]}},report(){}},saveProgress(){},episodeResume:(s,n,p)=>p,beginPlayback:()=>({id:1,controller:new AbortController()}),stopSource(){},ruleCompatibility:()=>'',searchNames:s=>[s.name_cn,s.name],anySignal:signals=>signals[0],timeoutSignal:()=>new AbortController().signal,remember(){},checkSource:async(r,names,signal,request,refresh,subject)=>{scans++;assert.equal(subject.id,8);assert.ok(names.includes('新一季'));return {state:'found',source:'https://a.test/new',roads:newRoads,results:[]};},api:async(url,options)=>{if(url.startsWith('/api/episodes')){requests.push(url);return {data:[{sort:29},{sort:30}]};}const body=JSON.parse(options.body);requests.push(body.url);return {mode:'video',verified:true,url:'https://cdn.test/new.mp4'};}};
+ for(const name of ['Selected','Episodes','SourceTerm','SourceResults','Roads','ChapterSource','ActiveRoad','SourceError','PlayError','PlayMode','Player','ResolveStatus','RuleIdx'])env['set'+name]=value=>states[name]=value;
+ vm.createContext(env);vm.runInContext(compile(playEpisode),env);await env.playEpisode(target,29);
+ assert.equal(states.Selected,target);assert.equal(states.SourceTerm,'新一季');assert.deepEqual(Array.from(states.Episodes),[]);assert.equal(scans,1,'a closed previous detail cannot donate its cached directory');assert.deepEqual(requests,['/api/episodes?id=8','https://a.test/1']);assert.equal(states.Player.subject.id,8);assert.equal(states.Player.number,29);assert.equal(states.Player.sourceUrl,'https://a.test/1');assert.equal(states.Player.attemptId,1);
+ console.log('PASS: backlog → fresh subject/search context, canonical sequel metadata, no stale anime catalogue, real playback attempt identity');
+})().catch(error=>{console.error(error);process.exitCode=1;});

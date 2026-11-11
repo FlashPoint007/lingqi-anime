@@ -4,6 +4,7 @@ import {offlineIdentity,responseValidator,validResume} from './offline-resume';
 import type {Subject} from './catalog';
 import type {Rule} from './web-core';
 import {captureOfflineDanmaku,type OfflineDanmaku} from './offline-danmaku';
+import {readStorageCapacity} from './storage-capacity';
 const CHUNK_SIZE=2*1024*1024,storeModule='/offline-transfer-v4.mjs';
 let store:Promise<any>|undefined;
 const offlineStore=()=>store??=import(/* @vite-ignore */ storeModule);
@@ -24,6 +25,13 @@ const notify=()=>{window.dispatchEvent(new Event('lingqi-downloads'));channel?.p
 export const activeDownload=()=>running?.id;
 export function pauseOwnerDownloads(owner:string){if(running?.owner===owner)running.controller.abort(new DOMException('个人空间已切换，下载已暂停','AbortError'));}
 export async function downloads(owner:string){return (await listOffline() as OfflineDownload[]).filter(item=>item.owner===owner);}
+// Sum committed asset metadata, never download progress (which includes buffered
+// bytes) or media chunks. A small worker pool keeps large libraries inexpensive.
+export async function offlineStoredBytes(owner:string){
+ const items=await downloads(owner);let cursor=0,bytes=0;
+ await Promise.all(Array.from({length:Math.min(4,items.length)},async()=>{while(cursor<items.length){const item=items[cursor++];for(const asset of await assetsFor(item.id)){if(typeof asset.size==='number'&&Number.isFinite(asset.size)&&asset.size>0)bytes+=asset.size;}}}));
+ return bytes;
+}
 async function owned(id:string,owner:string){const item=await readOffline('downloads',id) as OfflineDownload|undefined;if(!item||item.owner!==owner)throw Error('当前个人空间中没有这个下载');return item;}
 export async function saveOfflineDanmaku(id:string,owner:string,signal:AbortSignal=new AbortController().signal){
  const item=await owned(id,owner);if(item.status!=='complete')throw Error('请等待视频下载完成后补存弹幕');
@@ -86,7 +94,7 @@ async function performDownload(input:Input,old?:OfflineDownload,onStatus?:(messa
   item=old?{...old,status:'downloading',error:undefined,speed:0}:{...record(input,'downloading'),id};await writeOffline('downloads',item);notify();
   if(input.ruleName&&!input.rule&&!input.url)throw Error('当前视频源已停用，请先启用原视频源，或删除任务并换源下载');
   if(input.rule){const resolved=await requestJson('/api/source',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({operation:'resolve',rule:input.rule,url:item.sourceUrl,source:item.source}),signal:anySignal([controller.signal,timeoutSignal(45000)])});if(resolved.mode!=='video'||typeof resolved.url!=='string')throw Error(resolved.message||'当前剧集未解析到视频');input={...input,url:resolved.url,mediaType:resolved.mediaType};}
-  const stored=await assetsFor(id);totalBytes=stored.reduce((n,a)=>n+a.size,0);const estimate=await navigator.storage?.estimate?.();if(estimate?.quota){budget=Math.min(LIMIT,totalBytes+Math.max(0,estimate.quota-(estimate.usage||0)-16*1024*1024));if(budget-totalBytes<2*CHUNK_SIZE)throw Error('本机存储空间不足，请清理后继续');}void navigator.storage?.persist?.().catch(()=>false);
+  const stored=await assetsFor(id);totalBytes=stored.reduce((n,a)=>n+a.size,0);const estimate=await readStorageCapacity(navigator.storage);if(estimate.state==='ready'){budget=Math.min(LIMIT,totalBytes+Math.max(0,estimate.available-16*1024*1024));if(budget-totalBytes<2*CHUNK_SIZE)throw Error('本机存储空间不足，请清理后继续');}void navigator.storage?.persist?.().catch(()=>false);
   const identity=offlineIdentity(input.url,location.origin);let partial=stored.find(a=>a.id==='0'&&!a.complete),response:Response;
   if(old?.identity===identity&&old.type==='video'&&partial?.validator&&partial.total&&partial.size%CHUNK_SIZE===0&&partial.size>0&&partial.size<partial.total){response=await request(input.url,{Range:'bytes='+partial.size+'-','If-Range':partial.validator});if(!validResume(response,partial.size,partial.validator,partial.total)){await response.body?.cancel();await removeAsset(id,'0');totalBytes-=partial.size;partial=undefined;response=await request(input.url);}}
   else{response=await request(input.url);if(partial){await removeAsset(id,'0');totalBytes-=partial.size;partial=undefined;}}

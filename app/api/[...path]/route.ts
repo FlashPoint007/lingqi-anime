@@ -64,7 +64,7 @@ export async function GET(req:Request) {
   if(kind==='subject'||kind==='episodes'||kind==='related') {
    const id=u.searchParams.get('id')||''; if(!/^\d{1,10}$/.test(id)) return json({error:'无效条目 ID'},400);
    const offset=Math.floor(Math.min(10000,Math.max(0,Number(u.searchParams.get('offset'))||0)));
-   return await cachedJson(kind,id+':'+offset,async()=>{
+   return await cachedJson(kind,(kind==='episodes'?'airdate-v2:':'')+id+':'+offset,async()=>{
     if(kind==='related')return {data:normalizeRelatedSubjects(await upstream('https://api.bgm.tv/v0/subjects/'+id+'/subjects'),Number(id))};
     const data=await upstream(kind==='subject'?'https://api.bgm.tv/v0/subjects/'+id:'https://api.bgm.tv/v0/episodes?subject_id='+id+'&type=0&limit=100&offset='+offset);
     if(kind==='episodes')return normalizeEpisodes(data);

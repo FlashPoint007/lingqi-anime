@@ -7,7 +7,7 @@ const plain=v=>JSON.parse(JSON.stringify(v)),jsx=(type,props)=>({type,props});
 function nodes(tree,type){const found=[];(function walk(n){if(!n||typeof n!=='object')return;if(n.type===type)found.push(n);[n.props?.children].flat(Infinity).forEach(walk);})(tree);return found;}
 function harness(file,props,storage={getItem:()=>null,setItem(){}}){
  const slots=[],effects=[];let cursor=0;const react={useState(initial){const i=cursor++;if(!(i in slots))slots[i]={value:typeof initial==='function'?initial():initial};return [slots[i].value,next=>{slots[i].value=typeof next==='function'?next(slots[i].value):next;}];},useMemo(fn){cursor++;return fn();},useEffect(fn,deps){const i=cursor++;if(!slots[i]||deps.some((d,j)=>d!==slots[i].deps[j])){const old=slots[i];slots[i]={deps};effects.push(()=>{old?.cleanup?.();slots[i].cleanup=fn();});}}};
- const icon=()=>null,component=load(file,{react,'react/jsx-runtime':{jsx,jsxs:jsx},'lucide-react':new Proxy({},{get:()=>icon}),'./AnimeCover':{default:icon},'./EpisodeHistory':{default:icon}},{localStorage:storage}).default;
+ const icon=()=>null,component=load(file,{react,'react/jsx-runtime':{jsx,jsxs:jsx},'lucide-react':new Proxy({},{get:()=>icon}),'./CollectionBacklog':{default:icon},'./AnimeCover':{default:icon},'./EpisodeHistory':{default:icon}},{localStorage:storage}).default;
  return {render(next={}){props={...props,...next};cursor=0;const tree=component(props);effects.splice(0).forEach(fn=>fn());return tree;},stop(){slots.forEach(s=>s?.cleanup?.());}};
 }
 (async()=>{

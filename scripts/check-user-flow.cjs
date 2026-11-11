@@ -10,7 +10,7 @@ const home=ts.createSourceFile('page.tsx',fs.readFileSync('app/page.tsx','utf8')
 })(home);
 const playback={exports:{},URL};vm.runInNewContext(compile(fs.readFileSync('lib/playback-client.ts','utf8')),playback);const core=playback.exports;
 const tick=async()=>{for(let i=0;i<5;i++)await new Promise(resolve=>setImmediate(resolve));},plain=v=>JSON.parse(JSON.stringify(v));
-function execute(code,values){const c={URL,Date,AbortController,AbortSignal,Error,console,...require('./check-feature-deps.cjs').dependency('../lib/source-identity'),...values};vm.createContext(c);vm.runInContext(compile(code),c);return c;}
+function execute(code,values){const c={...require('./check-feature-deps.cjs').sourceHealthHarness(),URL,Date,AbortController,AbortSignal,Error,console,...require('./check-feature-deps.cjs').dependency('../lib/source-identity'),...values};vm.createContext(c);vm.runInContext(compile(code),c);return c;}
 const current={id:2,name:'A ten-episode show',eps:10},previous={id:1,name:'An unrelated sequel'},rule={name:'A',baseURL:'https://source.test/',enabled:true};
 const localRoads=[{name:'Line',episodes:Array.from({length:10},(_,i)=>({name:'第'+(i+1)+'集',url:'https://source.test/ep/'+(i+1)}))}];
 function chapters(subject=previous,fetcher=async()=>({roads:localRoads})){

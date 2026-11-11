@@ -1,7 +1,7 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),ts=require('typescript');
 const compile=source=>ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
 const dependency=require('./check-feature-deps.cjs').dependency;
-function execute(source,values={}){const context={exports:{},URL,URLSearchParams,Date,AbortController,AbortSignal,console,require:dependency,...values};vm.createContext(context);vm.runInContext(compile(source),context);return context;}
+function execute(source,values={}){const context={...require('./check-feature-deps.cjs').sourceHealthHarness(),exports:{},URL,URLSearchParams,Date,AbortController,AbortSignal,console,require:dependency,...values};vm.createContext(context);vm.runInContext(compile(source),context);return context;}
 const ast=ts.createSourceFile('page.tsx',fs.readFileSync('app/page.tsx','utf8'),ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX),parts={};let route,initialHistory;
 (function visit(node){if(ts.isFunctionDeclaration(node)&&node.name)parts[node.name.text]=node.getText(ast);if(ts.isBinaryExpression(node)&&node.left.getText(ast)==='routeHandler.current')route=node.right.getText(ast);if(ts.isCallExpression(node)&&node.expression.getText(ast)==='useEffect'&&node.arguments[0]?.getText(ast).includes('remember(player.subject'))initialHistory=node.arguments[0].getText(ast);ts.forEachChild(node,visit);})(ast);
 const tests=[];const test=(name,run)=>tests.push([name,run]);const plain=value=>JSON.parse(JSON.stringify(value));

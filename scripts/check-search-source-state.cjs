@@ -53,7 +53,7 @@ test('tag search labels match sorting honestly as relevance',()=>{
 });
 const road=[{name:'Main',episodes:[{name:'第1集',number:1,url:'https://source.test/1'},{name:'第2集',number:2,url:'https://source.test/2'}]}];
 function projected(checks,number){
- const context={exports:{},availabilityRaw:{checks},availabilitySubject:{id:1,name:'Sample'},rules:[],subjectAliases:{},availabilityDeferred:false,player:{number},useSourceAvailability:()=>({checks}),Number,Object};
+ const context={exports:{},personal:{ready:true},privatePlayback:false,availabilityRaw:{checks},availabilitySubject:{id:1,name:'Sample'},rules:[],subjectAliases:{},availabilityDeferred:false,player:{number},useSourceAvailability:()=>({checks}),Number,Object};
  vm.createContext(context);vm.runInContext(compile(projection+'\nthis.value='+availabilityExpression),context);return context.value.checks;
 }
 test('source playback outcomes do not label untested episodes as played or failed',()=>{

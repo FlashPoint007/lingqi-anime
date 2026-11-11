@@ -49,7 +49,7 @@ export function normalizeCalendar(value:any){
 }
 export function normalizeEpisodes(value:any){
  if(!Array.isArray(value?.data))throw new Error('剧集目录格式不正确，请重试');
- const data=value.data.filter((e:any)=>e&&Number.isSafeInteger(e.id)&&e.id>0&&number(e.sort)!==undefined).map((e:any)=>({id:e.id,sort:e.sort,name:text(e.name),name_cn:text(e.name_cn)}));
+ const data=value.data.filter((e:any)=>e&&Number.isSafeInteger(e.id)&&e.id>0&&number(e.sort)!==undefined).map((e:any)=>({id:e.id,sort:e.sort,name:text(e.name),name_cn:text(e.name_cn),...(typeof e.airdate==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(e.airdate)?{airdate:e.airdate}:{}),...(Number.isInteger(e.type)?{type:e.type}:{})}));
  if(value.data.length&&!data.length)throw new Error('剧集目录没有有效条目，请重试');
  return {data,total:Math.max(number(value.total)||0,data.length)};
 }

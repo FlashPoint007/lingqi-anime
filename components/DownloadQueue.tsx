@@ -2,7 +2,7 @@
 import {useEffect,useRef,useState} from 'react';
 import {readDownloadQueue,enqueueDownloads,runDownloadQueue,pauseDownloadQueue,changeDownloadTask,handReadyDownloads,cancelStalePreparation,queueEventName,type DownloadQueue as Queue} from '../lib/download-queue';
 import {queueOfflineEpisodes} from '../lib/offline-downloads';
-import {episodeLabel,type Episode} from '../lib/playback-client';
+import {episodeLabel,knownEpisodeNumber,type Episode} from '../lib/playback-client';
 import type {Rule} from '../lib/web-core';
 import type {Subject} from '../lib/catalog';
 export function useDownloadQueue(owner:string,enabled:boolean){
@@ -12,7 +12,9 @@ export function useDownloadQueue(owner:string,enabled:boolean){
  },[owner,enabled]);return {book,error,wake:()=>wake.current()};
 }
 export function BatchDownloadPicker({owner,subject,episodes,rule,source}:{owner:string;subject:Subject;episodes:Episode[];rule?:Rule;source?:string}){
- const [selected,setSelected]=useState<string[]>([]),[message,setMessage]=useState(''),[destination,setDestination]=useState<'browser'|'offline'>('offline'),[adding,setAdding]=useState(false);const unique=[...new Map(episodes.map(episode=>[episode.url,episode])).values()],scope=JSON.stringify([owner,subject.id,rule?.name,source,unique.map(e=>[e.url,e.number,e.name])]),context=useRef({scope,adding:false});
+ // Persist explicit/canonical episode numbers for offline comments and progress.
+ // Unknown titles (including SP/OVA) stay unnumbered instead of using selection order.
+ const [selected,setSelected]=useState<string[]>([]),[message,setMessage]=useState(''),[destination,setDestination]=useState<'browser'|'offline'>('offline'),[adding,setAdding]=useState(false);const unique=[...new Map(episodes.map(episode=>[episode.url,{...episode,number:knownEpisodeNumber(episode)}])).values()],scope=JSON.stringify([owner,subject.id,rule?.name,source,unique.map(e=>[e.url,e.number,e.name])]),context=useRef({scope,adding:false});
  if(context.current.scope!==scope)context.current={scope,adding:false};
  useEffect(()=>{setSelected([]);setMessage('');setAdding(false);},[scope]);
  useEffect(()=>()=>{context.current={scope:'',adding:false};},[]);
@@ -23,7 +25,7 @@ export function BatchDownloadPicker({owner,subject,episodes,rule,source}:{owner:
   finally{if(context.current===current){current.adding=false;setAdding(false);}}
  };
  if(!rule||!unique.length)return null;
- return <details className="batch-download-picker"><summary>批量下载当前线路 <span>{unique.length} 集</span></summary><p>站内离线库可查看实际传输进度并续传；下载到本地由浏览器管理文件。</p><label>保存方式<select aria-label="批量下载保存方式" disabled={adding} value={destination} onChange={e=>setDestination(e.target.value as typeof destination)}><option value="offline">站内离线库（进度与续传）</option><option value="browser">浏览器下载到本地</option></select></label><div className="button-row"><button type="button" disabled={adding} onClick={()=>setSelected(unique.slice(0,50).map(e=>e.url))}>选择前 {Math.min(unique.length,50)} 集</button><button type="button" disabled={adding} onClick={()=>setSelected([])}>清空选择</button><button type="button" className="secondary" disabled={!selected.length||adding} onClick={()=>void enqueue()}>加入下载任务（{selected.length}）</button></div><div className="batch-episodes">{unique.map((episode,i)=><label key={episode.url}><input type="checkbox" aria-label={'选择下载 '+episodeLabel(episode.name,episode.number??i+1)} checked={selected.includes(episode.url)} disabled={adding||!selected.includes(episode.url)&&selected.length>=50} onChange={event=>setSelected(old=>event.target.checked?[...old,episode.url]:old.filter(url=>url!==episode.url))}/>{episodeLabel(episode.name,episode.number??i+1)}</label>)}</div>{message&&<p role="status">{message}</p>}</details>;
+ return <details className="batch-download-picker"><summary>批量下载当前线路 <span>{unique.length} 集</span></summary><p>站内离线库可查看实际传输进度并续传；下载到本地由浏览器管理文件。</p><label>保存方式<select aria-label="批量下载保存方式" disabled={adding} value={destination} onChange={e=>setDestination(e.target.value as typeof destination)}><option value="offline">站内离线库（进度与续传）</option><option value="browser">浏览器下载到本地</option></select></label><div className="button-row"><button type="button" disabled={adding} onClick={()=>setSelected(unique.slice(0,50).map(e=>e.url))}>选择前 {Math.min(unique.length,50)} 集</button><button type="button" disabled={adding} onClick={()=>setSelected([])}>清空选择</button><button type="button" className="secondary" disabled={!selected.length||adding} onClick={()=>void enqueue()}>加入下载任务（{selected.length}）</button></div><div className="batch-episodes">{unique.map(episode=><label key={episode.url}><input type="checkbox" aria-label={'选择下载 '+episodeLabel(episode.name,episode.number)} checked={selected.includes(episode.url)} disabled={adding||!selected.includes(episode.url)&&selected.length>=50} onChange={event=>setSelected(old=>event.target.checked?[...old,episode.url]:old.filter(url=>url!==episode.url))}/>{episodeLabel(episode.name,episode.number)}</label>)}</div>{message&&<p role="status">{message}</p>}</details>;
 }
 const labels={queued:'待准备',preparing:'正在解析',ready:'已就绪，待下载',handed:'已交给浏览器',failed:'准备失败',cancelled:'已取消准备'};
 export default function DownloadQueuePanel({owner,queue}:{owner:string;queue:ReturnType<typeof useDownloadQueue>}){

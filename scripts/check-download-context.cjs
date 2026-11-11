@@ -1,4 +1,5 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),ts=require('typescript');
+const playback={exports:{}};vm.runInNewContext(ts.transpileModule(fs.readFileSync('lib/playback-client.ts','utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText,playback);
 const jsx=(type,props)=>({type,props}),text=node=>node==null?'':typeof node!=='object'?String(node):Array.isArray(node)?node.map(text).join(''):text(node.props?.children);
 function find(node,predicate){if(!node||typeof node!=='object')return;if(!Array.isArray(node)&&predicate(node))return node;for(const child of (Array.isArray(node)?node:[node.props?.children]).flat(Infinity)){const result=find(child,predicate);if(result)return result;}}
 const button=(root,label)=>{const found=find(root.tree,node=>node.type==='button'&&text(node)===label);assert.ok(found,'Missing button '+label);return found;};
@@ -9,7 +10,7 @@ function mount(file,exportName,props,deps={}){
  const slots=[],effects=[],listeners=new Map();let cursor=0,dirty=false,alive=true;const root={tree:null,props};
  const schedule=()=>{if(dirty||!alive)return;dirty=true;queueMicrotask(()=>{dirty=false;if(alive)root.render();});};
  const react={useState(initial){const i=cursor++;if(!slots[i])slots[i]={value:typeof initial==='function'?initial():initial};return [slots[i].value,value=>{slots[i].value=typeof value==='function'?value(slots[i].value):value;schedule();}];},useRef(initial){const i=cursor++;return slots[i]||(slots[i]={current:initial});},useEffect(fn,deps){const i=cursor++,old=slots[i];if(!old||deps.some((v,n)=>v!==old.deps[n])){slots[i]={deps,cleanup:old?.cleanup};effects.push(()=>{slots[i].cleanup?.();slots[i].cleanup=fn();});}}};
- const imports={'react':react,'react/jsx-runtime':{jsx,jsxs:jsx},'lucide-react':new Proxy({},{get:()=>()=>null}),'../lib/offline-downloads':{activeDownload:()=>undefined},'../lib/download-queue':{},'../lib/browser-download-client':{},'../lib/playback-client':{episodeLabel:(name,number)=>'EP '+number},...deps};
+ const imports={'react':react,'react/jsx-runtime':{jsx,jsxs:jsx},'lucide-react':new Proxy({},{get:()=>()=>null}),'../lib/offline-downloads':{activeDownload:()=>undefined},'../lib/download-queue':{},'../lib/browser-download-client':{},'../lib/playback-client':playback.exports,...deps};
  const context={exports:{},AbortController,console,setTimeout,clearTimeout,window:{addEventListener:(name,fn)=>listeners.set(name,fn),removeEventListener:name=>listeners.delete(name)},require:name=>{assert.ok(name in imports,'Unexpected dependency '+name);return imports[name];}};
  vm.runInNewContext(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX}}).outputText,context);
  root.render=()=>{cursor=0;root.tree=context.exports[exportName](root.props);effects.splice(0).forEach(fn=>fn());};root.update=next=>{root.props={...root.props,...next};root.render();};root.stop=()=>{alive=false;slots.forEach(slot=>slot?.cleanup?.());};root.render();return root;
@@ -37,6 +38,21 @@ test('native single downloads preserve source context and reject completion afte
 test('batch queue completion cannot clear selections made for a newly chosen road',async()=>{
  const work=deferred();const props={owner:'a',subject,episodes:[{name:'First',number:1,url:'https://source.test/1'}],rule:{name:'Test'},source:'https://source.test/show'};
  const root=mount('components/DownloadQueue.tsx','BatchDownloadPicker',props,{'../lib/offline-downloads':{queueOfflineEpisodes:()=>work.promise}});button(root,'选择前 1 集').props.onClick();await tick();const pending=button(root,'加入下载任务（1）').props.onClick();await tick();root.update({episodes:[{name:'Second',number:2,url:'https://backup.test/2'}]});await tick();button(root,'选择前 1 集').props.onClick();await tick();work.resolve(1);await pending;await tick();assert.ok(!button(root,'加入下载任务（1）').props.disabled);assert.doesNotMatch(status(root),/已加入/);root.stop();
+});
+test('batch download labels and both queues retain canonical episode identity without numbering specials',async()=>{
+ const episodes=[{name:'第12集',url:'https://source.test/12'},{name:'第03集',url:'https://source.test/3'},{name:'第01集',number:29,url:'https://source.test/29'},{name:'第12.5集',url:'https://source.test/12.5'},{name:'SP01',url:'https://source.test/sp'},{name:'OVA',url:'https://source.test/ova'},{name:'番外篇',url:'https://source.test/extra'}];
+ for(const destination of ['offline','browser']){
+  let captured;const root=mount('components/DownloadQueue.tsx','BatchDownloadPicker',{owner:'a',subject,episodes,rule:{name:'Test'}},{'../lib/offline-downloads':{queueOfflineEpisodes:async input=>{captured=input;return input.length;}},'../lib/download-queue':{enqueueDownloads:(_owner,_subject,input)=>{captured=input;return input.length;}}});
+  const select=find(root.tree,node=>node.type==='select');select.props.onChange({target:{value:destination}});await tick();
+  const labels=[];function visit(node){if(!node||typeof node!=='object')return;if(node.type==='input'&&node.props.type==='checkbox')labels.push(node.props['aria-label']);for(const child of (Array.isArray(node)?node:[node.props?.children]).flat(Infinity))visit(child);}visit(root.tree);
+  assert.deepEqual(labels,['选择下载 第 12 集','选择下载 第 3 集','选择下载 第 29 集','选择下载 第 12.5 集','选择下载 SP01','选择下载 OVA','选择下载 番外篇']);
+  button(root,'选择前 7 集').props.onClick();await tick();await button(root,'加入下载任务（7）').props.onClick();await tick();assert.deepEqual(Array.from(captured,row=>row.number),[12,3,29,12.5,undefined,undefined,undefined]);root.stop();
+ }
+});
+test('unnumbered batch episodes do not fabricate canonical numbers after deduplication or subset selection',async()=>{
+ let captured;const episodes=[{name:'第01集',url:'https://source.test/1'},{name:'第01集',url:'https://source.test/1'},{name:'翻转孤独',url:'https://source.test/3'}];
+ const root=mount('components/DownloadQueue.tsx','BatchDownloadPicker',{owner:'a',subject,episodes,rule:{name:'Test'}},{'../lib/offline-downloads':{queueOfflineEpisodes:async input=>{captured=input;return input.length;}}});
+ const choice=find(root.tree,node=>node.type==='input'&&node.props['aria-label']==='选择下载 翻转孤独');assert.ok(choice,'unnumbered source title remains visible without claiming a canonical episode');choice.props.onChange({target:{checked:true}});await tick();await button(root,'加入下载任务（1）').props.onClick();await tick();assert.equal(captured[0].number,undefined);assert.equal(captured[0].sourceUrl,'https://source.test/3');root.stop();
 });
 test('an expired individual download link is reported as queued, not handed to the browser',async()=>{
  let sent=0;const props={owner:'a',queue:{book:{paused:false,tasks:[{id:'task',subject,episode:{name:'First'},state:'ready',download:{format:'mp4'}}]},error:'',wake(){}}};const root=mount('components/DownloadQueue.tsx','default',props,{'../lib/download-queue':{handReadyDownloads:()=>sent}});button(root,'下载到本地').props.onClick();await tick();assert.match(status(root),/过期|重新准备/);assert.doesNotMatch(status(root),/下载已请求/);sent=1;button(root,'下载到本地').props.onClick();await tick();assert.match(status(root),/下载已请求/);root.stop();

@@ -95,14 +95,15 @@ export async function POST(req:Request) {
   if(body.operation==='resolve'){
    const page=rule.chapterMode==='api'?mediaUrl(String(body.url)):publicUrl(String(body.url)),base=publicUrl(rule.baseURL);
    const external=page.origin!==base.origin;
-   if(external&&(rule.chapterMode!=='api'||!body.source||!isMedia(page.href)))throw new Error('播放页面必须与规则同源，或为源站目录中的视频直链');
-   let declared:string|undefined,referer=page.href;
+   if(external&&(rule.chapterMode!=='api'||!body.source))throw new Error('播放页面必须与规则同源，或经源站分集目录验证');
+   let declared:string|undefined,verifiedChapterPage:string|undefined,referer=page.href;
    if(rule.chapterMode==='api'&&body.source&&page.hostname!=='next.xifanacg.com'){
     const spec=apiRequest(rule,'chapters',{source:String(body.source).slice(0,200),keyword:''});const response=await fetch(spec.url,{...spec.init,redirect:'manual',signal:AbortSignal.any([req.signal,AbortSignal.timeout(12000)])});if(!response.ok){discard(response);throw new Error('源站 API 响应 '+response.status);}
-    const data=JSON.parse(await boundedText(response));const roads=apiChapters(data,spec.config,String(body.source),rule.baseURL);declared=roads.flatMap(road=>road.episodes).find(ep=>ep.url===page.href)?.mediaUrl;
-    if(external){if(declared!==page.href)throw new Error('视频地址不在所选源站分集目录中');referer=base.href;}
+    const data=JSON.parse(await boundedText(response));const roads=apiChapters(data,spec.config,String(body.source),rule.baseURL);const episode=roads.flatMap(road=>road.episodes).find(ep=>ep.url===page.href);
+    if(!episode)throw new Error('播放地址不在所选源站分集目录中');declared=episode.mediaUrl;
+    if(external){if(declared===page.href)referer=base.href;else if(spec.config.episodePage){verifiedChapterPage=page.href;declared=undefined;}else throw new Error('播放页面未在所选规则中声明');}
    }
-   const resolved=await resolvePlayback(rule,referer,declared,req.signal);
+   const resolved=await resolvePlayback(rule,referer,declared,req.signal,verifiedChapterPage);
    if(!resolved.media)return json({mode:'unavailable',sourceUrl:page.href,message:resolved.reason||'当前线路暂不能在本站解析，请切换线路或视频源'});
    return json({mode:'video',url:await signedMediaUrl(resolved.media,resolved.referer),mediaUrl:resolved.media,sourceUrl:page.href,verified:resolved.verified,preferDirect:new URL(resolved.referer).hostname==='next.xifanacg.com'&&resolved.mediaType!=='hls',mediaType:resolved.mediaType});
   }

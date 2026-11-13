@@ -15,6 +15,8 @@ import Discussions from './Discussions';
 import type {EpisodeProgresses} from '../lib/episode-progress';
 import AnimeCover from './AnimeCover';
 import {createPlaybackTimer} from '../lib/player-extras';
+import {parseSleepMinutes} from '../lib/playback-policy';
+import './watch-sleep.css';
 import {revokeDanmakuEditPause} from '../lib/danmaku-edit-pause';
 import {rankSources,type SourceHealth} from '../lib/source-health';
 import SourceAvailabilityList from './SourceAvailability';
@@ -31,6 +33,7 @@ export default function WatchPage(p:Props){
  useEffect(()=>{try{setAutoNext(localStorage.getItem('kw-auto-next')==='true');}catch{}},[]);
  const media=useRef<HTMLVideoElement>(null),sleep=useRef<ReturnType<typeof createPlaybackTimer>|null>(null);
  const [sleepChoice,setSleepChoice]=useState('off'),[remaining,setRemaining]=useState(0),[sleepExpired,setSleepExpired]=useState(false),[sleepMessage,setSleepMessage]=useState('');
+ const [sleepEditor,setSleepEditor]=useState(false),[sleepMinutes,setSleepMinutes]=useState('45'),[sleepError,setSleepError]=useState('');
  if(!sleep.current)sleep.current=createPlaybackTimer(()=>{revokeDanmakuEditPause(media.current);media.current?.pause();setSleepChoice('off');setRemaining(0);setSleepExpired(true);setSleepMessage('定时时间已到，视频已暂停，自动连播已停止。');});
  useEffect(()=>{
   if(sleepChoice==='off'||sleepChoice==='episode')return;
@@ -38,7 +41,8 @@ export default function WatchPage(p:Props){
   return()=>{clearInterval(interval);document.removeEventListener('visibilitychange',tick);};
  },[sleepChoice]);
  useEffect(()=>()=>{sleep.current?.cancel();},[]);
- const chooseSleep=(choice:string)=>{sleep.current!.set(choice==='episode'?'episode':Number(choice));setSleepChoice(choice);setSleepExpired(false);setSleepMessage('');setRemaining(sleep.current!.remaining);};
+ const chooseSleep=(choice:string)=>{const minutes=parseSleepMinutes(choice);if(choice!=='off'&&choice!=='episode'&&minutes===undefined){setSleepError('请输入 1–180 之间的整数分钟。');return false;}if(choice==='off')sleep.current!.cancel();else sleep.current!.set(choice==='episode'?'episode':minutes!);setSleepChoice(choice);setSleepExpired(false);setSleepMessage('');setSleepError('');setRemaining(sleep.current!.remaining);return true;};
+ const changeSleep=(choice:string)=>{if(choice==='custom'){setSleepEditor(true);setSleepError('');return;}if(chooseSleep(choice))setSleepEditor(false);};
  const resumeSleep=()=>{sleep.current!.resume();setSleepExpired(false);setSleepMessage('');};
  const line=p.roads[p.road],index=line?.episodes.findIndex(e=>e.url===p.player.sourceUrl)??-1;
  const currentNumber=p.player.number??(index>=0?episodeNumber(line!.episodes[index],index):knownEpisodeNumber({name:p.player.episode}));
@@ -109,8 +113,10 @@ export default function WatchPage(p:Props){
     <div className="watch-preferences"><label><input type="checkbox" checked={autoNext} onChange={e=>{setAutoNext(e.target.checked);try{localStorage.setItem('kw-auto-next',String(e.target.checked));}catch{}}}/>自动播放下一集</label><span>切线保留进度</span></div>
     {p.player.subject.id!==0&&<details className="watch-disclosure watch-resources" open={p.mode==='unavailable'}><summary><span><Radio size={15}/>片源检测</span><span className="watch-disclosure-meta">{foundCount} 个源有分集<ChevronDown size={14}/></span></summary><SourceAvailabilityList health={p.sourceHealth} rules={p.rules} checks={p.checks} selected={p.ruleIdx} busy={p.busy} onRefresh={p.onCheckRefresh} onSelect={p.onCheckSelect}/></details>}
     <details className="watch-search watch-disclosure" open={!line}><summary><span><Search size={15}/>搜索 / 更换番剧线路</span><ChevronDown size={14}/></summary>{p.player.subject.id>0&&<SubjectAliases key={p.player.subject.id} aliases={p.aliases||[]} onChange={p.onAliases||(()=>{})} onSelect={p.onQuery}/>}<form onSubmit={e=>{e.preventDefault();if(!p.busy&&p.ruleIdx>=0)p.onSearch();}}><input aria-label="播放页源站关键词" maxLength={120} value={p.query} onChange={e=>p.onQuery(e.target.value)} placeholder="搜索当前番剧"/><button aria-label="搜索播放线路" disabled={p.busy||p.ruleIdx<0}>{p.busy?<RefreshCw className="spin" size={16}/>:<Search size={16}/>}</button>{p.busy&&<button type="button" onClick={p.onStopSource}>停止等待</button>}</form><div className="watch-results">{p.results.map(r=><button key={r.url} disabled={p.busy} onClick={()=>p.onResult(r.url)}>{r.name}<ChevronRight size={14}/></button>)}</div></details>
-    <details className="watch-disclosure watch-preference-panel" open={sleepChoice!=='off'||sleepExpired}><summary><span><SlidersHorizontal size={15}/>观看设置与同步</span><span className="watch-disclosure-meta">{sleepChoice==='episode'?'本集后暂停':remaining>0?'定时中':''}<ChevronDown size={14}/></span></summary>
-     <div className="watch-sleep"><label>定时暂停<select aria-label="定时暂停" value={sleepChoice} onChange={e=>chooseSleep(e.target.value)}><option value="off">关闭</option><option value="episode">本集结束后</option><option value="1">1 分钟</option><option value="15">15 分钟</option><option value="30">30 分钟</option><option value="60">60 分钟</option></select></label><p role="status">{sleepMessage||(sleepChoice==='episode'?'本集结束后暂停，不再自动连播。':remaining>0?'剩余 '+Math.floor(remaining/60)+':'+String(remaining%60).padStart(2,'0'):'定时仅在当前观看页生效，切换分集会保留倒计时。')}</p>{sleepExpired&&<button type="button" onClick={()=>chooseSleep('off')}>取消定时限制</button>}</div>
+    <details className="watch-disclosure watch-preference-panel" open={sleepEditor||sleepChoice!=='off'||sleepExpired}><summary><span><SlidersHorizontal size={15}/>观看设置与同步</span><span className="watch-disclosure-meta">{sleepChoice==='episode'?'本集后暂停':remaining>0?'定时中':''}<ChevronDown size={14}/></span></summary>
+     <div className="watch-sleep"><label>定时暂停<select aria-label="定时暂停" value={sleepEditor?'custom':sleepChoice} onChange={e=>changeSleep(e.target.value)}><option value="off">关闭</option><option value="episode">本集结束后</option><option value="1">1 分钟</option><option value="15">15 分钟</option><option value="30">30 分钟</option><option value="60">60 分钟</option><option value="custom">自定义分钟</option></select></label>
+      {sleepEditor&&<form className="watch-custom-sleep" aria-label="自定义暂停定时" noValidate onSubmit={event=>{event.preventDefault();const minutes=parseSleepMinutes(sleepMinutes);if(minutes===undefined){setSleepError('请输入 1–180 之间的整数分钟。');return;}chooseSleep(String(minutes));setSleepMinutes(String(minutes));}}><label htmlFor="watch-sleep-minutes">分钟 <span>1–180</span></label><div><input id="watch-sleep-minutes" aria-label="自定义暂停分钟数" type="text" inputMode="numeric" maxLength={8} value={sleepMinutes} aria-invalid={!!sleepError} aria-describedby={'watch-sleep-help'+(sleepError?' watch-sleep-error':'')} onChange={event=>{setSleepMinutes(event.target.value);setSleepError('');}}/><button type="submit">{remaining>0?'重新计时':'开始计时'}</button></div><p id="watch-sleep-help">确认后替换当前定时；编辑期间倒计时继续。</p>{sleepError&&<p id="watch-sleep-error" role="alert">{sleepError}</p>}</form>}
+      <p role="status">{sleepMessage||(sleepChoice==='episode'?'本集结束后暂停，不再自动连播。':remaining>0?'剩余 '+Math.floor(remaining/60)+':'+String(remaining%60).padStart(2,'0'):'定时仅在当前观看页生效，切换分集会保留倒计时。')}</p>{sleepExpired&&<button type="button" onClick={()=>changeSleep('off')}>取消定时限制</button>}</div>
      <label className="watch-private-setting"><input type="checkbox" aria-label="自动恢复播放位置" checked={p.playResume!==false} onChange={event=>p.onPlayResume?.(event.target.checked)}/>自动恢复播放位置<span>重新打开剧集时读取上次位置；换源保留当前进度。</span></label>
      <label className="watch-private-setting"><input type="checkbox" checked={p.privatePlayback===true} onChange={event=>p.onPrivacy?.(event.target.checked)}/>隐身观看<span>不新增或更新本站观看记录，已有记录保留。</span></label>
      {p.dataSync}

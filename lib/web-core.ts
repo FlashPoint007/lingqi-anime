@@ -19,6 +19,12 @@ export function validateRule(input:unknown):Rule {
       const key=phase+'ApiConfig',c=r[key] as any;if(typeof c?.request?.url!=='string'||!c.request.url.trim())throw new Error('API 规则缺少 '+key);publicUrl(c.request.url.replace(/@[a-zA-Z]+/g,'test'));
     }else for(const k of phase==='search'?['searchURL','searchList','searchName','searchResult']:['chapterRoads','chapterResult'])if(typeof r[k]!=='string'||!(r[k] as string).trim())throw new Error('规则缺少字段：'+k);
   }
+  const episodePage=(r.chapterApiConfig as any)?.episodePage;
+  if(r.chapterMode==='api'&&episodePage!==undefined){
+    if(!episodePage||typeof episodePage!=='object'||Array.isArray(episodePage)||typeof episodePage.url!=='string'||!episodePage.url.trim())throw new Error('播放页地址模板不能为空');
+    publicUrl(new URL(episodePage.url.replace(/@[a-zA-Z]+/g,'test'),r.baseURL).href);
+    if(episodePage.query!==undefined&&(!episodePage.query||typeof episodePage.query!=='object'||Array.isArray(episodePage.query)||Object.values(episodePage.query).some(value=>!['string','number','boolean'].includes(typeof value))))throw new Error('播放页查询参数必须为简单键值对象');
+  }
   if(r.name.length>100) throw new Error('规则名称过长');
   const base=publicUrl(r.baseURL); const search=r.searchMode==='api'?base:publicUrl(r.searchURL.replaceAll('@keyword','test'));
   if(base.origin!==search.origin) throw new Error('搜索地址必须与规则 baseURL 同源');

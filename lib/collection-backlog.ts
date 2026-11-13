@@ -20,21 +20,21 @@ export function backlogSubjects(items:Subject[]){return items.filter(s=>s.id>0&&
 // Public metadata only: viewing progress and source outcomes never enter this cache.
 export async function loadBacklogMetadata(id:number,signal:AbortSignal,request:typeof requestJson=requestJson,now=Date.now(),force=false):Promise<BacklogMetadata>{
  if(!Number.isSafeInteger(id)||id<=0)throw Error('无效番剧');throwIfAborted(signal);
- const saved=metadataCache.get(id);if(!force&&saved&&now-saved.checkedAt>=0&&now-saved.checkedAt<TTL)return saved;
- const data:BacklogEpisode[]=[];let total=0;
+ const saved=metadataCache.get(id);if(!force&&saved&&!saved.stale&&now-saved.checkedAt>=0&&now-saved.checkedAt<TTL)return saved;
+ const data:BacklogEpisode[]=[];let total=0,stale=false;
  try{
   // Long-running shows are explicitly partial after 300 entries. Never infer
   // unseen early episodes from the last played number or the subject's eps.
   for(let offset=0;offset<300;offset+=100){
-   const result=await request('/api/episodes?id='+id+'&offset='+offset,{signal:anySignal([signal,timeoutSignal(12000)])});throwIfAborted(signal);
+   const result=await request('/api/episodes?id='+id+'&offset='+offset+(force?'&refresh=1':''),{...(force?{cache:'no-store' as const}:{}),signal:anySignal([signal,timeoutSignal(12000)])});throwIfAborted(signal);
    if(!Array.isArray(result.data)||!Number.isSafeInteger(result.total)||result.total<0)throw Error('剧集目录格式不正确');
-   total=Math.max(total,result.total);
+   total=Math.max(total,result.total);stale=stale||result.cacheStale===true;
    const page=result.data.filter((e:any)=>e&&Number.isSafeInteger(e.id)&&e.id>0&&Number.isFinite(e.sort)&&e.sort>=0&&e.sort<=100000&&(e.type===undefined||e.type===0)).map((e:any)=>({id:e.id,sort:e.sort,...(validAirdate(e.airdate)?{airdate:e.airdate}:{}),...(e.type===0?{type:0}:{})}));
    if(result.data.length&&!page.length)throw Error('没有有效的正篇剧集');
    for(const episode of page)if(!data.some(e=>e.id===episode.id||e.sort===episode.sort))data.push(episode);
    if(offset+100>=total||!page.length)break;
   }
-  const value={data:data.sort((a,b)=>a.sort-b.sort),total,complete:data.length>=total,checkedAt:now};
+  const value={data:data.sort((a,b)=>a.sort-b.sort),total,complete:data.length>=total,checkedAt:now,...(stale?{stale:true}:{})};
   metadataCache.delete(id);metadataCache.set(id,value);while(metadataCache.size>120)metadataCache.delete(metadataCache.keys().next().value!);return value;
  }catch(error){if(signal.aborted)throw error;if(saved&&now-saved.checkedAt>=0&&now-saved.checkedAt<86400000)return {...saved,stale:true};throw error;}
 }

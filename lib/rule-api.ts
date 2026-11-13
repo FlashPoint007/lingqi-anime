@@ -39,12 +39,12 @@ export function apiChapters(data:any,c:any,source:string,base=c.request?.url):{n
  const vars:Record<string,string>={source};for(const [key,path] of Object.entries(c.variables||{})){const value=selectJson(data,String(path))[0];if(value==null)throw Error('章节响应变量未匹配：'+key);vars[key]=String(value);}
  const episode=(name:string,raw:string,i:number,j:number,media?:string,number?:number)=>{
   const values={...vars,roadIndex:String(i),roadNumber:String(i+1),episodeIndex:String(j),episodeNumber:String(j+1),episodeUrl:raw};
-  if(!c.episodePage&&!raw.trim())return [];
+  if((!c.episodePage||/@episodeUrl\b/.test(JSON.stringify(c.episodePage)))&&!raw.trim())return [];
   if(c.episodePage&&(!c.episodePage.url||typeof c.episodePage.url!=='string'))throw Error('播放页地址模板不能为空');
   try{
    const url=mediaUrl(c.episodePage?substitute(c.episodePage.url,values,true):raw,base);
    for(const [key,value] of Object.entries(c.episodePage?.query||{}))url.searchParams.set(key,substitute(String(value),values));
-   return [{name:name.trim()||'第 '+(j+1)+' 集',url:url.href,number,mediaUrl:isMedia(url.href)?url.href:media}];
+   return [{name:name.trim()||'第 '+(j+1)+' 集',url:url.href,number,mediaUrl:c.episodePage?undefined:isMedia(url.href)?url.href:media}];
   }catch{return [];}
  };
  if(c.format==='delimited'){
@@ -66,7 +66,11 @@ export function mediaUrl(input:string,base?:string):URL {
  const u=new URL(input,base);const check=new URL(u);check.port='';u.hostname=publicUrl(check.href).hostname;
  if(u.port&&!['8088','8443'].includes(u.port))throw new Error('不支持的视频端口');return u;
 }
-export const isMedia=(input:string)=>/\.(mp4|webm|m3u8)(?:[?#]|$)/i.test(input);
+// Query strings can contain another URL; only the resource path identifies media.
+export function mediaPathType(input:string):'hls'|'video'|undefined {
+ try{const extension=new URL(input,'https://media.invalid/').pathname.match(/\.(mp4|webm|m3u8)$/i)?.[1]?.toLowerCase();return extension==='m3u8'?'hls':extension?'video':undefined;}catch{return undefined;}
+}
+export const isMedia=(input:string)=>mediaPathType(input)!==undefined;
 export function declaredMedia(data:unknown):string[]{
  const links:string[]=[];let count=0;
  const walk=(n:any,depth=0)=>{if(depth>8||count++>2000||!n||typeof n!=='object')return;for(const [key,value] of Object.entries(n)){if(typeof value==='string'&&/^(url|src|file|play_?url|video_?url|media_?url|stream_?url)$/i.test(key)&&isMedia(value)){try{links.push(mediaUrl(value).href);}catch{}}else if(typeof value==='object')walk(value,depth+1);}};walk(data);return [...new Set(links)];

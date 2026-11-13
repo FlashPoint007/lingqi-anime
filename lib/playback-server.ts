@@ -1,4 +1,4 @@
-import {extractMedia,isMedia,mediaUrl,playerLinks} from './rule-api';
+import {extractMedia,isMedia,mediaUrl,mediaPathType,playerLinks} from './rule-api';
 import {sourcePageError,type Rule} from './web-core';
 
 const UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
@@ -25,9 +25,9 @@ export async function fetchPublic(url:string,init:RequestInit={},stream=false){
 export function mediaReferer(referer:string):Record<string,string>{return new URL(referer).hostname==='next.xifanacg.com'?{}:{Referer:referer};}
 type MediaFailure={message:string;gone:boolean};
 async function reachableMedia(url:string,referer:string,signal?:AbortSignal,failures?:Map<string,MediaFailure>):Promise<'hls'|'video'|false>{
- try{const {res,url:finalUrl}=await fetchPublic(url,{signal:signal?AbortSignal.any([signal,AbortSignal.timeout(5000)]):AbortSignal.timeout(5000),headers:{'User-Agent':UA,...mediaReferer(referer),...(/\.m3u8(?:[?#]|$)/i.test(url)?{}:{Range:'bytes=0-4095'}),Accept:'*/*'}});if(!res.ok){failures?.set(mediaUrl(url).href,{message:'源站视频文件响应 HTTP '+res.status+(res.status===404||res.status===410?'，该文件已失效':'，当前服务器无法读取'),gone:res.status===404||res.status===410});discard(res);return false;}
+ try{const {res,url:finalUrl}=await fetchPublic(url,{signal:signal?AbortSignal.any([signal,AbortSignal.timeout(5000)]):AbortSignal.timeout(5000),headers:{'User-Agent':UA,...mediaReferer(referer),...(mediaPathType(url)==='hls'?{}:{Range:'bytes=0-4095'}),Accept:'*/*'}});if(!res.ok){failures?.set(mediaUrl(url).href,{message:'源站视频文件响应 HTTP '+res.status+(res.status===404||res.status===410?'，该文件已失效':'，当前服务器无法读取'),gone:res.status===404||res.status===410});discard(res);return false;}
   const type=res.headers.get('content-type')||'';
-  if(/\.m3u8(?:[?#]|$)/i.test(url)||/\.m3u8(?:[?#]|$)/i.test(finalUrl)||/mpegurl/i.test(type)){const text=await boundedText(res,1024*1024);return text.trimStart().startsWith('#EXTM3U')?'hls':false;}
+  if(mediaPathType(url)==='hls'||mediaPathType(finalUrl)==='hls'||/mpegurl/i.test(type)){const text=await boundedText(res,1024*1024);return text.trimStart().startsWith('#EXTM3U')?'hls':false;}
   discard(res);return /text\/html|json|javascript|xml/i.test(type)?false:'video';
  }catch{return false;}
 }
@@ -55,8 +55,10 @@ async function xifanMedia(page:string,signal?:AbortSignal){
  if(data.source_id!==undefined&&data.source_id!==source.id&&!data.candidates?.some((c:any)=>c.source_id===source.id&&c.url===data.url))throw new Error('稀饭返回的视频与所选线路不一致');
  return url;
 }
-export async function resolvePlayback(rule:Rule,page:string,declared?:string,parentSignal?:AbortSignal):Promise<{media:string;referer:string;verified:boolean;mediaType:'hls'|'video';reason?:string}>{
- const source=mediaUrl(page);if(source.origin!==new URL(rule.baseURL).origin)throw new Error('播放页面必须属于所选源站');
+export async function resolvePlayback(rule:Rule,page:string,declared?:string,parentSignal?:AbortSignal,verifiedChapterPage?:string):Promise<{media:string;referer:string;verified:boolean;mediaType:'hls'|'video';reason?:string}>{
+ // Only the source endpoint can supply this exact, freshly verified catalogue URL.
+ // It is request-local; never accept a client flag or cache an origin-wide grant.
+ const source=mediaUrl(page);if(source.origin!==new URL(rule.baseURL).origin&&verifiedChapterPage!==source.href)throw new Error('播放页面必须属于所选源站');
  const pending=[page],seen=new Set<string>();let directCandidate='',candidateReferer=page;const errors:string[]=[];const deadline=Date.now()+20000,signal=parentSignal?AbortSignal.any([parentSignal,AbortSignal.timeout(20000)]):AbortSignal.timeout(20000);
  const mediaFailures=new Map<string,MediaFailure>();
  const candidate=(url:string,referer:string)=>{if(!directCandidate||mediaFailures.get(directCandidate)?.gone){directCandidate=mediaUrl(url).href;candidateReferer=referer;}};
@@ -78,7 +80,7 @@ export async function resolvePlayback(rule:Rule,page:string,declared?:string,par
   }catch(e){errors.push((e as Error).message);}
  }
  const failure=mediaFailures.get(directCandidate);
- return {media:failure?.gone?'':directCandidate,verified:false,mediaType:/\.m3u8(?:[?#]|$)/i.test(directCandidate)?'hls':'video',referer:candidateReferer,reason:signal.aborted?'播放解析超时或已取消，请重试或切换视频源':failure?.message||errors[0]||'此线路未解析到可播放的视频地址，请切换线路或视频源'};
+ return {media:failure?.gone?'':directCandidate,verified:false,mediaType:mediaPathType(directCandidate)==='hls'?'hls':'video',referer:candidateReferer,reason:signal.aborted?'播放解析超时或已取消，请重试或切换视频源':failure?.message||errors[0]||'此线路未解析到可播放的视频地址，请切换线路或视频源'};
 }
 
 export type Ticket={url:string;referer:string;expires:number};
@@ -128,7 +130,7 @@ export async function proxyMedia(req:Request){
  const ifRange=req.headers.get('if-range');if(range&&ifRange&&ifRange.length<=256&&!/[\r\n]/.test(ifRange))headers['If-Range']=ifRange;
  try{
   const {res,url}=await fetchPublic(ticket.url,{headers,method:req.method==='HEAD'?'HEAD':'GET',signal:req.signal},true);if(!res.ok){discard(res);return new Response('当前视频线路响应 '+res.status,{status:res.status===416?416:502,headers:res.status===416&&res.headers.has('content-range')?{'Content-Range':res.headers.get('content-range')!}:{}});}
-  const type=res.headers.get('content-type')||'';const playlist=isMedia(url)&&/\.m3u8(?:[?#]|$)/i.test(url)||/mpegurl/i.test(type);
+  const type=res.headers.get('content-type')||'';const playlist=isMedia(url)&&mediaPathType(url)==='hls'||/mpegurl/i.test(type);
   const output=new Headers({'Cache-Control':'private, max-age=30','X-Content-Type-Options':'nosniff','Content-Security-Policy':"sandbox; default-src 'none'"});
   if(playlist&&req.method!=='HEAD'){
    const body=await boundedText(res,1024*1024);if(!body.trimStart().startsWith('#EXTM3U'))throw new Error('源站没有返回 HLS 播放列表');

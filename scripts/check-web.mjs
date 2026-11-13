@@ -196,7 +196,7 @@ assert.equal(core.validateRule(apiRule).searchMode,'api');
 const requestSpec=ruleApi.apiRequest(apiRule,'search',{keyword:'a"b',source:'1'});assert.equal(JSON.parse(requestSpec.init.body).search_term,'a"b');
 const mixedRules=subscription.initialRules.filter(r=>r.searchMode==='api'&&r.chapterMode==='xpath');
 assert.deepEqual(mixedRules.map(r=>r.name).sort(),['LMM','dalvdm','mgnacg','moonci','TvTFun'].sort());
-const giriRule=subscription.initialRules.find(r=>r.name==='giriGiriLove');assert.equal(giriRule.version,'2.6');assert.equal(giriRule.chapterMode,'api');assert.equal(giriRule.chapterApiConfig.format,'delimited');
+const giriRule=subscription.initialRules.find(r=>r.name==='giriGiriLove');assert.equal(giriRule.version,'2.7');assert.equal(giriRule.chapterMode,'api');assert.equal(giriRule.chapterApiConfig.format,'delimited');
 assert.equal(ruleApi.apiSearch({info:{rows:[{vod_name:'番剧',vod_id:123}]}},giriRule.searchApiConfig,giriRule)[0].url,'123','current Giri API passes the raw ID to its chapter API');
 for(const rule of mixedRules){assert.doesNotThrow(()=>core.validateRule(rule));const data=rule.name==='TvTFun'?{data:{items:[{name:'番剧',slug:'123'}]}}:{list:[{name:'番剧',id:123}]};const results=ruleApi.apiSearch(data,rule.searchApiConfig,rule);const raw=rule.searchApiConfig.sourceTemplate?.replaceAll('@source','123')||'123';assert.equal(results[0].url,new URL(raw,rule.baseURL).href);}
 const mixed=mixedRules.find(r=>r.name==='moonci');

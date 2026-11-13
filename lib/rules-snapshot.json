@@ -1,7 +1,7 @@
 {
   "repository": "Predidit/KazumiRules",
-  "revision": "2967d7babafffa92dbf35fbcb69d0fd964139e63",
-  "checkedAt": "2026-11-02T09:17:04.300Z",
+  "revision": "64ea35976c383a3a760eb23d744fcada076317ee",
+  "checkedAt": "2026-11-13T14:31:30Z",
   "entries": [
     {
       "file": "7sefun.json",
@@ -202,7 +202,7 @@
         "api": "9",
         "type": "anime",
         "name": "giriGiriLove",
-        "version": "2.6",
+        "version": "2.7",
         "muliSources": true,
         "useWebview": true,
         "useNativePlayer": true,
@@ -241,7 +241,14 @@
           "roadEpisodesPath": "$.info.vod_play_url",
           "roadSeparator": "$$$",
           "episodeSeparator": "#",
-          "fieldSeparator": "$"
+          "fieldSeparator": "$",
+          "episodePage": {
+            "url": "https://pl.girigirilove.com/addons/aplyer/atom.php",
+            "query": {
+              "key": "0",
+              "url": "@episodeUrl"
+            }
+          }
         },
         "searchURL": "",
         "searchList": "",
@@ -258,7 +265,7 @@
         "api": "9",
         "type": "anime",
         "name": "LMM",
-        "version": "2.3",
+        "version": "2.4",
         "muliSources": true,
         "useWebview": true,
         "useNativePlayer": true,
@@ -266,14 +273,14 @@
         "useLegacyParser": false,
         "adBlocker": false,
         "userAgent": "",
-        "baseURL": "https://www.lmm85.com/",
+        "baseURL": "https://www.lmm22.com/",
         "searchURL": "",
         "searchMode": "api",
         "chapterMode": "xpath",
         "searchApiConfig": {
           "request": {
             "method": "GET",
-            "url": "https://www.lmm85.com/index.php/ajax/suggest",
+            "url": "https://www.lmm22.com/index.php/ajax/suggest",
             "query": {
               "mid": "1",
               "wd": "@keyword"
@@ -282,7 +289,7 @@
           "listPath": "$.list[*]",
           "namePath": "$.name",
           "sourcePath": "$.id",
-          "sourceTemplate": "https://www.lmm85.com/index.php/vod/detail/id/@source.html"
+          "sourceTemplate": "https://www.lmm22.com/index.php/vod/detail/id/@source.html"
         },
         "searchList": "",
         "searchName": "",

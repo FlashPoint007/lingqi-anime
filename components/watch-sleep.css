@@ -1,0 +1,9 @@
+.watch-page .watch-custom-sleep{margin-top:12px;padding-top:12px;border-top:1px solid var(--watch-line)}
+.watch-page .watch-custom-sleep label{justify-content:flex-start;gap:8px;margin-bottom:6px}
+.watch-page .watch-custom-sleep label span{color:var(--watch-muted);font-size:11px}
+.watch-page .watch-custom-sleep>div{display:flex;gap:8px}
+.watch-page .watch-custom-sleep input{min-width:0;flex:1;width:80px;padding:8px 10px;border:1px solid var(--watch-line);border-radius:4px;background:var(--watch-paper);color:var(--watch-text);font:inherit;font-size:13px}
+.watch-page .watch-custom-sleep button{flex:none;padding:8px 12px;border-radius:4px;border:1px solid var(--watch-line);background:var(--watch-paper);color:var(--watch-rose);font-size:12px}
+.watch-page .watch-custom-sleep :is(input,button):focus-visible{outline:2px solid var(--watch-rose);outline-offset:2px}
+.watch-page .watch-custom-sleep input[aria-invalid=true]{border-color:var(--watch-rose)}
+.watch-page .watch-custom-sleep p[role=alert]{color:var(--watch-rose)}

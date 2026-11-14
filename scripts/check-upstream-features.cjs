@@ -11,6 +11,17 @@ queue.seek(-10);m.settle();assert.equal(m.currentTime,0);queue.seek(999);m.settl
 m.break(true);queue.seek(30);assert.equal(errors.length,1);m.break(false);queue.seek(50);m.settle();assert.equal(m.currentTime,50,'a failed seek cannot poison the next request');
 queue.seek(20);queue.seek(40);queue.destroy();m.settle();for(const timer of timers.values())timer.fn();assert.equal(m.currentTime,20,'disposed controllers cannot seek after changing media');assert.equal(timers.size,0);
 const missingEvent=media(),q=controls.createSeekController(missingEvent,()=>{},()=>{});q.seek(20);q.seek(40);[...timers.values()][0].fn();assert.equal(missingEvent.currentTime,40,'missing seeked must not lock the queue');q.destroy();
+// Timeout must not persist an unfinished/ignored resume as successful progress.
+const stalled=media(),resumeSettled=[],resumeErrors=[];
+const resume=controls.createSeekController(stalled,n=>resumeSettled.push(n),()=>resumeErrors.push(true));
+resume.seek(90);[...timers.values()][0].fn();
+assert.deepEqual(resumeSettled,[],'still-seeking watchdog must not commit resume');
+assert.equal(resumeErrors.length,1);stalled.settle();assert.deepEqual(resumeSettled,[],'late event cannot confirm a timed-out request');
+resume.seek(70);stalled.settle();assert.deepEqual(resumeSettled,[70],'retry after watchdog must work');resume.destroy();
+const ignored=media();Object.defineProperty(ignored,'currentTime',{get:()=>10,set:()=>{}});
+const ignoredSettled=[],ignoredErrors=[],ignoredQueue=controls.createSeekController(ignored,n=>ignoredSettled.push(n),()=>ignoredErrors.push(true));
+ignoredQueue.seek(90);ignored.settle();assert.deepEqual(ignoredSettled,[],'seeked at old time is not success');
+[...timers.values()][0].fn();assert.deepEqual(ignoredSettled,[]);assert.equal(ignoredErrors.length,1);ignoredQueue.destroy();
 console.log('PASS: serialized/coalesced seeks, repeat keys, bounds, failed engines, missing events and source-change cancellation');
 const jsx=(type,props)=>({type,props});
 function nodes(tree,type){const out=[];const walk=n=>{if(!n||typeof n!=='object')return;if(n.type===type)out.push(n);[n.props?.children].flat(Infinity).forEach(walk);};walk(tree);return out;}

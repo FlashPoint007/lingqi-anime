@@ -21,7 +21,7 @@ type Media=Pick<HTMLMediaElement,'currentTime'|'duration'|'readyState'|'seeking'
 export function createSeekController(media:Media,onSettled:(time:number)=>void,onError:()=>void){
  let queued:number|undefined,active:number|undefined,desired:number|undefined,closed=false,timer:ReturnType<typeof setTimeout>|undefined;
  const finish=()=>{
-  if(closed||active===undefined)return;
+  if(closed||active===undefined||media.seeking||Math.abs(media.currentTime-active)>.5)return;
   clearTimeout(timer);timer=undefined;active=undefined;
   if(queued!==undefined){pump();return;}
   desired=undefined;try{onSettled(media.currentTime);}catch{onError();}
@@ -32,7 +32,14 @@ export function createSeekController(media:Media,onSettled:(time:number)=>void,o
   try{
    if(Math.abs(media.currentTime-target)<.05&&!media.seeking){finish();return;}
    // Some media engines omit seeked after a failed seek; never lock the controls.
-   timer=setTimeout(finish,4000);
+   timer=setTimeout(()=>{
+    if(closed||active===undefined)return;
+    // A watchdog unlocks controls, not proof that resume reached its target.
+    if(!media.seeking&&Math.abs(media.currentTime-active)<=.5){finish();return;}
+    clearTimeout(timer);timer=undefined;active=undefined;
+    if(queued!==undefined){pump();return;}
+    desired=undefined;onError();
+   },4000);
    media.currentTime=target;
   }catch{clearTimeout(timer);active=undefined;queued=undefined;desired=undefined;onError();}
  };

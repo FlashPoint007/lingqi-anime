@@ -8,6 +8,7 @@ import {availabilityLabels,checkSource,checkSources,cachedAvailability,storeAvai
 import {ruleCompatibility} from '../lib/subscriptions';
 import type {Rule} from '../lib/web-core';
 import type {Subject} from '../lib/catalog';
+import './source-availability.css';
 const cache=new Map<string,SourceAvailability>();
 const empty:SourceAvailability={state:'queued',message:'',results:[]};
 export function useSourceAvailability(subject:Subject|null,rules:Rule[],aliases:SubjectAliases={},deferred=false,owner:string|null='anonymous'){
@@ -45,14 +46,31 @@ export function useSourceAvailability(subject:Subject|null,rules:Rule[],aliases:
  const stop=()=>{if(current.current!==scope)return;scan.current?.abort();setChecks(old=>current.current===scope?Object.fromEntries(Object.entries(old).map(([name,check])=>[name,['queued','checking'].includes(check.state)?{...check,state:'paused' as const,message:'后台检测已暂停，可选择此源手动搜索'}:check])):old);};
  return {checks:checksScope===scope?checks:{},stop,refresh:()=>{invalidateAvailability(cache,scope);refreshScope.current=scope;setRevision(n=>n+1);},report};
 }
-type Props={health?:SourceHealth;rules:Rule[];checks:Record<string,SourceAvailability>;selected:number;busy?:boolean;onRefresh:()=>void;onSelect:(index:number,check:SourceAvailability)=>void};
+type Props={scope?:string;health?:SourceHealth;rules:Rule[];checks:Record<string,SourceAvailability>;selected:number;busy?:boolean;onRefresh:()=>void;onSelect:(index:number,check:SourceAvailability)=>void};
 export default function SourceAvailabilityList(p:Props){
- const [onlyFound,setOnlyFound]=useState(false);
+ const [view,setView]=useState({generation:0,onlyFound:false,revision:0});
  const hasEpisodes=(check:SourceAvailability|undefined)=>check?.state==='found'||check?.state==='playing'||!!check?.roads?.some(road=>road.episodes.length>0);
- const enabled=p.rules.filter(rule=>rule.enabled!==false),found=enabled.filter(rule=>hasEpisodes(p.checks[rule.name])).length;
- const count=Object.values(p.checks).filter(c=>c.state==='checking'||c.state==='queued').length;
- return <section className="source-availability" aria-label="当前番剧资源检测"><div className="source-check-heading"><h3>各源资源</h3><button type="button" onClick={p.onRefresh} disabled={!!count} aria-label="重新检测资源"><RefreshCw size={13} className={count?'spin':''}/>{count?'检测中 '+count:'重新检测'}</button></div>
+ const ranked=rankSources(p.rules,p.health||{},p.checks).filter(({rule})=>rule.enabled!==false),signature=JSON.stringify([p.scope,p.rules]),hasChecks=Object.keys(p.checks).length>0;
+ const ordering=useRef({signature:'',hasChecks:false,generation:0,all:[] as string[],found:[] as string[]});
+ // Parent scope also distinguishes rapid subject/account switches while both
+ // check maps are still empty. The empty-map guard supports existing callers.
+ // Reset before a stale button callback can act on the next scope.
+ // Background results only update labels: they must not move a pointer target.
+ if(ordering.current.signature!==signature||ordering.current.hasChecks&&!hasChecks)ordering.current={signature,hasChecks,generation:ordering.current.generation+1,all:ranked.map(row=>row.rule.name),found:[]};
+ ordering.current.hasChecks=hasChecks;
+ const generation=ordering.current.generation,onlyFound=view.generation===generation&&view.onlyFound;
+ const foundNames=ranked.filter(({rule})=>hasEpisodes(p.checks[rule.name])).map(({rule})=>rule.name),foundSet=new Set(foundNames);
+ ordering.current.found=ordering.current.found.filter(name=>foundSet.has(name));
+ for(const name of foundNames)if(!ordering.current.found.includes(name))ordering.current.found.push(name);
+ const latest=useRef({generation,p,ranked});latest.current={generation,p,ranked};
+ const isCurrent=()=>latest.current.generation===generation;
+ const select=(name:string)=>{const current=latest.current;if(current.generation!==generation||current.p.busy)return;const index=current.p.rules.findIndex(rule=>rule.name===name&&rule.enabled!==false);if(index>=0)current.p.onSelect(index,current.p.checks[name]||empty);};
+ const filter=(value:boolean)=>{if(isCurrent())setView(old=>({...old,generation,onlyFound:value}));};
+ const sort=()=>{const current=latest.current;if(current.generation!==generation||current.p.busy)return;ordering.current.all=current.ranked.map(row=>row.rule.name);ordering.current.found=current.ranked.filter(({rule})=>hasEpisodes(current.p.checks[rule.name])).map(row=>row.rule.name);setView(old=>({...old,revision:old.revision+1}));};
+ const byName=new Map(ranked.map(row=>[row.rule.name,row])),rows=(onlyFound?ordering.current.found:ordering.current.all).flatMap(name=>{const row=byName.get(name);return row?[row]:[];});
+ const enabled=ranked.length,found=foundNames.length,count=Object.values(p.checks).filter(c=>c.state==='checking'||c.state==='queued').length;
+ return <section className="source-availability" aria-label="当前番剧资源检测"><div className="source-check-heading"><h3>各源资源</h3><button type="button" onClick={()=>{const current=latest.current;if(isCurrent()&&!current.p.busy&&!Object.values(current.p.checks).some(check=>check.state==='checking'||check.state==='queued'))current.p.onRefresh();}} disabled={!!count||p.busy} aria-label="重新检测资源"><RefreshCw size={13} className={count?'spin':''}/>{count?'检测中 '+count:'重新检测'}</button></div>
  <p className="source-check-note">按别名、中文名和原名粗检。“有分集”表示找到目录，播放成功后标为“已播放”。无需等待全部检测，点击待检测的源可立即手动搜索。</p>
- <p className="source-check-note">优先有分集的源，再按本机近 30 天播放成功率与起播耗时排序；仅记录实际播放尝试，隐身观看不记录。</p>
- <div className="source-check-filters"><button type="button" aria-pressed={!onlyFound} onClick={()=>setOnlyFound(false)}>全部 {enabled.length}</button><button type="button" aria-pressed={onlyFound} onClick={()=>setOnlyFound(true)}>有分集 {found}</button></div>{onlyFound&&!found&&<p className="source-check-note" role="status">{count?'仍在检测，找到分集后会显示在这里。':'暂无已找到分集的源，可查看全部并手动尝试别名。'}</p>}<div className="source-check-list">{rankSources(p.rules,p.health||{},p.checks).map(({rule,index,performance})=>{if(rule.enabled===false)return null;const check=p.checks[rule.name]||empty;if(onlyFound&&!hasEpisodes(check))return null;return <button type="button" key={rule.name} className={'source-check '+(index===p.selected?'selected ':'')+check.state} title={check.message} disabled={p.busy} onClick={()=>p.onSelect(index,check)} aria-label={rule.name+'：'+availabilityLabels[check.state]}><span className="source-check-name"><i aria-hidden="true"/>{rule.name}</span><span className="source-check-status">{availabilityLabels[check.state]}</span>{check.message&&<small>{check.message}</small>}<small>{sourcePerformanceLabel(performance)}</small></button>;})}</div></section>;
+ <p className="source-check-note">检测时保持位置，避免点错片源。可按最新结果排序：优先有分集，再按本机近 30 天成功率与起播耗时；隐身观看不记录。</p>
+ <div className="source-check-filters"><button type="button" aria-pressed={!onlyFound} onClick={()=>filter(false)}>全部 {enabled}</button><button type="button" aria-pressed={onlyFound} onClick={()=>filter(true)}>有分集 {found}</button><button type="button" className="source-check-sort" disabled={p.busy||enabled<2} onClick={sort}>按最新结果排序</button></div>{onlyFound&&!found&&<p className="source-check-note" role="status">{count?'仍在检测，找到分集后会显示在这里。':'暂无已找到分集的源，可查看全部并手动尝试别名。'}</p>}<div className="source-check-list">{rows.map(({rule,index,performance})=>{const check=p.checks[rule.name]||empty;return <button type="button" key={rule.name} className={'source-check '+(index===p.selected?'selected ':'')+check.state} title={check.message} disabled={p.busy} onClick={()=>select(rule.name)} aria-label={rule.name+'：'+availabilityLabels[check.state]}><span className="source-check-name"><i aria-hidden="true"/>{rule.name}</span><span className="source-check-status">{availabilityLabels[check.state]}</span><small className="source-check-message" aria-hidden={!check.message}>{check.message||'\u00a0'}</small><small className="source-check-performance">{sourcePerformanceLabel(performance)}</small></button>;})}</div></section>;
 }

@@ -1,0 +1,6 @@
+/* Reserve the same rows before and after each asynchronous source result. */
+.source-check .source-check-name,.source-check .source-check-status{white-space:nowrap}
+.source-check .source-check-message,.source-check .source-check-performance{height:1.4em;min-height:1.4em}
+.source-check-filters{flex-wrap:wrap}
+.source-check-filters .source-check-sort{margin-left:auto;color:var(--purple)}
+.source-check-sort:focus-visible{outline:2px solid var(--purple);outline-offset:2px}

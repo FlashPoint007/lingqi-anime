@@ -55,6 +55,16 @@ async function xifanMedia(page:string,signal?:AbortSignal){
  if(data.source_id!==undefined&&data.source_id!==source.id&&!data.candidates?.some((c:any)=>c.source_id===source.id&&c.url===data.url))throw new Error('稀饭返回的视频与所选线路不一致');
  return url;
 }
+// The official Atom shell reads ?url in its external player script. Unlike
+// ordinary HTML declarations, a query parameter alone is not trusted: require
+// the exact page just validated against the API catalogue and the loaded shell.
+function giriCatalogueMedia(rule:Rule,page:string,html:string,verifiedChapterPage?:string):string|undefined{
+ if(verifiedChapterPage!==page||rule.name!=='giriGiriLove'||new URL(rule.baseURL).origin!=='https://ani.girigirilove.com')return;
+ const wrapper=new URL(page);
+ if(wrapper.origin!=='https://pl.girigirilove.com'||wrapper.pathname!=='/addons/aplyer/atom.php'||wrapper.searchParams.getAll('key').length!==1||wrapper.searchParams.get('key')!=='0'||wrapper.searchParams.getAll('url').length!==1)return;
+ if(!/<title>\s*AtomPlayer\+\s*<\/title>/i.test(html)||!/<div\b[^>]*\bid\s*=\s*["']APlayer["'][^>]*>/i.test(html)||!/\baddScript\s*\(\s*(["'])\.\/atom\.obfuscated\.js\1\s*\)/.test(html))return;
+ try{const target=mediaUrl(wrapper.searchParams.get('url')!);return isMedia(target.href)?target.href:undefined;}catch{return;}
+}
 export async function resolvePlayback(rule:Rule,page:string,declared?:string,parentSignal?:AbortSignal,verifiedChapterPage?:string):Promise<{media:string;referer:string;verified:boolean;mediaType:'hls'|'video';reason?:string}>{
  // Only the source endpoint can supply this exact, freshly verified catalogue URL.
  // It is request-local; never accept a client flag or cache an origin-wide grant.
@@ -73,7 +83,8 @@ export async function resolvePlayback(rule:Rule,page:string,declared?:string,par
    const {res,url}=await fetchPublic(next,{signal,headers:{'User-Agent':String(rule.userAgent||UA),Accept:'text/html,application/json','Referer':String(rule.referer||page)}});
    if(!res.ok){discard(res);throw new Error(res.status===404?'源站播放页不存在（404），该条目或线路可能已失效':'源站响应 '+res.status);}const html=await boundedText(res);
    const pageError=sourcePageError(html);if(pageError)throw new Error(pageError);
-   for(const media of extractMedia(html,url).slice(0,3)){if(signal.aborted)break;candidate(media,url);const mediaType=await reachableMedia(media,url,signal,mediaFailures);if(mediaType)return {media,referer:url,verified:true,mediaType};}
+   const wrapperMedia=giriCatalogueMedia(rule,url,html,verifiedChapterPage);
+   for(const media of [...new Set([...extractMedia(html,url),...(wrapperMedia?[wrapperMedia]:[])])].slice(0,3)){if(signal.aborted)break;candidate(media,url);const mediaType=await reachableMedia(media,url,signal,mediaFailures);if(mediaType)return {media,referer:url,verified:true,mediaType};}
    const links=playerLinks(html,url).filter(link=>!isMedia(link));
    // Only follow declared player links, never arbitrary links or page scripts.
    for(const link of links){if(/(?:comment|ads?|analytics|google)/i.test(new URL(link).pathname))continue;if(pending.length<3)pending.push(link);}

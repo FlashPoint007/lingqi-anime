@@ -13,7 +13,7 @@
 | `LINGQI_SITE_URL` | 邮件回跳的固定 HTTPS 站点根地址 | 环境变量 |
 | `LINGQI_AUTH_SECRET` | 已有密码 pepper，继续保留原值 | Secret |
 
-站点已配置 `LINGQI_SITE_URL=https://lingqi-anime.bonnycarp9.chatgpt.site`。截至本次修改，生产环境尚无 `RESEND_API_KEY` 和 `LINGQI_MAIL_FROM`，实际投递尚未启用。不能用 Resend 的测试发件域名替代正式发件域名向公众发送邮件；发件域名可以独立于当前网站域名。
+当前在线体验地址为 `https://lingqi-anime.tarokiki.chatgpt.site`；部署者应将 `LINGQI_SITE_URL` 配置为自己部署的固定 HTTPS 根地址。本文初次实现时生产环境尚无 `RESEND_API_KEY` 和 `LINGQI_MAIL_FROM`，当时未启用实际投递；这条历史记录不代表当前运行时配置。不能用 Resend 的测试发件域名替代正式发件域名向公众发送邮件；发件域名可以独立于当前网站域名。
 
 在 Resend 验证你持有域名的发送能力，按其控制台提供的 DNS 记录配置。验证/恢复邮件应关闭链接及打开跟踪，避免第三方跟踪链路处理恢复凭证。不要提交密钥、验证链接或用户密码到 GitHub、浏览器存储或日志。
 
